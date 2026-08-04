@@ -37,3 +37,38 @@ Host와 Container의 책임, 조사된 환경 사양, 재확인해야 할 항목
 프로젝트 상태와 사용 방법을 정확히 반영하는지 확인합니다.
 
 세부 제품·아키텍처·개발 규칙은 [AGENTS.md](AGENTS.md)를 기준으로 합니다.
+
+## 개발 환경 스펙
+
+| 구분 | 기준 |
+| --- | --- |
+| Container Python | 3.11 |
+| 기본 이미지 | `python:3.11-slim-bookworm` |
+| 기본 실행 | CPU-only Docker Compose 서비스 `dev` |
+| GPU | RTX 2060 6 GiB를 Host에서 확인; `compose.gpu.yaml`을 명시할 때만 전달 |
+| Voice | PulseAudio/ALSA를 Host에서 확인; `compose.voice.yaml`과 Pulse socket을 명시할 때만 전달 |
+| 모델·개인 데이터 | 이미지와 Git에서 제외, `data/`·`models/` bind mount로만 전달 |
+
+## Docker 실행
+
+기본 CPU 개발 셸을 build하고 Python runtime을 확인합니다.
+
+```bash
+docker compose build
+docker compose run --rm dev python --version
+```
+
+GPU 장치가 필요한 후속 adapter 작업에서만 GPU overlay를 명시합니다.
+
+```bash
+docker compose -f compose.yaml -f compose.gpu.yaml run --rm dev bash
+```
+
+Voice 작업에서는 먼저 `.env.example`을 `.env`로 복사하고 Host의 실제
+PulseAudio socket 경로를 확인한 뒤 Voice overlay를 명시합니다.
+
+```bash
+docker compose -f compose.yaml -f compose.voice.yaml run --rm dev bash
+```
+
+이 환경은 아직 모델, Python 패키지, CLI, Voice 애플리케이션을 포함하지 않습니다.

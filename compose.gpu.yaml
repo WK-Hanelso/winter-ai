@@ -1,0 +1,4 @@
+services:
+  dev:
+    # This overlay is opt-in. The default compose.yaml remains CPU-only.
+    gpus: all
