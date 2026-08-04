@@ -12,6 +12,11 @@
 Host의 Docker Engine, NVIDIA GPU runtime, PulseAudio와 기본 녹음·재생 장치는
 검증되었습니다. 실제 GPU 컨테이너 실행과 모델 연결은 아직 수행하지 않았습니다.
 
+첫 개발 컨테이너는 Python 3.11과 `python:3.11-slim-bookworm`을 기준으로
+구성할 예정입니다. CPU 개발 환경을 기본값으로 두고, GPU와 Voice 장치는
+명시적인 Compose overlay에서만 전달합니다. 선택 근거는
+[ADR-0001](docs/adr/0001-docker-development-baseline.md)에 있습니다.
+
 현재 진행 중인 작업은 [#1 Host/Container baseline 확정](https://github.com/WK-Hanelso/winter-ai/issues/1)입니다.
 
 ## 개발 원칙
