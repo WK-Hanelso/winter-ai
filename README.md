@@ -9,6 +9,9 @@
 프로젝트는 초기 환경 기준을 확정하는 단계입니다. 아직 Dockerfile, Python
 애플리케이션, 모델 런타임, 모델 checkpoint는 추가하지 않았습니다.
 
+Host의 Docker Engine, NVIDIA GPU runtime, PulseAudio와 기본 녹음·재생 장치는
+검증되었습니다. 실제 GPU 컨테이너 실행과 모델 연결은 아직 수행하지 않았습니다.
+
 현재 진행 중인 작업은 [#1 Host/Container baseline 확정](https://github.com/WK-Hanelso/winter-ai/issues/1)입니다.
 
 ## 개발 원칙
