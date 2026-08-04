@@ -26,26 +26,37 @@
 | 메모리 | 총 31 GiB; 조사 당시 약 25 GiB 사용 가능 |
 | 저장소 | ext4 약 916 GiB, 조사 당시 약 371 GiB 여유 |
 | GPU hardware | NVIDIA GeForce RTX 2060 Mobile (TU106M) 감지 |
-| CUDA Toolkit | `nvcc` 10.1.243 감지 |
+| NVIDIA driver | 535.230.02; GPU VRAM 6,144 MiB 중 조사 당시 5,915 MiB 여유 |
+| CUDA 호환 상한 | `nvidia-smi`가 CUDA 12.2를 보고 |
+| CUDA Toolkit | Host `nvcc` 10.1.243 감지; Container의 CUDA runtime 선택 근거로 사용하지 않음 |
 | Docker CLI | Docker 26.1.3, Docker Compose v5.0.1 감지 |
 | Host Python | 시스템 실행 경로에서 Python 3.8.10 관찰; pyenv에 3.11.9도 존재 |
 
-## 미확인 또는 차단된 항목
+## 직접 검증한 Host runtime
 
-- `nvidia-smi`는 NVIDIA driver와 통신하지 못했다. GPU VRAM과 CUDA runtime
-  사용 가능 여부는 확정하지 않는다.
-- 조사 환경에서는 Docker daemon socket 접근이 거부됐다. 이는 실행 환경의
-  격리 또는 Host 권한 설정 때문일 수 있으므로, Host 터미널에서 별도 확인한다.
-- 조사 환경에서는 PulseAudio 연결과 ALSA sound card가 노출되지 않았다. 이는
-  Host의 실제 데스크톱 세션에서 마이크·스피커가 없다는 증거는 아니다.
-- 실제 Container에서 NVIDIA Container Toolkit runtime이 제공되는지 확인하지 않았다.
+| 항목 | 검증 결과 | 설계상 의미 |
+| --- | --- | --- |
+| Docker Engine | Docker server 26.1.3에 접근 가능 | Container 기반 개발을 시작할 수 있음 |
+| NVIDIA runtime | Docker runtime 목록에 `nvidia-container-runtime` 등록 | 이후 GPU Compose profile을 별도 제공할 수 있음 |
+| NVIDIA GPU | RTX 2060, driver 535.230.02, CUDA 12.2 호환 상한 | 6 GiB VRAM 내에서 실행 가능한 모델을 선택해야 함 |
+| PulseAudio | local server와 기본 sink/source 확인 | Voice 컨테이너는 PulseAudio socket 전달 전략이 필요함 |
+| ALSA | PCH ALC1220 analog capture/playback 장치 확인 | 초기 push-to-talk 입력·출력의 Host 장치 기반이 존재함 |
 
-이 Issue에서는 위 문제를 해결하지 않는다. 실제 Local LLM/STT/TTS 연결 전에
-각 항목을 재검증하고 결과를 갱신한다.
+## 아직 검증하지 않은 항목
 
-## Host에서 재확인할 명령
+- 실제 GPU 컨테이너에서 `nvidia-smi`가 동작하는지 확인하지 않았다. 이 작업은
+  컨테이너 이미지 pull을 수반하므로 Host 준비 상태 조사 범위에서 제외했다.
+- 컨테이너에서 PulseAudio socket과 ALSA 장치 전달이 실제 녹음·재생까지
+  동작하는지는 확인하지 않았다.
+- 현재 기본 마이크·스피커가 사용자 의도와 맞는 장치인지는 실제 voice round-trip
+  구현 단계에서 확인한다.
 
-아래 명령은 Host 터미널에서 실행한다. 컨테이너 내부 결과와 혼동하지 않는다.
+실제 Local LLM/STT/TTS 연결 전에는 위 항목을 해당 adapter의 integration test로
+재검증하고 결과를 갱신한다.
+
+## Host 진단 명령
+
+아래 명령은 Host 터미널에서 실행했으며, 컨테이너 내부 결과와 혼동하지 않는다.
 
 ```bash
 nvidia-smi
@@ -56,7 +67,7 @@ arecord -l
 aplay -l
 ```
 
-GPU Container runtime은 NVIDIA driver가 정상화된 뒤에만 확인한다.
+GPU Container runtime은 첫 GPU profile 이미지가 선택된 뒤 확인한다.
 
 ```bash
 docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
