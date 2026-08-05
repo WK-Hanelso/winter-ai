@@ -35,6 +35,42 @@ checkpoint는 Hugging Face LICENSE에서 Apache-2.0을 확인했다. Whisper와 
 다운로드 직전에 선택한 정확한 checkpoint의 model card 및 LICENSE를 다시 기록한다.
 라이선스가 불명확하면 probe 대상에서 제외한다.
 
+## Executed LLM probe — 2026-08-05
+
+선택한 LLM을 Docker 컨테이너에서 실제 실행했다. 이는 애플리케이션 adapter 연결이
+아닌, Milestone 0의 독립 runtime 검증이다.
+
+| Item | Verified value |
+| --- | --- |
+| Base model | [Qwen/Qwen3-4B-Instruct-2507](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507), Apache-2.0 |
+| GGUF conversion | [mradermacher/Qwen3-4B-Instruct-2507-GGUF](https://huggingface.co/mradermacher/Qwen3-4B-Instruct-2507-GGUF) |
+| File | `Qwen3-4B-Instruct-2507.Q4_K_M.gguf` |
+| Size / SHA-256 | 2,497,280,896 bytes / `edabe01d973c31dce0d71eaf7e44628021b23b9bd2cbb93059846dad1cc4e153` |
+| Runtime | llama.cpp `b10276` Vulkan release |
+| Container | `winter-ai:dev` with `libgomp1`, `libvulkan1` |
+| GPU result | RTX 2060 6 GiB; 37/37 layers offloaded through Vulkan |
+| Korean result | one-sentence Korean response generated successfully |
+| Measured result | 13.22 s process time; prompt 27.1 tokens/s; generation 10.7 tokens/s |
+
+The GGUF is a third-party conversion. Its source repository and the original
+Qwen model license are recorded separately; model files remain outside Git.
+
+### Reproduce manually
+
+Download the exact runtime and GGUF yourself, verify the SHA-256 above, then
+run this command on the Host (not inside the development container):
+
+```bash
+docker compose build
+python3 experiments/local_llm_probe.py \
+  --runtime-dir /path/to/llama-b10276 \
+  --model-path /path/to/Qwen3-4B-Instruct-2507.Q4_K_M.gguf
+```
+
+The script mounts both inputs read-only, requests Docker GPU access, and fails
+explicitly if the runtime, model, Docker, or GPU path cannot be used. It never
+downloads a checkpoint or substitutes a fake response.
+
 ## Probe order and acceptance
 
 ### 1. LLM
@@ -53,8 +89,8 @@ checkpoint는 Hugging Face LICENSE에서 Apache-2.0을 확인했다. Whisper와 
 - 공개 또는 직접 작성한 한국어 문장을 합성한다.
 - 생성 시간, audio format, 한국어 고유명사·기술용어 발음을 기록한다.
 
-각 probe는 독립 script, 재현 가능한 설치 명령, 별도 `model` 또는 `voice`
-pytest marker로 관리한다. 기본 `pytest`는 weight 다운로드 없이 계속 통과해야 한다.
+각 probe는 독립 script와 재현 가능한 설치 명령으로 관리한다. 실제 LLM probe는
+명시적 수동 실행이며 기본 `pytest`는 weight 다운로드 없이 계속 통과해야 한다.
 
 ## Explicit non-decisions
 

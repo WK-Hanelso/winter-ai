@@ -6,18 +6,19 @@
 
 ## 현재 상태
 
-프로젝트는 초기 환경 기준을 확정하는 단계입니다. 아직 Dockerfile, Python
-애플리케이션, 모델 런타임, 모델 checkpoint는 추가하지 않았습니다.
+Milestone 0의 기반 구조가 준비되어 있습니다. Docker 개발 이미지, Python
+패키지, Port 계약, deterministic fake adapter, 공유 `CompanionCore`, CLI/Voice
+orchestration 테스트를 갖췄습니다. 실제 장기 기억과 실제 STT/TTS adapter는 아직
+구현하지 않았습니다.
 
-Host의 Docker Engine, NVIDIA GPU runtime, PulseAudio와 기본 녹음·재생 장치는
-검증되었습니다. 실제 GPU 컨테이너 실행과 모델 연결은 아직 수행하지 않았습니다.
+첫 Local LLM probe도 성공했습니다. Docker 안의 llama.cpp Vulkan runtime으로
+Qwen3-4B-Instruct-2507 Q4_K_M을 RTX 2060 6 GiB에서 실행했고, 37/37 레이어가
+GPU에 올라간 상태로 한국어 응답을 생성했습니다. 정확한 모델 출처·해시·성능은
+[모델 선정 문서](docs/model-selection.md)에 기록합니다.
 
-첫 개발 컨테이너는 Python 3.11과 `python:3.11-slim-bookworm`을 기준으로
-구성할 예정입니다. CPU 개발 환경을 기본값으로 두고, GPU와 Voice 장치는
-명시적인 Compose overlay에서만 전달합니다. 선택 근거는
-[ADR-0001](docs/adr/0001-docker-development-baseline.md)에 있습니다.
-
-현재 진행 중인 작업은 [#1 Host/Container baseline 확정](https://github.com/WK-Hanelso/winter-ai/issues/1)입니다.
+CPU 개발 환경을 기본값으로 두고, GPU와 Voice 장치는 명시적인 Compose overlay에서만
+전달합니다. 선택 근거는 [ADR-0001](docs/adr/0001-docker-development-baseline.md)에
+있습니다.
 
 ## 개발 원칙
 
@@ -71,17 +72,25 @@ PulseAudio socket 경로를 확인한 뒤 Voice overlay를 명시합니다.
 docker compose -f compose.yaml -f compose.voice.yaml run --rm dev bash
 ```
 
-이 환경은 아직 모델, Python 패키지, CLI, Voice 애플리케이션을 포함하지 않습니다.
-
-현재는 실제 모델 대신 runtime-독립적인 Port 계약과 구조화된 응답 타입만 정의되어
-있습니다. 테스트는 다음 명령으로 실행합니다.
+현재 구현은 실제 모델 대신 runtime-독립적인 Port 계약과 fake adapter를 기본값으로
+사용합니다. 테스트는 다음 명령으로 실행합니다.
 
 ```bash
 docker compose run --rm dev pytest
 ```
 
-첫 local runtime 후보와 probe 순서는 [모델 선정 문서](docs/model-selection.md)에
-기록합니다. 실제 모델 checkpoint는 아직 내려받지 않았습니다.
+실제 LLM checkpoint는 Git과 Docker 이미지에 넣지 않습니다. 내려받은 파일의 경로를
+명시해 Host에서 다음 수동 probe를 실행할 수 있습니다.
+
+```bash
+python3 experiments/local_llm_probe.py \
+  --runtime-dir /path/to/llama-b10276 \
+  --model-path /path/to/Qwen3-4B-Instruct-2507.Q4_K_M.gguf
+```
+
+이 probe는 Docker GPU를 사용하며, 파일을 read-only로 mount합니다. 모델 파일의
+정확한 SHA-256과 검증 결과는 [모델 선정 문서](docs/model-selection.md)를 따릅니다.
 
 모델 선택값은 `configs/models/`의 Python profile로 관리합니다. 기본값은 `base`,
-RTX 2060 6 GiB profile은 `rtx2060_6gb`, CPU fallback은 `cpu`입니다.
+RTX 2060 6 GiB profile은 `rtx2060_6gb`(Vulkan GPU backend, 37 layers), CPU
+profile은 `cpu`입니다.
