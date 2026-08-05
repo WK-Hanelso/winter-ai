@@ -72,3 +72,10 @@ docker compose -f compose.yaml -f compose.voice.yaml run --rm dev bash
 ```
 
 이 환경은 아직 모델, Python 패키지, CLI, Voice 애플리케이션을 포함하지 않습니다.
+
+현재는 실제 모델 대신 runtime-독립적인 Port 계약과 구조화된 응답 타입만 정의되어
+있습니다. 테스트는 다음 명령으로 실행합니다.
+
+```bash
+docker compose run --rm dev pytest
+```
