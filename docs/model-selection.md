@@ -84,6 +84,37 @@ downloads a checkpoint or substitutes a fake response.
 - 공개 한국어 fixture로 Whisper small의 transcript와 latency를 측정한다.
 - 품질이 부족할 경우 Whisper medium을 비교한다.
 
+#### Executed STT probe — 2026-08-05
+
+`whisper.cpp`의 공식 Docker image와 Whisper small multilingual checkpoint를
+선택했다. `faster-whisper`는 CTranslate2, CUDA, cuDNN version alignment가 추가로
+필요하므로 비교 후보로 남겼다.
+
+| Item | Verified value |
+| --- | --- |
+| Runtime | [ggml-org/whisper.cpp](https://github.com/ggml-org/whisper.cpp), official `main-vulkan` Docker image |
+| Checkpoint | `ggerganov/whisper.cpp` `ggml-small.bin` (multilingual) |
+| Checkpoint SHA-256 | `1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b` |
+| Fixture | [Zeroth-Korean test split](https://huggingface.co/datasets/kresnik/zeroth_korean), CC BY 4.0; 10.4535 s, 16 kHz mono FLAC |
+| Reference text | `몬터규는 자녀들이 사랑을 제대로 못 받고 크면 매우 심각한 결과가 초래된다는 결론을 내렸습니다` |
+| CPU result | local Korean transcript generated in 10.03 s (real-time factor 0.96) |
+| CUDA result | blocked before start: official image requires CUDA >=13.0, while Host driver 535 supports up to CUDA 12.2 |
+
+The generated CPU transcript had several word substitutions, so this is a
+runtime and latency pass, not a Korean accuracy acceptance pass. The fixture,
+audio, and checkpoint are stored outside Git.
+
+Run the explicit CPU probe on the Host with:
+
+```bash
+python3 experiments/stt_probe.py \
+  --model-path /path/to/ggml-small.bin \
+  --audio-path /path/to/korean-fixture.flac
+```
+
+Use `--device cuda` only to request the CUDA image. It does not fall back to
+CPU if Docker GPU initialization fails.
+
 ### 3. TTS
 
 - 공개 또는 직접 작성한 한국어 문장을 합성한다.

@@ -16,6 +16,10 @@ Qwen3-4B-Instruct-2507 Q4_K_M을 RTX 2060 6 GiB에서 실행했고, 37/37 레이
 GPU에 올라간 상태로 한국어 응답을 생성했습니다. 정확한 모델 출처·해시·성능은
 [모델 선정 문서](docs/model-selection.md)에 기록합니다.
 
+한국어 STT도 Whisper small과 공개 Zeroth-Korean fixture로 local CPU 전사에
+성공했습니다. 현재 NVIDIA driver와 공식 CUDA image의 요구 버전이 맞지 않아 STT
+CUDA 경로는 명시적으로 실패하며, 이 제한과 CPU 결과를 같은 문서에 기록합니다.
+
 CPU 개발 환경을 기본값으로 두고, GPU와 Voice 장치는 명시적인 Compose overlay에서만
 전달합니다. 선택 근거는 [ADR-0001](docs/adr/0001-docker-development-baseline.md)에
 있습니다.
@@ -90,6 +94,14 @@ python3 experiments/local_llm_probe.py \
 
 이 probe는 Docker GPU를 사용하며, 파일을 read-only로 mount합니다. 모델 파일의
 정확한 SHA-256과 검증 결과는 [모델 선정 문서](docs/model-selection.md)를 따릅니다.
+
+한국어 STT CPU probe는 다음처럼 실행합니다.
+
+```bash
+python3 experiments/stt_probe.py \
+  --model-path /path/to/ggml-small.bin \
+  --audio-path /path/to/korean-fixture.flac
+```
 
 모델 선택값은 `configs/models/`의 Python profile로 관리합니다. 기본값은 `base`,
 RTX 2060 6 GiB profile은 `rtx2060_6gb`(Vulkan GPU backend, 37 layers), CPU
