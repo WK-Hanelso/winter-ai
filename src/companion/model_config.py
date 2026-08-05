@@ -12,6 +12,7 @@ class ModelRuntimeConfig:
     runtime: str
     model_id: str
     device: str
+    backend: str | None = None
     gpu_layers: int = 0
     quantization: str | None = None
 

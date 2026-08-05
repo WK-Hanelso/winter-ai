@@ -1,0 +1,11 @@
+.env
+.env.*
+/data/
+/models/
+/checkpoints/
+/voice_references/
+/generated_audio/
+*.db
+*.sqlite
+*.wav
+*.mp3
