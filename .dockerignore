@@ -1,0 +1,15 @@
+.git/
+.github/
+.env
+.env.*
+data/
+models/
+checkpoints/
+voice_references/
+generated_audio/
+__pycache__/
+.pytest_cache/
+*.db
+*.sqlite
+*.wav
+*.mp3

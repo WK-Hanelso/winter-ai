@@ -1,0 +1,9 @@
+services:
+  dev:
+    # Use only with PULSE_SOCKET_PATH set to the Host PulseAudio socket.
+    devices:
+      - /dev/snd:/dev/snd
+    environment:
+      PULSE_SERVER: unix:/tmp/pulse/native
+    volumes:
+      - ${PULSE_SOCKET_PATH:?Set PULSE_SOCKET_PATH to the Host PulseAudio socket}:/tmp/pulse/native

@@ -1,0 +1,17 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: winter-ai:dev
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - ./data:/workspace/data
+      - ./models:/workspace/models
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    stdin_open: true
+    tty: true
+    command: ["bash"]
