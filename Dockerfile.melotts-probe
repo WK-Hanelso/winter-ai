@@ -1,0 +1,18 @@
+FROM python:3.9-slim-bookworm
+
+ARG MELOTTS_REF=209145371cff8fc3bd60d7be902ea69cbdb7965a
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y build-essential git libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --branch main https://github.com/myshell-ai/MeloTTS.git /opt/melotts \
+    && test "$(git -C /opt/melotts rev-parse HEAD)" = "$MELOTTS_REF" \
+    && pip install --no-cache-dir -e /opt/melotts \
+    && python -m unidic download
+
+RUN pip install --no-cache-dir "boto3>=1.35"
+
+COPY experiments/melotts_probe_runner.py /opt/probe/melotts_probe_runner.py
+
+ENTRYPOINT ["python", "/opt/probe/melotts_probe_runner.py"]
