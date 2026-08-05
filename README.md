@@ -79,3 +79,6 @@ docker compose -f compose.yaml -f compose.voice.yaml run --rm dev bash
 ```bash
 docker compose run --rm dev pytest
 ```
+
+첫 local runtime 후보와 probe 순서는 [모델 선정 문서](docs/model-selection.md)에
+기록합니다. 실제 모델 checkpoint는 아직 내려받지 않았습니다.
