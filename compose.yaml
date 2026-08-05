@@ -12,6 +12,11 @@ services:
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
     stdin_open: true
     tty: true
     command: ["bash"]

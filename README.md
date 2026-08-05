@@ -66,6 +66,9 @@ docker compose build
 docker compose run --rm dev python --version
 ```
 
+`dev` 서비스는 Docker `local` logging driver를 사용하며, 로그는 10MB 파일 3개로
+제한된다. 장시간 model probe가 Host 디스크를 과도하게 점유하지 않게 하기 위한 설정이다.
+
 GPU 장치가 필요한 후속 adapter 작업에서만 GPU overlay를 명시합니다.
 
 ```bash
