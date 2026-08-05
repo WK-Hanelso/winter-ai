@@ -82,3 +82,6 @@ docker compose run --rm dev pytest
 
 첫 local runtime 후보와 probe 순서는 [모델 선정 문서](docs/model-selection.md)에
 기록합니다. 실제 모델 checkpoint는 아직 내려받지 않았습니다.
+
+모델 선택값은 `configs/models/`의 Python profile로 관리합니다. 기본값은 `base`,
+RTX 2060 6 GiB profile은 `rtx2060_6gb`, CPU fallback은 `cpu`입니다.
