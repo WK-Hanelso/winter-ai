@@ -20,6 +20,9 @@ GPU에 올라간 상태로 한국어 응답을 생성했습니다. 정확한 모
 성공했습니다. 현재 NVIDIA driver와 공식 CUDA image의 요구 버전이 맞지 않아 STT
 CUDA 경로는 명시적으로 실패하며, 이 제한과 CPU 결과를 같은 문서에 기록합니다.
 
+한국어 TTS는 MeloTTS로 local WAV 합성에 성공했습니다. 이는 독립 runtime probe이며
+최종 Companion Voice 또는 특정 인물 음성 복제를 의미하지 않습니다.
+
 CPU 개발 환경을 기본값으로 두고, GPU와 Voice 장치는 명시적인 Compose overlay에서만
 전달합니다. 선택 근거는 [ADR-0001](docs/adr/0001-docker-development-baseline.md)에
 있습니다.
@@ -63,6 +66,9 @@ docker compose build
 docker compose run --rm dev python --version
 ```
 
+`dev` 서비스는 Docker `local` logging driver를 사용하며, 로그는 10MB 파일 3개로
+제한된다. 장시간 model probe가 Host 디스크를 과도하게 점유하지 않게 하기 위한 설정이다.
+
 GPU 장치가 필요한 후속 adapter 작업에서만 GPU overlay를 명시합니다.
 
 ```bash
@@ -101,6 +107,15 @@ python3 experiments/local_llm_probe.py \
 python3 experiments/stt_probe.py \
   --model-path /path/to/ggml-small.bin \
   --audio-path /path/to/korean-fixture.flac
+```
+
+한국어 TTS probe는 별도 pinned Docker image를 build한 뒤 실행합니다.
+
+```bash
+docker build -f Dockerfile.melotts-probe -t winter-ai:melotts-probe .
+python3 experiments/tts_probe.py \
+  --cache-dir /path/outside/git/melotts-cache \
+  --output-path /path/outside/git/melotts-korean.wav
 ```
 
 모델 선택값은 `configs/models/`의 Python profile로 관리합니다. 기본값은 `base`,

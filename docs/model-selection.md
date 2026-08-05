@@ -120,6 +120,34 @@ CPU if Docker GPU initialization fails.
 - 공개 또는 직접 작성한 한국어 문장을 합성한다.
 - 생성 시간, audio format, 한국어 고유명사·기술용어 발음을 기록한다.
 
+#### Executed TTS probe — 2026-08-06
+
+MeloTTS Korean을 첫 runtime으로 선택했다. 공식 GitHub source와 Hugging Face
+checkpoint는 MIT license이며, Korean `KR` speaker와 CPU 실행 예시를 제공한다.
+CosyVoice는 한국어·streaming·prosody 품질을 갖춘 다음 비교 후보로 남긴다.
+
+| Item | Verified value |
+| --- | --- |
+| Runtime / model | [myshell-ai/MeloTTS](https://github.com/myshell-ai/MeloTTS) commit `2091453`; [MeloTTS-Korean](https://huggingface.co/myshell-ai/MeloTTS-Korean), MIT |
+| Execution | pinned Python 3.9 Docker probe image; explicit CPU |
+| Input | `안녕하세요. 로컬 컴패니언의 음성 출력 경로를 확인하고 있습니다.` |
+| Output | 44.1 kHz mono `pcm_s16le` WAV, 6.389048 s |
+| WAV SHA-256 | `e47c498cd131c2efd81511bb1d8b9abf4abf9c714c7fa5ebe1cebd86f8333a0f` |
+
+Run manually on the Host after building the image:
+
+```bash
+docker build -f Dockerfile.melotts-probe -t winter-ai:melotts-probe .
+python3 experiments/tts_probe.py \
+  --cache-dir /path/outside/git/melotts-cache \
+  --output-path /path/outside/git/melotts-korean.wav
+```
+
+The first run downloads the checkpoint to the supplied cache directory. The
+script never uses a remote conversational API and generated audio remains out
+of Git. This probe validates runtime output, not a final Companion voice or
+prosody evaluation.
+
 각 probe는 독립 script와 재현 가능한 설치 명령으로 관리한다. 실제 LLM probe는
 명시적 수동 실행이며 기본 `pytest`는 weight 다운로드 없이 계속 통과해야 한다.
 
