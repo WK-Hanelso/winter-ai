@@ -49,6 +49,10 @@ docker compose run --rm dev python -m companion.user_cli --backend fake
 /status    현재 backend·Identity·저장소 상태
 /history   저장된 대화 기록
 /memories  기억과 lifecycle 상태
+/memory approve 1   번호로 candidate 승인
+/memory activate 1  번호로 approved Memory 활성화
+/memory deprecate 1 번호로 active Memory 폐기
+/memory delete 1    번호로 Memory 영구 삭제
 /help      명령 목록
 /exit      종료
 ```
