@@ -12,6 +12,7 @@ from companion.adapters.llama_cpp import LlamaCppHttpChatModel
 from companion.adapters.sqlite_repository import ConversationRepositoryError, SqliteConversationRepository
 from companion.context import ConversationContextBuilder
 from companion.identity import IdentityRepositoryError, JsonIdentityRepository
+from companion.memory import MemoryRepositoryError, SqliteMemoryRepository
 from companion.core import CompanionCore
 from companion.ports import ChatModel, ConversationRepository
 
@@ -37,7 +38,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="print stored conversation messages and exit",
     )
     actions.add_argument("--show-identity", action="store_true")
+    actions.add_argument("--list-memories", action="store_true")
+    actions.add_argument("--memory-add", help="store explicit user memory as a candidate")
+    actions.add_argument("--memory-approve", metavar="ID")
+    actions.add_argument("--memory-activate", metavar="ID")
     parser.add_argument("--identity-path", type=Path)
+    parser.add_argument("--memory-db", type=Path)
+    parser.add_argument("--memory-kind", default="semantic")
     parser.add_argument(
         "--conversation-db",
         type=Path,
@@ -98,6 +105,8 @@ def run(
     if getattr(args, "show_identity", False):
         print(identity.system_message() if identity else "No identity path selected.", file=stdout)
         return 0
+    if any(getattr(args, name, None) for name in ("list_memories", "memory_add", "memory_approve", "memory_activate")):
+        return _handle_memory(args, stdout)
     if getattr(args, "show_history", False):
         return _show_history(repository, stdout)
     core = CompanionCore(
@@ -146,6 +155,25 @@ def _show_history(repository: ConversationRepository, stdout: TextIO) -> int:
     for message in messages:
         print(f"{message.role}> {message.content}", file=stdout)
     return 0
+
+
+def _handle_memory(args: argparse.Namespace, stdout: TextIO) -> int:
+    if not args.memory_db:
+        print("Memory unavailable: --memory-db is required.", file=stdout); return 1
+    try:
+        repo = SqliteMemoryRepository(args.memory_db)
+        if args.memory_add:
+            memory = repo.add_candidate(kind=args.memory_kind, content=args.memory_add)
+        elif args.memory_approve:
+            memory = repo.transition(args.memory_approve, "approved")
+        elif args.memory_activate:
+            memory = repo.transition(args.memory_activate, "active")
+        else:
+            for memory in repo.list(): print(f"{memory.id} {memory.status} {memory.kind}: {memory.content}", file=stdout)
+            return 0
+    except MemoryRepositoryError as error:
+        print(f"Memory unavailable: {error}", file=stdout); return 1
+    print(f"Memory {memory.id} is {memory.status}.", file=stdout); return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
