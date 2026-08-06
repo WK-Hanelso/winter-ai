@@ -10,6 +10,7 @@ from companion.core import CompanionCore
 from companion.context import ConversationContextBuilder
 from companion.contracts import ChatRequest, ChatResult, ConversationMessage
 from companion.identity import CompanionIdentity
+from companion.memory import ActiveMemoryRetriever, SqliteMemoryRepository
 
 
 class CapturingChatModel:
@@ -76,3 +77,13 @@ def test_core_prefixes_identity_as_system_message() -> None:
     CompanionCore(model, InMemoryConversationRepository(), identity=identity).respond_to_text("안녕")
     assert model.requests[0].messages[0].role == "system"
     assert "You are Winter." in model.requests[0].messages[0].content
+
+
+def test_core_injects_selected_active_memory_as_distinct_system_message(tmp_path) -> None:
+    repository = InMemoryConversationRepository(); memory_repository = SqliteMemoryRepository(tmp_path / "memory.sqlite")
+    memory = memory_repository.add_candidate(kind="preference", content="천우는 Python config를 선호한다")
+    memory_repository.transition(memory.id, "approved"); memory_repository.transition(memory.id, "active")
+    model = CapturingChatModel()
+    CompanionCore(model, repository, memory_retriever=ActiveMemoryRetriever(memory_repository)).respond_to_text("Python config는?")
+    assert model.requests[0].messages[0].role == "system"
+    assert memory.id in model.requests[0].messages[0].content
