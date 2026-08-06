@@ -42,6 +42,17 @@ docker compose run --rm dev python -m companion.user_cli --backend fake
 이미 실행 중인 겨울이에 다시 연결하려면 `./winter chat`, 상태 확인은
 `./winter status`, 모델 서버를 멈추려면 `./winter stop`을 사용합니다.
 
+대화 중에는 아래 명령을 사용할 수 있습니다. 이 명령들은 대화 기록으로 저장되지
+않습니다.
+
+```text
+/status    현재 backend·Identity·저장소 상태
+/history   저장된 대화 기록
+/memories  기억과 lifecycle 상태
+/help      명령 목록
+/exit      종료
+```
+
 첫 Local LLM probe도 성공했습니다. Docker 안의 llama.cpp Vulkan runtime으로
 Qwen3-4B-Instruct-2507 Q4_K_M을 RTX 2060 6 GiB에서 실행했고, 37/37 레이어가
 GPU에 올라간 상태로 한국어 응답을 생성했습니다. 정확한 모델 출처·해시·성능은

@@ -144,6 +144,9 @@ def run(
             return 0
         if not text:
             continue
+        if text.startswith("/"):
+            _handle_interactive_command(text, args, identity, repository, memory_repository, stdout)
+            continue
         if _run_turn(core, text, stdout):
             return 1
 
@@ -158,6 +161,31 @@ def _run_turn(core: CompanionCore, text: str, stdout: TextIO) -> int:
     for candidate_id in response.memory_candidate_ids:
         print(f"Memory candidate {candidate_id} is pending review.", file=stdout)
     return 0
+
+
+def _handle_interactive_command(
+    command: str,
+    args: argparse.Namespace,
+    identity,
+    repository: ConversationRepository,
+    memory_repository: SqliteMemoryRepository | None,
+    stdout: TextIO,
+) -> None:
+    if command == "/help":
+        print("Commands: /status, /history, /memories, /help, /exit", file=stdout)
+    elif command == "/status":
+        name = identity.name if identity else "Identity 없음"
+        print(f"겨울이: {name} | backend: {args.backend} | conversation: {'persistent' if args.conversation_db else 'temporary'} | memory: {'enabled' if memory_repository else 'disabled'}", file=stdout)
+    elif command == "/history":
+        _show_history(repository, stdout)
+    elif command == "/memories":
+        if memory_repository is None:
+            print("Memory is disabled.", file=stdout)
+        else:
+            for memory in memory_repository.list():
+                print(f"{memory.status} {memory.kind}: {memory.content}", file=stdout)
+    else:
+        print(f"Unknown command: {command}. Use /help.", file=stdout)
 
 
 def _show_history(repository: ConversationRepository, stdout: TextIO) -> int:
