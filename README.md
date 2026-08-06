@@ -48,6 +48,18 @@ Host와 Container의 책임, 조사된 환경 사양, 재확인해야 할 항목
 
 세부 제품·아키텍처·개발 규칙은 [AGENTS.md](AGENTS.md)를 기준으로 합니다.
 
+## Companion Identity
+
+Companion의 이름·역할·핵심 성격·가치관·관계 원칙·변경 불가 경계는 model prompt와
+분리된 JSON Identity로 관리합니다. 파일은 개인 설정이므로 `data/` 아래에 두며 Git에
+넣지 않습니다. 아직 이름이나 성격을 임의로 확정하지 않습니다. 형식은
+[Identity 문서](docs/identity.md)를 따릅니다.
+
+```bash
+docker compose run --rm dev python -m companion.cli \
+  --identity-path /workspace/data/identity.json --show-identity
+```
+
 ## 개발 환경 스펙
 
 | 구분 | 기준 |

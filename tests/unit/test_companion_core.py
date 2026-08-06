@@ -9,6 +9,7 @@ from companion.adapters.fake import (
 from companion.core import CompanionCore
 from companion.context import ConversationContextBuilder
 from companion.contracts import ChatRequest, ChatResult, ConversationMessage
+from companion.identity import CompanionIdentity
 
 
 class CapturingChatModel:
@@ -67,3 +68,11 @@ def test_core_sends_bounded_repository_context_to_the_chat_model() -> None:
         ConversationMessage(role="assistant", content="첫 응답"),
         ConversationMessage(role="user", content="현재 질문"),
     )
+
+
+def test_core_prefixes_identity_as_system_message() -> None:
+    model = CapturingChatModel()
+    identity = CompanionIdentity("Winter", "companion", ("calm",), ("honesty",), ("respect",), ("no impersonation",), "1")
+    CompanionCore(model, InMemoryConversationRepository(), identity=identity).respond_to_text("안녕")
+    assert model.requests[0].messages[0].role == "system"
+    assert "You are Winter." in model.requests[0].messages[0].content
