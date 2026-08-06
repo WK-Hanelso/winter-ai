@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import sys
 from typing import Sequence, TextIO
 
 from companion.adapters.fake import AdapterUnavailableError, FakeChatModel, InMemoryConversationRepository
 from companion.adapters.llama_cpp import LlamaCppHttpChatModel
+from companion.adapters.sqlite_repository import ConversationRepositoryError, SqliteConversationRepository
 from companion.core import CompanionCore
-from companion.ports import ChatModel
+from companion.ports import ChatModel, ConversationRepository
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,7 +27,18 @@ def build_parser() -> argparse.ArgumentParser:
         default="http://llm:8080",
         help="local llama.cpp server URL when --backend local is selected",
     )
-    parser.add_argument("--prompt", help="run one turn instead of an interactive session")
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument("--prompt", help="run one turn instead of an interactive session")
+    actions.add_argument(
+        "--show-history",
+        action="store_true",
+        help="print stored conversation messages and exit",
+    )
+    parser.add_argument(
+        "--conversation-db",
+        type=Path,
+        help="explicit local SQLite path for persistent conversation history",
+    )
     return parser
 
 
@@ -35,13 +48,27 @@ def build_chat_model(args: argparse.Namespace) -> ChatModel:
     return LlamaCppHttpChatModel(base_url=args.model_url)
 
 
+def build_conversation_repository(args: argparse.Namespace) -> ConversationRepository:
+    database_path = getattr(args, "conversation_db", None)
+    if database_path is None:
+        return InMemoryConversationRepository()
+    return SqliteConversationRepository(database_path)
+
+
 def run(
     args: argparse.Namespace,
     *,
     stdin: TextIO = sys.stdin,
     stdout: TextIO = sys.stdout,
 ) -> int:
-    core = CompanionCore(build_chat_model(args), InMemoryConversationRepository())
+    try:
+        repository = build_conversation_repository(args)
+    except ConversationRepositoryError as error:
+        print(f"Conversation storage unavailable: {error}", file=stdout)
+        return 1
+    if getattr(args, "show_history", False):
+        return _show_history(repository, stdout)
+    core = CompanionCore(build_chat_model(args), repository)
     if args.prompt is not None:
         return _run_turn(core, args.prompt, stdout)
 
@@ -67,6 +94,17 @@ def _run_turn(core: CompanionCore, text: str, stdout: TextIO) -> int:
         print(f"Companion unavailable: {error}", file=stdout)
         return 1
     print(f"Companion> {response.text}", file=stdout)
+    return 0
+
+
+def _show_history(repository: ConversationRepository, stdout: TextIO) -> int:
+    try:
+        messages = repository.list_messages()
+    except ConversationRepositoryError as error:
+        print(f"Conversation storage unavailable: {error}", file=stdout)
+        return 1
+    for message in messages:
+        print(f"{message.role}> {message.content}", file=stdout)
     return 0
 
 

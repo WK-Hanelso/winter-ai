@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile
     image: winter-ai:dev
     working_dir: /workspace
+    # Keep bind-mounted private data owned by the Host user, not container root.
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     volumes:
       - .:/workspace
       - ./data:/workspace/data

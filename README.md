@@ -108,8 +108,30 @@ docker compose -f compose.yaml -f compose.llm.yaml -f compose.gpu.yaml down
 
 `LLAMA_RUNTIME_DIR`에는 그 아래에 `llama-b10276/llama-server`가 있는 디렉터리를
 지정합니다. `llm`은 Host port를 공개하지 않으며 Compose 내부 `http://llm:8080`에서만
-통신합니다. 현재 CLI의 대화 기록은 프로세스 내 메모리에만 존재합니다. SQLite
-영속화와 이전 턴 context 주입은 다음 이슈에서 추가합니다.
+통신합니다.
+
+대화를 프로그램 재시작 뒤에도 보존하려면 명시적으로 SQLite 경로를 지정합니다.
+Docker 실행에서는 컨테이너 내부 `/tmp`가 실행마다 사라지므로, Host의 `./data`와
+연결된 `/workspace/data` 아래를 사용합니다. `data/`와 `*.sqlite`는 Git에서 제외됩니다.
+Host에서 DB를 직접 수정·삭제할 수 있도록, 처음 한 번 현재 사용자 UID/GID를 넘깁니다.
+
+```bash
+export LOCAL_UID=$(id -u)
+export LOCAL_GID=$(id -g)
+
+docker compose run --rm dev python -m companion.cli \
+  --backend fake \
+  --conversation-db /workspace/data/conversations.sqlite \
+  --prompt "이 대화를 저장해줘"
+
+docker compose run --rm dev python -m companion.cli \
+  --backend fake \
+  --conversation-db /workspace/data/conversations.sqlite \
+  --show-history
+```
+
+현재 저장하는 것은 순서가 있는 원문 대화 기록뿐입니다. 이전 turn을 LLM prompt에
+자동 주입하는 context builder와 장기 기억 lifecycle은 아직 추가하지 않았습니다.
 
 테스트는 다음 명령으로 실행합니다.
 
