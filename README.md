@@ -21,6 +21,27 @@ Voice Identity 0.1은 Python config의 `neutral`, `calm`, `warm`, `serious` Pros
 profile로 시작합니다. 이는 실제 음색 모델과 분리된 말하기 계획이며, 설계 초안은
 [Voice 설계 문서](docs/voice-design.md)에 기록합니다.
 
+## 겨울이 시작하기
+
+먼저 `.env.example`을 `.env`로 복사해 local model 경로를 채운 뒤, 아래 명령으로
+시작합니다. 대화·기억·Identity는 모두 Host의 `data/`에 지속 저장됩니다. `start`는
+LLM 서버를 시작하고 health 확인을 마친 뒤에만 겨울이 CLI를 엽니다.
+
+```bash
+cp .env.example .env
+# .env의 LLAMA_RUNTIME_DIR, LLM_MODEL_DIR, LLM_MODEL_FILE을 수정
+./winter start
+```
+
+개발 중 모델 없이 화면 흐름만 확인하려면 `--backend fake`를 명시합니다.
+
+```bash
+docker compose run --rm dev python -m companion.user_cli --backend fake
+```
+
+이미 실행 중인 겨울이에 다시 연결하려면 `./winter chat`, 상태 확인은
+`./winter status`, 모델 서버를 멈추려면 `./winter stop`을 사용합니다.
+
 첫 Local LLM probe도 성공했습니다. Docker 안의 llama.cpp Vulkan runtime으로
 Qwen3-4B-Instruct-2507 Q4_K_M을 RTX 2060 6 GiB에서 실행했고, 37/37 레이어가
 GPU에 올라간 상태로 한국어 응답을 생성했습니다. 정확한 모델 출처·해시·성능은
