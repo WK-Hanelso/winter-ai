@@ -71,6 +71,21 @@ The script mounts both inputs read-only, requests Docker GPU access, and fails
 explicitly if the runtime, model, Docker, or GPU path cannot be used. It never
 downloads a checkpoint or substitutes a fake response.
 
+### Executed CLI integration — 2026-08-06
+
+Milestone 1의 첫 경로로, 같은 llama.cpp runtime을 long-running local server로
+실행하고 `CompanionCore`의 `ChatModel` HTTP adapter를 통해 CLI와 연결했다.
+CLI 컨테이너는 Compose 내부 주소 `http://llm:8080`만 사용하며, 모델 파일과 runtime은
+Host에서 read-only mount된다. 실제 한국어 입력에 다음 응답을 받았다.
+
+```text
+Companion> 현재는 대화 기반의 언어 모델로 실행되고 있습니다.
+```
+
+이는 한 turn의 actual-runtime integration pass다. 현재 대화 history는 in-memory
+repository에만 남고 model prompt에 이전 turn을 포함하지 않는다. SQLite 영속화와
+conversation context는 후속 Milestone 1 작업이다.
+
 ## Probe order and acceptance
 
 ### 1. LLM
