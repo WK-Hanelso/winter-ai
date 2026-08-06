@@ -95,3 +95,4 @@ def test_cli_reports_explicit_memory_candidate(tmp_path: Path) -> None:
 
     assert exit_code == 0
     assert "Memory candidate" in output.getvalue()
+    assert "기억 후보로 저장했어. 검토 후 활성화할 수 있어." in output.getvalue()

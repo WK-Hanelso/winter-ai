@@ -96,6 +96,7 @@ def test_core_creates_candidate_only_for_explicit_memory_request(tmp_path) -> No
     response = core.respond_to_text("기억해. 나는 Python config를 선호해")
 
     assert len(response.memory_candidate_ids) == 1
+    assert "기억 후보로 저장했어. 검토 후 활성화할 수 있어." in response.text
     candidate = memory_repository.get(response.memory_candidate_ids[0])
     assert (candidate.content, candidate.status, candidate.source) == ("나는 Python config를 선호해", "candidate", "user_explicit")
     assert memory_repository.list_active() == ()

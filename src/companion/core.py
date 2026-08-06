@@ -5,6 +5,8 @@ from companion.memory import ActiveMemoryRetriever, extract_explicit_memory_cont
 from companion.ports import ChatModel, ConversationRepository, MemoryCandidateRepository
 from companion.response import CompanionResponse, ProsodyPlan
 
+_MEMORY_CANDIDATE_NOTICE = "기억 후보로 저장했어. 검토 후 활성화할 수 있어."
+
 
 class CompanionCore:
     """Coordinates a text turn without depending on a concrete model or store."""
@@ -44,11 +46,14 @@ class CompanionCore:
             if selected:
                 messages = (ConversationMessage("system", memory_context(selected)),) + messages
         result = self._chat_model.generate(ChatRequest(prompt=text, messages=messages))
+        response_text = result.text
+        if candidate_ids:
+            response_text = f"{response_text}\n{_MEMORY_CANDIDATE_NOTICE}"
         self._conversation_repository.append(
-            ConversationMessage(role="assistant", content=result.text)
+            ConversationMessage(role="assistant", content=response_text)
         )
         return CompanionResponse(
-            text=result.text,
+            text=response_text,
             dialogue_act="answer",
             prosody=ProsodyPlan(),
             memory_candidate_ids=candidate_ids,

@@ -101,7 +101,9 @@ deprecated·rejected Memory는 절대 전달되지 않습니다.
 
 대화에서 기억을 제안하려면, 내용과 함께 명시적으로 `기억해` 또는 `기억해줘`로
 시작합니다. 예를 들어 아래 입력은 candidate를 하나 만들고, CLI가 후보 ID를 출력합니다.
-후보는 앞의 승인·활성화 명령을 실행하기 전까지 모델 context에 사용되지 않습니다.
+Companion은 “기억 후보로 저장했어”라고 안내하며, Voice도 같은 안내를 음성으로
+재생합니다. 후보는 앞의 승인·활성화 명령을 실행하기 전까지 모델 context에 사용되지
+않습니다.
 
 ```bash
 docker compose run --rm dev python -m companion.cli \
