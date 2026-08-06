@@ -60,6 +60,26 @@ docker compose run --rm dev python -m companion.cli \
   --identity-path /workspace/data/identity.json --show-identity
 ```
 
+## Explicit Memory lifecycle
+
+일반 대화는 자동으로 영구 기억이 되지 않습니다. 사용자가 명시적으로 저장한 항목은
+처음 `candidate`가 되고, 검토 뒤 `approved`, 그 다음 `active`로 전이합니다.
+
+```bash
+docker compose run --rm dev python -m companion.cli \
+  --memory-db /workspace/data/memories.sqlite \
+  --memory-add "천우가 명시적으로 기억해 달라고 한 내용"
+
+docker compose run --rm dev python -m companion.cli \
+  --memory-db /workspace/data/memories.sqlite --memory-approve <memory-id>
+
+docker compose run --rm dev python -m companion.cli \
+  --memory-db /workspace/data/memories.sqlite --memory-activate <memory-id>
+```
+
+현재 active Memory를 자동 검색하거나 모델 입력에 주입하지는 않습니다. 수정·삭제,
+conflict 처리와 retrieval은 다음 Memory 작업에서 추가합니다.
+
 ## 개발 환경 스펙
 
 | 구분 | 기준 |
