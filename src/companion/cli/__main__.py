@@ -155,7 +155,7 @@ def _run_turn(core: CompanionCore, text: str, stdout: TextIO) -> int:
         return 1
     print(f"Companion> {response.text}", file=stdout)
     for candidate_id in response.memory_candidate_ids:
-        print(f"Memory candidate {candidate_id} was saved. Review it before activation.", file=stdout)
+        print(f"Memory candidate {candidate_id} is pending review.", file=stdout)
     return 0
 
 

@@ -52,10 +52,11 @@ def test_cli_and_voice_create_explicit_memory_candidates_through_the_same_core(t
     voice = VoiceOrchestrator(core, FakeSpeechToText("기억해. Voice에서도 후보를 저장해"), FakeTextToSpeech())
 
     cli_response = cli.handle_text("기억해. CLI에서도 후보를 저장해")
-    voice.handle_audio(AudioInput(b"audio", "audio/fake"))
+    voice_output = voice.handle_audio(AudioInput(b"audio", "audio/fake"))
 
     assert len(cli_response.memory_candidate_ids) == 1
     assert [(memory.content, memory.status) for memory in memory_repository.list()] == [
         ("CLI에서도 후보를 저장해", "candidate"),
         ("Voice에서도 후보를 저장해", "candidate"),
     ]
+    assert "기억 후보로 저장했어. 검토 후 활성화할 수 있어." in voice_output.data.decode()
