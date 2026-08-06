@@ -10,8 +10,16 @@ class ProsodyPlan:
 
 
 @dataclass(frozen=True)
+class VerbalStylePlan:
+    tone: str = "neutral"
+    directness: float = 0.7
+    sentence_length: str = "normal"
+
+
+@dataclass(frozen=True)
 class CompanionResponse:
     text: str
     dialogue_act: str
     prosody: ProsodyPlan
     memory_candidate_ids: tuple[str, ...] = ()
+    verbal_style: VerbalStylePlan = VerbalStylePlan()
