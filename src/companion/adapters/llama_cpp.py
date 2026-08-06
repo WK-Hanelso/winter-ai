@@ -18,6 +18,7 @@ class LlamaCppHttpChatModel:
 
     base_url: str
     timeout_seconds: float = 120.0
+    max_tokens: int = 128
 
     def generate(self, request: ChatRequest) -> ChatResult:
         endpoint = f"{self.base_url.rstrip('/')}/v1/chat/completions"
@@ -29,6 +30,7 @@ class LlamaCppHttpChatModel:
                 ]
                 or [{"role": "user", "content": request.prompt}],
                 "stream": False,
+                "max_tokens": self.max_tokens,
             }
         ).encode("utf-8")
         http_request = Request(
