@@ -42,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
     actions.add_argument("--memory-add", help="store explicit user memory as a candidate")
     actions.add_argument("--memory-approve", metavar="ID")
     actions.add_argument("--memory-activate", metavar="ID")
+    actions.add_argument("--memory-deprecate", metavar="ID")
+    actions.add_argument("--memory-replace", nargs=2, metavar=("ID", "CONTENT"))
     parser.add_argument("--identity-path", type=Path)
     parser.add_argument("--memory-db", type=Path)
     parser.add_argument("--memory-kind", default="semantic")
@@ -111,7 +113,7 @@ def run(
     if getattr(args, "show_identity", False):
         print(identity.system_message() if identity else "No identity path selected.", file=stdout)
         return 0
-    if any(getattr(args, name, None) for name in ("list_memories", "memory_add", "memory_approve", "memory_activate")):
+    if any(getattr(args, name, None) for name in ("list_memories", "memory_add", "memory_approve", "memory_activate", "memory_deprecate", "memory_replace")):
         return _handle_memory(args, stdout)
     if getattr(args, "show_history", False):
         return _show_history(repository, stdout)
@@ -175,8 +177,12 @@ def _handle_memory(args: argparse.Namespace, stdout: TextIO) -> int:
             memory = repo.transition(args.memory_approve, "approved")
         elif args.memory_activate:
             memory = repo.transition(args.memory_activate, "active")
+        elif args.memory_deprecate:
+            memory = repo.transition(args.memory_deprecate, "deprecated")
+        elif args.memory_replace:
+            memory = repo.replace(args.memory_replace[0], args.memory_replace[1])
         else:
-            for memory in repo.list(): print(f"{memory.id} {memory.status} {memory.kind}: {memory.content}", file=stdout)
+            for memory in repo.list(): print(f"{memory.id} {memory.status} {memory.kind} supersedes={memory.supersedes}: {memory.content}", file=stdout)
             return 0
     except MemoryRepositoryError as error:
         print(f"Memory unavailable: {error}", file=stdout); return 1

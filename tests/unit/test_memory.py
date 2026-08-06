@@ -25,3 +25,14 @@ def test_retriever_selects_only_related_active_memory(tmp_path: Path) -> None:
         repo.transition(memory.id, "approved"); repo.transition(memory.id, "active")
     assert ActiveMemoryRetriever(repo).retrieve("Python config는 어떻게 관리해?") == (repo.get(related.id),)
     assert pending.id not in {memory.id for memory in ActiveMemoryRetriever(repo).retrieve("Python config")}
+
+def test_replacement_deprecates_old_memory_only_when_replacement_activates(tmp_path: Path) -> None:
+    repo = SqliteMemoryRepository(tmp_path / "memory.sqlite")
+    old = repo.add_candidate(kind="preference", content="Python config를 선호한다")
+    repo.transition(old.id, "approved"); repo.transition(old.id, "active")
+    replacement = repo.replace(old.id, "YAML config를 선호한다")
+    assert replacement.status == "candidate" and replacement.supersedes == old.id
+    assert repo.get(old.id).status == "active"
+    repo.transition(replacement.id, "approved"); repo.transition(replacement.id, "active")
+    assert repo.get(old.id).status == "deprecated"
+    assert repo.get(replacement.id).status == "active"

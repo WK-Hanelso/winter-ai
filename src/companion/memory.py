@@ -28,7 +28,17 @@ class SqliteMemoryRepository:
         allowed = {"candidate": ("approved", "rejected"), "approved": ("active", "rejected"), "active": ("deprecated",)}
         if status not in allowed.get(current.status, ()):
             raise MemoryRepositoryError(f"cannot transition memory {memory_id} from {current.status} to {status}")
-        self._write("UPDATE memories SET status = ?, updated_at = ? WHERE id = ?", (status, _now(), memory_id)); return self.get(memory_id)
+        self._write("UPDATE memories SET status = ?, updated_at = ? WHERE id = ?", (status, _now(), memory_id))
+        updated = self.get(memory_id)
+        if status == "active" and updated.supersedes:
+            old = self.get(updated.supersedes)
+            if old.status == "active": self._write("UPDATE memories SET status = ?, updated_at = ? WHERE id = ?", ("deprecated", _now(), old.id))
+        return updated
+    def replace(self, memory_id: str, content: str) -> Memory:
+        old = self.get(memory_id)
+        replacement = self.add_candidate(kind=old.kind, content=content, source="user_edit", importance=old.importance, confidence=old.confidence)
+        self._write("UPDATE memories SET supersedes = ? WHERE id = ?", (old.id, replacement.id))
+        return self.get(replacement.id)
     def get(self, memory_id: str) -> Memory:
         try:
             with self._connect() as c: row = c.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()

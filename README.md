@@ -52,8 +52,8 @@ Host와 Container의 책임, 조사된 환경 사양, 재확인해야 할 항목
 
 Companion의 이름·역할·핵심 성격·가치관·관계 원칙·변경 불가 경계는 model prompt와
 분리된 JSON Identity로 관리합니다. 파일은 개인 설정이므로 `data/` 아래에 두며 Git에
-넣지 않습니다. 아직 이름이나 성격을 임의로 확정하지 않습니다. 형식은
-[Identity 문서](docs/identity.md)를 따릅니다.
+넣지 않습니다. 현재 초기 이름은 **겨울이**이며, 그 밖의 Core Persona는 사용자 승인
+없이 자동 변경하지 않습니다. 형식은 [Identity 문서](docs/identity.md)를 따릅니다.
 
 ```bash
 docker compose run --rm dev python -m companion.cli \
@@ -77,10 +77,27 @@ docker compose run --rm dev python -m companion.cli \
   --memory-db /workspace/data/memories.sqlite --memory-activate <memory-id>
 ```
 
-현재 active Memory를 자동 검색하거나 모델 입력에 주입하지는 않습니다. 수정·삭제,
-conflict 처리는 다음 Memory 작업에서 추가합니다. 현재는 active Memory 중 현재 질문과
-keyword가 겹치는 최대 3개·총 1,000자만 별도 system context로 Local LLM에 전달합니다.
-candidate·approved·deprecated·rejected Memory는 절대 전달되지 않습니다.
+기억의 내용을 바꿀 때는 기존 행을 덮어쓰지 않습니다. `--memory-replace`는 새
+`candidate`를 만들고 기존 기억의 ID를 `supersedes`로 기록합니다. 새 항목이
+`active`가 되는 순간에만 기존 active 항목을 `deprecated`로 전환하므로, 검토 중인
+수정 때문에 현재 기억을 잃지 않습니다.
+
+```bash
+docker compose run --rm dev python -m companion.cli \
+  --memory-db /workspace/data/memories.sqlite \
+  --memory-replace <memory-id> "수정할 내용"
+
+docker compose run --rm dev python -m companion.cli \
+  --memory-db /workspace/data/memories.sqlite --memory-deprecate <memory-id>
+
+docker compose run --rm dev python -m companion.cli \
+  --memory-db /workspace/data/memories.sqlite --list-memories
+```
+
+`deprecated`는 이력 보존을 위한 논리적 삭제입니다. 물리 삭제와 자동 conflict 판정은
+아직 제공하지 않습니다. 현재는 active Memory 중 현재 질문과 keyword가 겹치는 최대
+3개·총 1,000자만 별도 system context로 Local LLM에 전달합니다. candidate·approved·
+deprecated·rejected Memory는 절대 전달되지 않습니다.
 
 ## 개발 환경 스펙
 
@@ -168,8 +185,8 @@ docker compose run --rm dev python -m companion.cli \
 현재 저장하는 것은 순서가 있는 원문 대화 기록뿐입니다. Local CLI는 기본적으로 최근
 12개 메시지와 총 4,000자 안의 기록을 다음 모델 요청에 함께 넣습니다. 필요하면
 `--context-max-messages`, `--context-max-characters`로 한도를 낮출 수 있습니다.
-이는 당장 대화 흐름을 잇기 위한 context이며, 장기 기억 lifecycle은 아직 구현하지
-않았습니다.
+이는 당장 대화 흐름을 잇기 위한 context입니다. 장기 기억은 명시적 저장과 lifecycle을
+통해서만 관리하며, 자동 영구 저장하지 않습니다.
 
 테스트는 다음 명령으로 실행합니다.
 
