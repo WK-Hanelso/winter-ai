@@ -13,6 +13,13 @@ RUN git clone --depth 1 --branch main https://github.com/myshell-ai/MeloTTS.git 
 
 RUN pip install --no-cache-dir "boto3>=1.35"
 
+# MeloTTS Korean lazily installs these at first synthesis.  Bake them into the
+# image so the already-running service process never has to import a package it
+# just installed.
+RUN pip install --no-cache-dir python-mecab-ko python-mecab-ko-dic \
+    && python -c "import nltk; nltk.download('averaged_perceptron_tagger'); nltk.download('cmudict')"
+
 COPY experiments/melotts_probe_runner.py /opt/probe/melotts_probe_runner.py
+COPY experiments/melotts_http_server.py /opt/probe/melotts_http_server.py
 
 ENTRYPOINT ["python", "/opt/probe/melotts_probe_runner.py"]

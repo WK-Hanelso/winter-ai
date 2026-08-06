@@ -44,6 +44,7 @@ def test_llama_adapter_posts_openai_compatible_request(monkeypatch: pytest.Monke
     assert json.loads(captured["body"]) == {
         "messages": [{"role": "user", "content": "안녕"}],
         "stream": False,
+        "max_tokens": 128,
     }
     assert captured["timeout"] == 120.0
 

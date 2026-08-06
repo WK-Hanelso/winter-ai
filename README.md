@@ -143,6 +143,63 @@ docker compose run --rm dev python -m companion.cli \
 docker compose run --rm dev pytest
 ```
 
+## Voice push-to-talk (manual)
+
+Voice는 CLI와 같은 `CompanionCore`, SQLite DB, recent context를 사용합니다. 먼저
+local LLM/STT/TTS services를 시작합니다. 아래 경로는 모두 Host 경로입니다.
+
+```bash
+export LOCAL_UID=$(id -u)
+export LOCAL_GID=$(id -g)
+export LLAMA_RUNTIME_DIR=/path/to/llama-runtime-parent
+export LLM_MODEL_DIR=/path/to/gguf-directory
+export LLM_MODEL_FILE=Qwen3-4B-Instruct-2507.Q4_K_M.gguf
+export STT_MODEL_DIR=/path/to/whisper-model-directory
+export STT_MODEL_FILE=ggml-small.bin
+export TTS_CACHE_DIR=/path/outside/git/melotts-cache
+export PULSE_SOCKET_PATH=/run/user/$(id -u)/pulse/native
+
+docker compose -f compose.yaml -f compose.llm.yaml -f compose.voice-runtimes.yaml \
+  -f compose.gpu.yaml up -d llm stt tts
+```
+
+모델이 실제 요청을 처리할 준비가 될 때까지 기다린 뒤, 아래 초기화 명령을 한 번
+실행합니다. 마지막 `Companion is ready` 메시지가 사용자에게 말하거나 입력해도 되는
+첫 준비 완료 알림입니다.
+
+```bash
+docker compose -f compose.yaml -f compose.llm.yaml -f compose.voice-runtimes.yaml \
+  -f compose.gpu.yaml run --rm dev python -m companion.voice.init
+```
+
+Voice에서 이 첫 알림까지 음성으로 듣고 싶다면 PulseAudio overlay를 포함하고
+`--notify voice`를 선택합니다. CLI에서는 기본 `--notify text`가 같은 이벤트를 print합니다.
+
+```bash
+docker compose -f compose.yaml -f compose.llm.yaml -f compose.voice-runtimes.yaml \
+  -f compose.voice.yaml -f compose.gpu.yaml run --rm dev \
+  python -m companion.voice.init --notify voice
+```
+
+Host PulseAudio socket와 `/dev/snd`를 명시적으로 전달한 뒤 Voice CLI를 실행합니다.
+Enter를 한 번 눌러 녹음을 시작하고, 말한 뒤 Enter를 다시 눌러 종료합니다.
+
+```bash
+docker compose -f compose.yaml -f compose.llm.yaml -f compose.voice-runtimes.yaml \
+  -f compose.voice.yaml -f compose.gpu.yaml run --rm dev \
+  python -m companion.voice --conversation-db /workspace/data/conversations.sqlite
+```
+
+마이크 없이 파이프를 먼저 확인하려면 `--input-audio`에 mounted WAV 경로를 주고,
+스피커 확인을 건너뛰려면 `--no-playback`을 추가합니다. 실제 device/daemon 오류는
+fake adapter로 전환하지 않고 `Voice unavailable:`로 표시합니다. 실행이 끝나면
+서비스를 종료합니다.
+
+```bash
+docker compose -f compose.yaml -f compose.llm.yaml -f compose.voice-runtimes.yaml \
+  -f compose.gpu.yaml down
+```
+
 실제 LLM checkpoint는 Git과 Docker 이미지에 넣지 않습니다. 내려받은 파일의 경로를
 명시해 Host에서 다음 수동 probe를 실행할 수 있습니다.
 

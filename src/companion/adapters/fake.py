@@ -48,6 +48,29 @@ class FakeTextToSpeech:
 
 
 @dataclass
+class FakeAudioRecorder:
+    audio: AudioInput = AudioInput(data=b"fake audio", media_type="audio/fake")
+    started: bool = False
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> AudioInput:
+        if not self.started:
+            raise AdapterUnavailableError("fake recorder was not started")
+        self.started = False
+        return self.audio
+
+
+@dataclass
+class FakeAudioPlayer:
+    played: list[AudioOutput] = field(default_factory=list)
+
+    def play(self, audio: AudioOutput) -> None:
+        self.played.append(audio)
+
+
+@dataclass
 class InMemoryConversationRepository:
     _messages: list[ConversationMessage] = field(default_factory=list)
 

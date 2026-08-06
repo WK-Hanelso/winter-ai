@@ -2,6 +2,8 @@ import pytest
 
 from companion.adapters.fake import (
     AdapterUnavailableError,
+    FakeAudioPlayer,
+    FakeAudioRecorder,
     FakeChatModel,
     FakeSpeechToText,
     FakeTextToSpeech,
@@ -42,3 +44,17 @@ def test_voice_propagates_stt_failure_without_calling_core() -> None:
     with pytest.raises(AdapterUnavailableError, match="stt is unavailable"):
         voice.handle_audio(AudioInput(b"audio", "audio/fake"))
     assert repository.list_messages() == ()
+
+
+def test_voice_push_to_talk_uses_recorder_core_tts_and_player() -> None:
+    repository = InMemoryConversationRepository()
+    voice = VoiceOrchestrator(CompanionCore(FakeChatModel(), repository), FakeSpeechToText(), FakeTextToSpeech())
+    player = FakeAudioPlayer()
+
+    voice.push_to_talk(FakeAudioRecorder(), player)
+
+    assert player.played[0].data == b"fake: fake transcript"
+    assert [(message.role, message.content) for message in repository.list_messages()] == [
+        ("user", "fake transcript"),
+        ("assistant", "fake: fake transcript"),
+    ]
