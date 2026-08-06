@@ -11,6 +11,7 @@ from companion.adapters.fake import AdapterUnavailableError, FakeChatModel, InMe
 from companion.adapters.llama_cpp import LlamaCppHttpChatModel
 from companion.adapters.sqlite_repository import ConversationRepositoryError, SqliteConversationRepository
 from companion.context import ConversationContextBuilder
+from companion.identity import IdentityRepositoryError, JsonIdentityRepository
 from companion.core import CompanionCore
 from companion.ports import ChatModel, ConversationRepository
 
@@ -35,6 +36,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print stored conversation messages and exit",
     )
+    actions.add_argument("--show-identity", action="store_true")
+    parser.add_argument("--identity-path", type=Path)
     parser.add_argument(
         "--conversation-db",
         type=Path,
@@ -86,6 +89,15 @@ def run(
     except ConversationRepositoryError as error:
         print(f"Conversation storage unavailable: {error}", file=stdout)
         return 1
+    try:
+        identity_path = getattr(args, "identity_path", None)
+        identity = JsonIdentityRepository(identity_path).load() if identity_path else None
+    except IdentityRepositoryError as error:
+        print(f"Companion identity unavailable: {error}", file=stdout)
+        return 1
+    if getattr(args, "show_identity", False):
+        print(identity.system_message() if identity else "No identity path selected.", file=stdout)
+        return 0
     if getattr(args, "show_history", False):
         return _show_history(repository, stdout)
     core = CompanionCore(
@@ -95,6 +107,7 @@ def run(
             max_messages=getattr(args, "context_max_messages", 12),
             max_characters=getattr(args, "context_max_characters", 4000),
         ),
+        identity,
     )
     if args.prompt is not None:
         return _run_turn(core, args.prompt, stdout)
