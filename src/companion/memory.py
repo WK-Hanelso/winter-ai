@@ -7,6 +7,8 @@ import sqlite3
 from uuid import uuid4
 import re
 
+_EXPLICIT_MEMORY_REQUEST = re.compile(r"^\s*기억해(?:\s*줘)?[.!,:]?\s+(.+?)\s*$")
+
 class MemoryRepositoryError(RuntimeError): pass
 
 @dataclass(frozen=True)
@@ -84,4 +86,10 @@ class ActiveMemoryRetriever:
 
 def memory_context(memories: tuple[Memory, ...]) -> str:
     return "Relevant active user memories:\n" + "\n".join(f"- [{m.id} | {m.kind}] {m.content}" for m in memories)
+
+def extract_explicit_memory_content(text: str) -> str | None:
+    """Return content only for an unambiguous Korean memory request."""
+    match = _EXPLICIT_MEMORY_REQUEST.match(text)
+    return match.group(1).strip() if match else None
+
 def _terms(text: str) -> set[str]: return set(re.findall(r"[0-9A-Za-z가-힣]+", text.lower()))

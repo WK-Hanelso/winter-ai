@@ -14,3 +14,4 @@ class CompanionResponse:
     text: str
     dialogue_act: str
     prosody: ProsodyPlan
+    memory_candidate_ids: tuple[str, ...] = ()

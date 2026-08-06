@@ -80,3 +80,18 @@ def test_cli_reports_unavailable_conversation_storage(tmp_path: Path) -> None:
 
     assert exit_code == 1
     assert output.getvalue().startswith("Conversation storage unavailable:")
+
+
+def test_cli_reports_explicit_memory_candidate(tmp_path: Path) -> None:
+    output = StringIO()
+
+    exit_code = run(
+        Namespace(
+            backend="fake", model_url="http://unused", prompt="기억해. Python config를 선호해",
+            memory_db=tmp_path / "memories.sqlite",
+        ),
+        stdout=output,
+    )
+
+    assert exit_code == 0
+    assert "Memory candidate" in output.getvalue()
