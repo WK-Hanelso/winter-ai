@@ -7,6 +7,7 @@ import pytest
 from companion.adapters.fake import AdapterUnavailableError
 from companion.adapters.llama_cpp import LlamaCppHttpChatModel
 from companion.contracts import ChatRequest
+from companion.contracts import ConversationMessage
 
 
 class FakeHttpResponse:
@@ -45,6 +46,32 @@ def test_llama_adapter_posts_openai_compatible_request(monkeypatch: pytest.Monke
         "stream": False,
     }
     assert captured["timeout"] == 120.0
+
+
+def test_llama_adapter_sends_structured_context_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(request: object, timeout: float) -> FakeHttpResponse:
+        captured["body"] = request.data  # type: ignore[attr-defined]
+        return FakeHttpResponse('{"choices": [{"message": {"content": "응답"}}]}'.encode())
+
+    monkeypatch.setattr("companion.adapters.llama_cpp.urlopen", fake_urlopen)
+    request = ChatRequest(
+        prompt="현재 질문",
+        messages=(
+            ConversationMessage(role="user", content="첫 질문"),
+            ConversationMessage(role="assistant", content="첫 답변"),
+            ConversationMessage(role="user", content="현재 질문"),
+        ),
+    )
+
+    LlamaCppHttpChatModel("http://llm:8080").generate(request)
+
+    assert json.loads(captured["body"])["messages"] == [
+        {"role": "user", "content": "첫 질문"},
+        {"role": "assistant", "content": "첫 답변"},
+        {"role": "user", "content": "현재 질문"},
+    ]
 
 
 def test_llama_adapter_explains_unavailable_server(monkeypatch: pytest.MonkeyPatch) -> None:

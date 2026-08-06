@@ -10,6 +10,7 @@ from typing import Sequence, TextIO
 from companion.adapters.fake import AdapterUnavailableError, FakeChatModel, InMemoryConversationRepository
 from companion.adapters.llama_cpp import LlamaCppHttpChatModel
 from companion.adapters.sqlite_repository import ConversationRepositoryError, SqliteConversationRepository
+from companion.context import ConversationContextBuilder
 from companion.core import CompanionCore
 from companion.ports import ChatModel, ConversationRepository
 
@@ -39,7 +40,26 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="explicit local SQLite path for persistent conversation history",
     )
+    parser.add_argument(
+        "--context-max-messages",
+        type=_positive_int,
+        default=12,
+        help="maximum recent messages included in a local chat request (default: 12)",
+    )
+    parser.add_argument(
+        "--context-max-characters",
+        type=_positive_int,
+        default=4000,
+        help="maximum characters included in a local chat request (default: 4000)",
+    )
     return parser
+
+
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return parsed
 
 
 def build_chat_model(args: argparse.Namespace) -> ChatModel:
@@ -68,7 +88,14 @@ def run(
         return 1
     if getattr(args, "show_history", False):
         return _show_history(repository, stdout)
-    core = CompanionCore(build_chat_model(args), repository)
+    core = CompanionCore(
+        build_chat_model(args),
+        repository,
+        ConversationContextBuilder(
+            max_messages=getattr(args, "context_max_messages", 12),
+            max_characters=getattr(args, "context_max_characters", 4000),
+        ),
+    )
     if args.prompt is not None:
         return _run_turn(core, args.prompt, stdout)
 
