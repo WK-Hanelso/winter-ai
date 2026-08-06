@@ -4,6 +4,7 @@ from companion.identity import CompanionIdentity
 from companion.memory import ActiveMemoryRetriever, extract_explicit_memory_content, memory_context
 from companion.ports import ChatModel, ConversationRepository, MemoryCandidateRepository
 from companion.response import CompanionResponse, ProsodyPlan
+from companion.voice_profile import ProsodyPlanner
 
 _MEMORY_CANDIDATE_NOTICE = "기억 후보로 저장했어. 검토 후 활성화할 수 있어."
 
@@ -19,6 +20,7 @@ class CompanionCore:
         identity: CompanionIdentity | None = None,
         memory_retriever: ActiveMemoryRetriever | None = None,
         memory_repository: MemoryCandidateRepository | None = None,
+        prosody_planner: ProsodyPlanner | None = None,
     ) -> None:
         self._chat_model = chat_model
         self._conversation_repository = conversation_repository
@@ -26,6 +28,7 @@ class CompanionCore:
         self._identity = identity
         self._memory_retriever = memory_retriever
         self._memory_repository = memory_repository
+        self._prosody_planner = prosody_planner or ProsodyPlanner()
 
     def respond_to_text(self, text: str) -> CompanionResponse:
         self._conversation_repository.append(ConversationMessage(role="user", content=text))
@@ -49,12 +52,13 @@ class CompanionCore:
         response_text = result.text
         if candidate_ids:
             response_text = f"{response_text}\n{_MEMORY_CANDIDATE_NOTICE}"
+        dialogue_act = "memory_candidate" if candidate_ids else "answer"
         self._conversation_repository.append(
             ConversationMessage(role="assistant", content=response_text)
         )
         return CompanionResponse(
             text=response_text,
-            dialogue_act="answer",
-            prosody=ProsodyPlan(),
+            dialogue_act=dialogue_act,
+            prosody=self._prosody_planner.plan(dialogue_act),
             memory_candidate_ids=candidate_ids,
         )

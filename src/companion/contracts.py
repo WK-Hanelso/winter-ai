@@ -27,6 +27,9 @@ class Transcript:
 class SpeechRequest:
     text: str
     emotion: str = "neutral"
+    pace: float = 1.0
+    energy: float = 1.0
+    pitch_offset: float = 0.0
 
 
 @dataclass(frozen=True)

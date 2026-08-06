@@ -12,4 +12,10 @@ class VoiceOrchestrator:
     def handle_audio(self, audio: AudioInput) -> AudioOutput:
         transcript = self._stt.transcribe(audio)
         response = self._core.respond_to_text(transcript.text)
-        return self._tts.synthesize(SpeechRequest(text=response.text, emotion=response.prosody.emotion))
+        return self._tts.synthesize(SpeechRequest(
+            text=response.text,
+            emotion=response.prosody.emotion,
+            pace=response.prosody.pace,
+            energy=response.prosody.energy,
+            pitch_offset=response.prosody.pitch_offset,
+        ))
