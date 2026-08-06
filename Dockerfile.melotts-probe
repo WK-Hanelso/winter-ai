@@ -9,9 +9,12 @@ RUN apt-get update \
 RUN git clone --depth 1 --branch main https://github.com/myshell-ai/MeloTTS.git /opt/melotts \
     && test "$(git -C /opt/melotts rev-parse HEAD)" = "$MELOTTS_REF" \
     && pip install --no-cache-dir -e /opt/melotts \
-    && python -m unidic download
+    && python -m unidic download \
+    && python -c "import nltk; nltk.download('averaged_perceptron_tagger'); nltk.download('cmudict')"
 
-RUN pip install --no-cache-dir "boto3>=1.35"
+COPY requirements/melotts-probe.lock /tmp/melotts-probe.lock
+RUN pip install --no-cache-dir -r /tmp/melotts-probe.lock \
+    && python -c "from melo.api import TTS"
 
 COPY experiments/melotts_probe_runner.py /opt/probe/melotts_probe_runner.py
 
