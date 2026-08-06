@@ -12,11 +12,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--text", required=True)
     parser.add_argument("--output-path", type=Path, required=True)
+    parser.add_argument("--speed", type=float, default=1.0)
     args = parser.parse_args()
 
     args.output_path.parent.mkdir(parents=True, exist_ok=True)
     model = TTS(language="KR", device="cpu")
-    model.tts_to_file(args.text, model.hps.data.spk2id["KR"], str(args.output_path), speed=1.0)
+    model.tts_to_file(args.text, model.hps.data.spk2id["KR"], str(args.output_path), speed=args.speed)
     return 0
 
 

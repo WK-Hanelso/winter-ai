@@ -11,4 +11,4 @@ def test_tts_probe_uses_separate_cache_and_output_mounts(tmp_path: Path) -> None
 
     assert f"{cache_dir}:/root/.cache:rw" in command
     assert f"{output_path.parent}:/output:rw" in command
-    assert command[-4:] == ["--text", "안녕", "--output-path", "/output/output.wav"]
+    assert command[-6:] == ["--text", "안녕", "--output-path", "/output/output.wav", "--speed", "1.0"]

@@ -11,7 +11,7 @@ import subprocess
 DEFAULT_TEXT = "안녕하세요. 로컬 컴패니언의 음성 출력 경로를 확인하고 있습니다."
 
 
-def build_command(cache_dir: Path, output_path: Path, text: str) -> list[str]:
+def build_command(cache_dir: Path, output_path: Path, text: str, speed: float = 1.0) -> list[str]:
     return [
         "docker", "run", "--rm",
         "-v", f"{cache_dir}:/root/.cache:rw",
@@ -19,6 +19,7 @@ def build_command(cache_dir: Path, output_path: Path, text: str) -> list[str]:
         "winter-ai:melotts-probe",
         "--text", text,
         "--output-path", f"/output/{output_path.name}",
+        "--speed", str(speed),
     ]
 
 
@@ -27,10 +28,11 @@ def main() -> int:
     parser.add_argument("--cache-dir", type=Path, required=True)
     parser.add_argument("--output-path", type=Path, required=True)
     parser.add_argument("--text", default=DEFAULT_TEXT)
+    parser.add_argument("--speed", type=float, default=1.0)
     args = parser.parse_args()
     args.cache_dir.mkdir(parents=True, exist_ok=True)
     args.output_path.parent.mkdir(parents=True, exist_ok=True)
-    command = build_command(args.cache_dir.resolve(), args.output_path.resolve(), args.text)
+    command = build_command(args.cache_dir.resolve(), args.output_path.resolve(), args.text, args.speed)
     print("Running:", shlex.join(command), flush=True)
     return subprocess.run(command, check=False).returncode
 
