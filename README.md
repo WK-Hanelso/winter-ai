@@ -6,12 +6,16 @@
 
 ## 현재 상태
 
-Milestone 0의 기반 구조와 Milestone 1의 첫 CLI 경로가 준비되어 있습니다. Docker
-개발 이미지, Python 패키지, Port 계약, deterministic fake adapter, 공유
-`CompanionCore`, CLI/Voice orchestration 테스트를 갖췄습니다. 실제 local
-llama.cpp server를 선택하면 CLI가 `CompanionCore`를 거쳐 Qwen3 응답을 받습니다.
-대화는 SQLite에 영속화되며, Local CLI는 제한된 최근 대화 context를 다음 요청에
-포함합니다. 실제 Voice adapter는 아직 구현하지 않았습니다.
+Milestone 0의 기반 구조, Milestone 1의 CLI 경로, Milestone 2의 Identity·명시적
+Memory lifecycle이 준비되어 있습니다. Docker 개발 이미지, Python 패키지, Port 계약,
+deterministic fake adapter, 공유 `CompanionCore`, CLI/Voice orchestration 테스트를
+갖췄습니다. 실제 local llama.cpp server를 선택하면 CLI가 `CompanionCore`를 거쳐
+Qwen3 응답을 받습니다. 대화는 SQLite에 영속화되며, Local CLI는 제한된 최근 대화
+context를 다음 요청에 포함합니다. 실제 Voice adapter는 아직 구현하지 않았습니다.
+
+Memory는 대화의 명시적 `기억해` 요청에서만 후보로 생성되고, 사용자 검토 뒤에만
+활성화됩니다. 수정 이력, 논리적 폐기, 명시적 물리 삭제를 지원합니다. M2의 수직 단면
+검증 결과와 알려진 한계는 [M2 검증 문서](docs/milestone-2-validation.md)에 기록합니다.
 
 첫 Local LLM probe도 성공했습니다. Docker 안의 llama.cpp Vulkan runtime으로
 Qwen3-4B-Instruct-2507 Q4_K_M을 RTX 2060 6 GiB에서 실행했고, 37/37 레이어가
