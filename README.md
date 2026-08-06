@@ -17,6 +17,10 @@ Memory는 대화의 명시적 `기억해` 요청에서만 후보로 생성되고
 활성화됩니다. 수정 이력, 논리적 폐기, 명시적 물리 삭제를 지원합니다. M2의 수직 단면
 검증 결과와 알려진 한계는 [M2 검증 문서](docs/milestone-2-validation.md)에 기록합니다.
 
+Voice Identity 0.1은 Python config의 `neutral`, `calm`, `warm`, `serious` Prosody
+profile로 시작합니다. 이는 실제 음색 모델과 분리된 말하기 계획이며, 설계 초안은
+[Voice 설계 문서](docs/voice-design.md)에 기록합니다.
+
 첫 Local LLM probe도 성공했습니다. Docker 안의 llama.cpp Vulkan runtime으로
 Qwen3-4B-Instruct-2507 Q4_K_M을 RTX 2060 6 GiB에서 실행했고, 37/37 레이어가
 GPU에 올라간 상태로 한국어 응답을 생성했습니다. 정확한 모델 출처·해시·성능은
