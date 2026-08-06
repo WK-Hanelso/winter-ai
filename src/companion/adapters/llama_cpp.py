@@ -23,7 +23,11 @@ class LlamaCppHttpChatModel:
         endpoint = f"{self.base_url.rstrip('/')}/v1/chat/completions"
         payload = json.dumps(
             {
-                "messages": [{"role": "user", "content": request.prompt}],
+                "messages": [
+                    {"role": message.role, "content": message.content}
+                    for message in request.messages
+                ]
+                or [{"role": "user", "content": request.prompt}],
                 "stream": False,
             }
         ).encode("utf-8")

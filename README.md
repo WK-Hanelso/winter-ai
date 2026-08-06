@@ -10,7 +10,8 @@ Milestone 0의 기반 구조와 Milestone 1의 첫 CLI 경로가 준비되어 �
 개발 이미지, Python 패키지, Port 계약, deterministic fake adapter, 공유
 `CompanionCore`, CLI/Voice orchestration 테스트를 갖췄습니다. 실제 local
 llama.cpp server를 선택하면 CLI가 `CompanionCore`를 거쳐 Qwen3 응답을 받습니다.
-대화 SQLite 영속화와 실제 Voice adapter는 아직 구현하지 않았습니다.
+대화는 SQLite에 영속화되며, Local CLI는 제한된 최근 대화 context를 다음 요청에
+포함합니다. 실제 Voice adapter는 아직 구현하지 않았습니다.
 
 첫 Local LLM probe도 성공했습니다. Docker 안의 llama.cpp Vulkan runtime으로
 Qwen3-4B-Instruct-2507 Q4_K_M을 RTX 2060 6 GiB에서 실행했고, 37/37 레이어가
@@ -130,8 +131,11 @@ docker compose run --rm dev python -m companion.cli \
   --show-history
 ```
 
-현재 저장하는 것은 순서가 있는 원문 대화 기록뿐입니다. 이전 turn을 LLM prompt에
-자동 주입하는 context builder와 장기 기억 lifecycle은 아직 추가하지 않았습니다.
+현재 저장하는 것은 순서가 있는 원문 대화 기록뿐입니다. Local CLI는 기본적으로 최근
+12개 메시지와 총 4,000자 안의 기록을 다음 모델 요청에 함께 넣습니다. 필요하면
+`--context-max-messages`, `--context-max-characters`로 한도를 낮출 수 있습니다.
+이는 당장 대화 흐름을 잇기 위한 context이며, 장기 기억 lifecycle은 아직 구현하지
+않았습니다.
 
 테스트는 다음 명령으로 실행합니다.
 
