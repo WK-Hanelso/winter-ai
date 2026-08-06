@@ -2,3 +2,6 @@ services:
   dev:
     # This overlay is opt-in. The default compose.yaml remains CPU-only.
     gpus: all
+  llm:
+    # The actual local LLM runtime is GPU-only on this development host.
+    gpus: all

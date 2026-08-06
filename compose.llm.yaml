@@ -1,0 +1,24 @@
+services:
+  llm:
+    image: winter-ai:dev
+    working_dir: /workspace
+    volumes:
+      - ${LLAMA_RUNTIME_DIR:?Set LLAMA_RUNTIME_DIR to the directory containing llama-b10276}:/runtime:ro
+      - ${LLM_MODEL_DIR:?Set LLM_MODEL_DIR to the directory containing the GGUF model}:/models:ro
+    entrypoint: ["/runtime/llama-b10276/llama-server"]
+    command:
+      - --model
+      - /models/${LLM_MODEL_FILE:?Set LLM_MODEL_FILE to the GGUF filename}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --n-gpu-layers
+      - ${LLM_GPU_LAYERS:-37}
+      - --ctx-size
+      - ${LLM_CONTEXT_SIZE:-2048}
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"

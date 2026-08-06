@@ -6,10 +6,11 @@
 
 ## 현재 상태
 
-Milestone 0의 기반 구조가 준비되어 있습니다. Docker 개발 이미지, Python
-패키지, Port 계약, deterministic fake adapter, 공유 `CompanionCore`, CLI/Voice
-orchestration 테스트를 갖췄습니다. 실제 장기 기억과 실제 STT/TTS adapter는 아직
-구현하지 않았습니다.
+Milestone 0의 기반 구조와 Milestone 1의 첫 CLI 경로가 준비되어 있습니다. Docker
+개발 이미지, Python 패키지, Port 계약, deterministic fake adapter, 공유
+`CompanionCore`, CLI/Voice orchestration 테스트를 갖췄습니다. 실제 local
+llama.cpp server를 선택하면 CLI가 `CompanionCore`를 거쳐 Qwen3 응답을 받습니다.
+대화 SQLite 영속화와 실제 Voice adapter는 아직 구현하지 않았습니다.
 
 첫 Local LLM probe도 성공했습니다. Docker 안의 llama.cpp Vulkan runtime으로
 Qwen3-4B-Instruct-2507 Q4_K_M을 RTX 2060 6 GiB에서 실행했고, 37/37 레이어가
@@ -82,8 +83,35 @@ PulseAudio socket 경로를 확인한 뒤 Voice overlay를 명시합니다.
 docker compose -f compose.yaml -f compose.voice.yaml run --rm dev bash
 ```
 
-현재 구현은 실제 모델 대신 runtime-독립적인 Port 계약과 fake adapter를 기본값으로
-사용합니다. 테스트는 다음 명령으로 실행합니다.
+기본 CLI는 의도적으로 fake adapter를 사용합니다. 이는 오프라인 개발과 테스트를
+모델 서버의 상태에서 분리하기 위한 명시적 선택이며, `--backend local`이 실패해도
+fake 응답으로 자동 전환하지 않습니다.
+
+```bash
+docker compose run --rm dev python -m companion.cli --backend fake --prompt "안녕"
+```
+
+실제 local LLM CLI는 Host의 runtime과 모델을 **read-only** mount한 `llm` 서비스와,
+그 서비스에만 접속하는 `dev` CLI 컨테이너로 구성됩니다. 아래 변수 경로는 Host
+경로이고, 컨테이너에서는 각각 `/runtime`, `/models`로만 보입니다.
+
+```bash
+export LLAMA_RUNTIME_DIR=/path/to/llama-b10276-parent
+export LLM_MODEL_DIR=/path/to/gguf-directory
+export LLM_MODEL_FILE=Qwen3-4B-Instruct-2507.Q4_K_M.gguf
+
+docker compose -f compose.yaml -f compose.llm.yaml -f compose.gpu.yaml up -d llm
+docker compose -f compose.yaml -f compose.llm.yaml -f compose.gpu.yaml run --rm dev \
+  python -m companion.cli --backend local --prompt "한국어로 한 문장만 인사해줘"
+docker compose -f compose.yaml -f compose.llm.yaml -f compose.gpu.yaml down
+```
+
+`LLAMA_RUNTIME_DIR`에는 그 아래에 `llama-b10276/llama-server`가 있는 디렉터리를
+지정합니다. `llm`은 Host port를 공개하지 않으며 Compose 내부 `http://llm:8080`에서만
+통신합니다. 현재 CLI의 대화 기록은 프로세스 내 메모리에만 존재합니다. SQLite
+영속화와 이전 턴 context 주입은 다음 이슈에서 추가합니다.
+
+테스트는 다음 명령으로 실행합니다.
 
 ```bash
 docker compose run --rm dev pytest
