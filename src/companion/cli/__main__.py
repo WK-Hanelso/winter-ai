@@ -144,6 +144,9 @@ def run(
             return 0
         if not text:
             continue
+        if text.startswith("/"):
+            _handle_interactive_command(text, args, identity, repository, memory_repository, stdout)
+            continue
         if _run_turn(core, text, stdout):
             return 1
 
@@ -158,6 +161,56 @@ def _run_turn(core: CompanionCore, text: str, stdout: TextIO) -> int:
     for candidate_id in response.memory_candidate_ids:
         print(f"Memory candidate {candidate_id} is pending review.", file=stdout)
     return 0
+
+
+def _handle_interactive_command(
+    command: str,
+    args: argparse.Namespace,
+    identity,
+    repository: ConversationRepository,
+    memory_repository: SqliteMemoryRepository | None,
+    stdout: TextIO,
+) -> None:
+    if command == "/help":
+        print("Commands: /status, /history, /memories, /memory {approve|activate|deprecate|delete} <number>, /help, /exit", file=stdout)
+    elif command == "/status":
+        name = identity.name if identity else "Identity 없음"
+        print(f"겨울이: {name} | backend: {args.backend} | conversation: {'persistent' if args.conversation_db else 'temporary'} | memory: {'enabled' if memory_repository else 'disabled'}", file=stdout)
+    elif command == "/history":
+        _show_history(repository, stdout)
+    elif command == "/memories":
+        _show_interactive_memories(memory_repository, stdout)
+    elif command.startswith("/memory "):
+        _handle_interactive_memory_command(command, memory_repository, stdout)
+    else:
+        print(f"Unknown command: {command}. Use /help.", file=stdout)
+
+
+def _show_interactive_memories(repository: SqliteMemoryRepository | None, stdout: TextIO) -> None:
+    if repository is None:
+        print("Memory is disabled.", file=stdout); return
+    for index, memory in enumerate(repository.list(), start=1):
+        print(f"{index}. [{memory.status}] {memory.kind}: {memory.content}", file=stdout)
+
+
+def _handle_interactive_memory_command(command: str, repository: SqliteMemoryRepository | None, stdout: TextIO) -> None:
+    if repository is None:
+        print("Memory is disabled.", file=stdout); return
+    parts = command.split()
+    if len(parts) != 3 or parts[1] not in {"approve", "activate", "deprecate", "delete"} or not parts[2].isdigit():
+        print("Usage: /memory {approve|activate|deprecate|delete} <number>", file=stdout); return
+    memories = repository.list(); index = int(parts[2]) - 1
+    if index < 0 or index >= len(memories):
+        print("Memory number not found.", file=stdout); return
+    memory = memories[index]
+    try:
+        if parts[1] == "delete":
+            repository.delete(memory.id); print(f"Memory {parts[2]} was permanently deleted.", file=stdout)
+        else:
+            updated = repository.transition(memory.id, {"approve": "approved", "activate": "active", "deprecate": "deprecated"}[parts[1]])
+            print(f"Memory {parts[2]} is {updated.status}.", file=stdout)
+    except MemoryRepositoryError as error:
+        print(f"Memory unavailable: {error}", file=stdout)
 
 
 def _show_history(repository: ConversationRepository, stdout: TextIO) -> int:

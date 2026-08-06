@@ -3,6 +3,7 @@ from io import StringIO
 from pathlib import Path
 
 from companion.cli.__main__ import run
+from companion.adapters.sqlite_repository import SqliteConversationRepository
 
 
 def test_cli_fake_backend_runs_one_turn() -> None:
@@ -29,6 +30,19 @@ def test_cli_interactive_session_uses_one_core_for_turns() -> None:
     assert exit_code == 0
     assert "Companion> fake: 첫 번째\n" in output.getvalue()
     assert "Companion> fake: 두 번째\n" in output.getvalue()
+
+
+def test_interactive_commands_do_not_become_conversation_messages(tmp_path: Path) -> None:
+    output = StringIO()
+    database_path = tmp_path / "conversation.sqlite"
+    exit_code = run(
+        Namespace(backend="fake", model_url="http://unused", prompt=None, conversation_db=database_path, memory_db=tmp_path / "memory.sqlite"),
+        stdin=StringIO("/status\n/history\n/memories\n/help\n/exit\n"), stdout=output,
+    )
+    assert exit_code == 0
+    assert "backend: fake" in output.getvalue()
+    assert "Commands: /status" in output.getvalue()
+    assert SqliteConversationRepository(database_path).list_messages() == ()
 
 
 def test_cli_persists_and_shows_history_when_database_is_explicit(tmp_path: Path) -> None:
