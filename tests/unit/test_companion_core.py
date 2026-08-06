@@ -87,3 +87,24 @@ def test_core_injects_selected_active_memory_as_distinct_system_message(tmp_path
     CompanionCore(model, repository, memory_retriever=ActiveMemoryRetriever(memory_repository)).respond_to_text("Python config는?")
     assert model.requests[0].messages[0].role == "system"
     assert memory.id in model.requests[0].messages[0].content
+
+
+def test_core_creates_candidate_only_for_explicit_memory_request(tmp_path) -> None:
+    memory_repository = SqliteMemoryRepository(tmp_path / "memory.sqlite")
+    core = CompanionCore(FakeChatModel(), InMemoryConversationRepository(), memory_repository=memory_repository)
+
+    response = core.respond_to_text("기억해. 나는 Python config를 선호해")
+
+    assert len(response.memory_candidate_ids) == 1
+    candidate = memory_repository.get(response.memory_candidate_ids[0])
+    assert (candidate.content, candidate.status, candidate.source) == ("나는 Python config를 선호해", "candidate", "user_explicit")
+    assert memory_repository.list_active() == ()
+
+
+def test_core_does_not_create_candidate_for_ordinary_or_empty_request(tmp_path) -> None:
+    memory_repository = SqliteMemoryRepository(tmp_path / "memory.sqlite")
+    core = CompanionCore(FakeChatModel(), InMemoryConversationRepository(), memory_repository=memory_repository)
+
+    assert core.respond_to_text("Python config를 선호해").memory_candidate_ids == ()
+    assert core.respond_to_text("기억해").memory_candidate_ids == ()
+    assert memory_repository.list() == ()

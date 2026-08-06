@@ -106,7 +106,8 @@ def run(
         return 1
     try:
         memory_path = getattr(args, "memory_db", None)
-        memory_retriever = ActiveMemoryRetriever(SqliteMemoryRepository(memory_path)) if memory_path else None
+        memory_repository = SqliteMemoryRepository(memory_path) if memory_path else None
+        memory_retriever = ActiveMemoryRetriever(memory_repository) if memory_repository else None
     except MemoryRepositoryError as error:
         print(f"Memory unavailable: {error}", file=stdout)
         return 1
@@ -126,6 +127,7 @@ def run(
         ),
         identity,
         memory_retriever,
+        memory_repository,
     )
     if args.prompt is not None:
         return _run_turn(core, args.prompt, stdout)
@@ -152,6 +154,8 @@ def _run_turn(core: CompanionCore, text: str, stdout: TextIO) -> int:
         print(f"Companion unavailable: {error}", file=stdout)
         return 1
     print(f"Companion> {response.text}", file=stdout)
+    for candidate_id in response.memory_candidate_ids:
+        print(f"Memory candidate {candidate_id} was saved. Review it before activation.", file=stdout)
     return 0
 
 

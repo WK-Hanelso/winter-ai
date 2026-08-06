@@ -99,6 +99,20 @@ docker compose run --rm dev python -m companion.cli \
 3개·총 1,000자만 별도 system context로 Local LLM에 전달합니다. candidate·approved·
 deprecated·rejected Memory는 절대 전달되지 않습니다.
 
+대화에서 기억을 제안하려면, 내용과 함께 명시적으로 `기억해` 또는 `기억해줘`로
+시작합니다. 예를 들어 아래 입력은 candidate를 하나 만들고, CLI가 후보 ID를 출력합니다.
+후보는 앞의 승인·활성화 명령을 실행하기 전까지 모델 context에 사용되지 않습니다.
+
+```bash
+docker compose run --rm dev python -m companion.cli \
+  --backend fake \
+  --memory-db /workspace/data/memories.sqlite \
+  --prompt "기억해. 나는 Python config를 선호해"
+```
+
+일반 발화나 내용 없는 `기억해`는 후보를 만들지 않습니다. 모호한 표현 해석, 자동
+교체·활성화, LLM 기반 기억 추출은 아직 제공하지 않습니다.
+
 ## 개발 환경 스펙
 
 | 구분 | 기준 |
