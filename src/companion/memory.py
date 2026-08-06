@@ -41,6 +41,16 @@ class SqliteMemoryRepository:
         replacement = self.add_candidate(kind=old.kind, content=content, source="user_edit", importance=old.importance, confidence=old.confidence)
         self._write("UPDATE memories SET supersedes = ? WHERE id = ?", (old.id, replacement.id))
         return self.get(replacement.id)
+    def delete(self, memory_id: str) -> Memory:
+        memory = self.get(memory_id)
+        try:
+            with self._connect() as c:
+                reference = c.execute("SELECT id FROM memories WHERE supersedes = ? LIMIT 1", (memory_id,)).fetchone()
+                if reference is not None:
+                    raise MemoryRepositoryError(f"cannot delete memory {memory_id}: superseded by {reference['id']}")
+                c.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+        except sqlite3.Error as e: raise MemoryRepositoryError(f"could not delete memory: {e}") from e
+        return memory
     def get(self, memory_id: str) -> Memory:
         try:
             with self._connect() as c: row = c.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()

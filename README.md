@@ -94,10 +94,18 @@ docker compose run --rm dev python -m companion.cli \
   --memory-db /workspace/data/memories.sqlite --list-memories
 ```
 
-`deprecated`는 이력 보존을 위한 논리적 삭제입니다. 물리 삭제와 자동 conflict 판정은
-아직 제공하지 않습니다. 현재는 active Memory 중 현재 질문과 keyword가 겹치는 최대
-3개·총 1,000자만 별도 system context로 Local LLM에 전달합니다. candidate·approved·
-deprecated·rejected Memory는 절대 전달되지 않습니다.
+`deprecated`는 이력 보존을 위한 논리적 삭제입니다. 완전히 제거하려면 목록에서 ID를
+확인한 뒤 아래처럼 명시적으로 삭제합니다. 다른 Memory가 해당 ID를 `supersedes`로
+참조하면 이력 보호를 위해 삭제가 거부됩니다.
+
+```bash
+docker compose run --rm dev python -m companion.cli \
+  --memory-db /workspace/data/memories.sqlite --memory-delete <memory-id>
+```
+
+자동 conflict 판정은 아직 제공하지 않습니다. 현재는 active Memory 중 현재 질문과
+keyword가 겹치는 최대 3개·총 1,000자만 별도 system context로 Local LLM에 전달합니다.
+candidate·approved·deprecated·rejected Memory는 절대 전달되지 않습니다.
 
 대화에서 기억을 제안하려면, 내용과 함께 명시적으로 `기억해` 또는 `기억해줘`로
 시작합니다. 예를 들어 아래 입력은 candidate를 하나 만들고, CLI가 후보 ID를 출력합니다.

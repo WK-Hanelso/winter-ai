@@ -36,3 +36,28 @@ def test_replacement_deprecates_old_memory_only_when_replacement_activates(tmp_p
     repo.transition(replacement.id, "approved"); repo.transition(replacement.id, "active")
     assert repo.get(old.id).status == "deprecated"
     assert repo.get(replacement.id).status == "active"
+
+
+def test_delete_removes_unreferenced_memory_from_storage_and_retrieval(tmp_path: Path) -> None:
+    repo = SqliteMemoryRepository(tmp_path / "memory.sqlite")
+    memory = repo.add_candidate(kind="preference", content="Python config를 선호한다")
+    repo.transition(memory.id, "approved"); repo.transition(memory.id, "active")
+
+    deleted = repo.delete(memory.id)
+
+    assert deleted.id == memory.id
+    assert repo.list() == ()
+    assert ActiveMemoryRetriever(repo).retrieve("Python config") == ()
+    with pytest.raises(MemoryRepositoryError, match="memory not found"):
+        repo.get(memory.id)
+
+
+def test_delete_refuses_memory_referenced_by_replacement(tmp_path: Path) -> None:
+    repo = SqliteMemoryRepository(tmp_path / "memory.sqlite")
+    old = repo.add_candidate(kind="preference", content="Python config를 선호한다")
+    replacement = repo.replace(old.id, "YAML config를 선호한다")
+
+    with pytest.raises(MemoryRepositoryError, match=f"superseded by {replacement.id}"):
+        repo.delete(old.id)
+    assert repo.get(old.id).id == old.id
+    assert repo.get(replacement.id).supersedes == old.id
