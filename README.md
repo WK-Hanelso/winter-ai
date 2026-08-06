@@ -78,7 +78,9 @@ docker compose run --rm dev python -m companion.cli \
 ```
 
 현재 active Memory를 자동 검색하거나 모델 입력에 주입하지는 않습니다. 수정·삭제,
-conflict 처리와 retrieval은 다음 Memory 작업에서 추가합니다.
+conflict 처리는 다음 Memory 작업에서 추가합니다. 현재는 active Memory 중 현재 질문과
+keyword가 겹치는 최대 3개·총 1,000자만 별도 system context로 Local LLM에 전달합니다.
+candidate·approved·deprecated·rejected Memory는 절대 전달되지 않습니다.
 
 ## 개발 환경 스펙
 

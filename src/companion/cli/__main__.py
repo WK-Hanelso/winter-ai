@@ -12,7 +12,7 @@ from companion.adapters.llama_cpp import LlamaCppHttpChatModel
 from companion.adapters.sqlite_repository import ConversationRepositoryError, SqliteConversationRepository
 from companion.context import ConversationContextBuilder
 from companion.identity import IdentityRepositoryError, JsonIdentityRepository
-from companion.memory import MemoryRepositoryError, SqliteMemoryRepository
+from companion.memory import ActiveMemoryRetriever, MemoryRepositoryError, SqliteMemoryRepository
 from companion.core import CompanionCore
 from companion.ports import ChatModel, ConversationRepository
 
@@ -102,6 +102,12 @@ def run(
     except IdentityRepositoryError as error:
         print(f"Companion identity unavailable: {error}", file=stdout)
         return 1
+    try:
+        memory_path = getattr(args, "memory_db", None)
+        memory_retriever = ActiveMemoryRetriever(SqliteMemoryRepository(memory_path)) if memory_path else None
+    except MemoryRepositoryError as error:
+        print(f"Memory unavailable: {error}", file=stdout)
+        return 1
     if getattr(args, "show_identity", False):
         print(identity.system_message() if identity else "No identity path selected.", file=stdout)
         return 0
@@ -117,6 +123,7 @@ def run(
             max_characters=getattr(args, "context_max_characters", 4000),
         ),
         identity,
+        memory_retriever,
     )
     if args.prompt is not None:
         return _run_turn(core, args.prompt, stdout)
