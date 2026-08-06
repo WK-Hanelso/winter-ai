@@ -44,6 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     actions.add_argument("--memory-activate", metavar="ID")
     actions.add_argument("--memory-deprecate", metavar="ID")
     actions.add_argument("--memory-replace", nargs=2, metavar=("ID", "CONTENT"))
+    actions.add_argument("--memory-delete", metavar="ID", help="permanently delete an unreferenced memory")
     parser.add_argument("--identity-path", type=Path)
     parser.add_argument("--memory-db", type=Path)
     parser.add_argument("--memory-kind", default="semantic")
@@ -114,7 +115,7 @@ def run(
     if getattr(args, "show_identity", False):
         print(identity.system_message() if identity else "No identity path selected.", file=stdout)
         return 0
-    if any(getattr(args, name, None) for name in ("list_memories", "memory_add", "memory_approve", "memory_activate", "memory_deprecate", "memory_replace")):
+    if any(getattr(args, name, None) for name in ("list_memories", "memory_add", "memory_approve", "memory_activate", "memory_deprecate", "memory_replace", "memory_delete")):
         return _handle_memory(args, stdout)
     if getattr(args, "show_history", False):
         return _show_history(repository, stdout)
@@ -185,6 +186,10 @@ def _handle_memory(args: argparse.Namespace, stdout: TextIO) -> int:
             memory = repo.transition(args.memory_deprecate, "deprecated")
         elif args.memory_replace:
             memory = repo.replace(args.memory_replace[0], args.memory_replace[1])
+        elif args.memory_delete:
+            deleted = repo.delete(args.memory_delete)
+            print(f"Memory {deleted.id} was permanently deleted.", file=stdout)
+            return 0
         else:
             for memory in repo.list(): print(f"{memory.id} {memory.status} {memory.kind} supersedes={memory.supersedes}: {memory.content}", file=stdout)
             return 0
