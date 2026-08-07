@@ -71,8 +71,13 @@ class ReferenceStorage:
 
     def path(self, relative_path: str) -> Path:
         """Resolve a validated manifest path underneath this storage root."""
-        normalized = _validate_relative_path(relative_path)
+        normalized = PurePosixPath(validate_managed_relative_path(relative_path))
         return self.root.joinpath(*normalized.parts)
+
+
+def validate_managed_relative_path(value: str) -> str:
+    """Return a normalized POSIX path only when it stays in managed layout."""
+    return _validate_relative_path(value).as_posix()
 
 
 def validate_storage_root(root: Path, repository_root: Path) -> Path:
