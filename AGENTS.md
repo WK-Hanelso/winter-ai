@@ -75,9 +75,18 @@ Voice는 후순위 부가기능이 아니다. 초기 수직 단면에 반드시 
 - `Prosody`: 억양, 속도, pitch, energy, pause, 강조
 - `Verbal Style`: 단어 선택, 문장 길이, 존댓말/반말, 대화 습관
 
+이 세 요소는 Port와 데이터 필드에서는 분리하되, 발화를 계획할 때는 하나의 결합된
+말하기 행동으로 다룬다. CLI와 Voice는 동일한 lexical response와 Companion 상태를
+공유한다. Voice는 그 response의 prosody와 비언어 delivery를 TTS로 실현하며, 별도의
+모델이 문장을 다시 작성하면 안 된다.
+
 사전학습된 TTS weight를 사용한다. 처음부터 TTS 모델을 pre-train하지 않는다.
 
-특정 실존 인물을 복제하는 것을 프로젝트 목표로 삼지 않는다. 공개 음성은 일반화된 prosody 특성을 분석하는 참고자료로만 사용하며, 최종 Companion Voice는 독립적인 음성 정체성을 목표로 한다.
+사용자가 명시적으로 선택한 특정 실존 인물은 개인용·비공개 `Human Reference` 기준선에
+한해 대화 맥락, script, 음성과 delivery를 함께 분석하고 재현 평가에 사용할 수 있다.
+원본과 파생 데이터는 로컬 외장 저장소에만 두며 Git이나 외부 서비스로 전송하지 않는다.
+Human Reference는 최종 Companion 그 자체가 아니다. 최종 겨울이의 말투와 음성 정체성은
+Reference 재현을 검증한 뒤 `Winter Delta`로 별도 결정한다.
 
 ### 2.4 Memory and Adaptation
 
@@ -93,6 +102,10 @@ Voice는 후순위 부가기능이 아니다. 초기 수직 단면에 반드시 
 매 대화마다 모델 weight를 수정하지 않는다.
 
 Weight adaptation은 충분한 검증 데이터가 쌓인 뒤 별도 단계에서 수행한다.
+
+Human Reference 작업에서도 학습을 미리 전제하지 않는다. 먼저 prompt/few-shot과 검색된
+reference example로 held-out 장면을 재현하고, 반복되는 실패가 측정될 때만 Qwen LoRA/SFT,
+별도 appraisal model 또는 TTS adaptation을 선택한다.
 
 ---
 
@@ -326,6 +339,32 @@ TTS       → 재생
 
 단, 외부 라이브러리와 Core 사이의 interface는 분리한다.
 
+### 5.4 Human Reference Before Original Character
+
+겨울이의 Original Character를 사용자 직관만으로 바로 정의하지 않는다. 먼저 실제 한
+사람의 관찰 가능한 대화와 음성을 결합한 Human Reference 기준선을 만들고, 보지 않은
+장면에서 재현력을 확인한다.
+
+```text
+context / relationship / atmosphere
+                 │
+                 ▼
+        Joint Utterance Plan
+        ├─ lexical response
+        ├─ dialogue behavior
+        └─ prosody / delivery
+                 │
+          ┌──────┴──────┐
+          ▼             ▼
+         CLI           Voice
+         text      text + local TTS
+```
+
+원본 corpus는 수집 시점에 특정 학습 형식으로 축소하지 않는다. 동일 시간축에 context,
+interlocutor, raw/normalized transcript, atmosphere, audio, pause, pitch, energy와 비언어
+event를 정렬하고, 이후 appraisal, text behavior, delivery, voice adaptation, joint
+evaluation view를 파생한다.
+
 ---
 
 ## 6. Proposed Repository Layout
@@ -442,7 +481,38 @@ TTS       → 재생
 - `neutral`, `calm`, `warm`, `serious` 중 최소 3개가 구분됨
 - 한국어 고유명사와 기술용어 평가 포함
 
-### Milestone 4 — Continual Preference Update
+### Milestone 4 — Human Reference Baseline
+
+목표:
+
+- 한 명의 Reference Human을 대상으로 context, 말투, 분위기와 음성을 함께 정렬
+- CLI와 Voice가 공유하는 Joint Utterance 기준선 정의
+- 보지 않은 영상에서 text, voice, joint reproduction gap 측정
+- 실제 실패 근거를 바탕으로 학습 방식 결정
+
+완료 조건:
+
+- 원본과 파생 corpus가 Git이 아닌 외장 저장소에 보관됨
+- 소규모 corpus가 scene 단위로 정렬되고 annotation 신뢰도가 기록됨
+- CLI와 Voice가 동일한 lexical response와 상태를 공유함
+- 실제 원본, 동일 script 합성, 새로운 response 합성의 차이를 구분함
+- prompt/few-shot, Qwen LoRA/SFT, appraisal model, TTS adaptation 중 필요한 다음 단계가 기록됨
+
+### Milestone 5 — Winter Character Foundation
+
+목표:
+
+- 검증된 Human Reference와의 의도적인 `Winter Delta` 정의
+- 말투, 음성, 관계 행동을 함께 변형한 Original Character 구축
+- CLI와 Voice에서 동일한 겨울이 정체성 검증
+
+완료 조건:
+
+- Reference와 겨울이의 차이가 관찰 가능한 행동으로 기록됨
+- 겨울이가 Reference를 그대로 복제하지 않고 독립된 정체성을 가짐
+- 동일한 상황에서 CLI와 Voice의 의미·관계 행동이 일관됨
+
+### Milestone 6 — Continual Preference Update
 
 목표:
 
@@ -456,7 +526,7 @@ TTS       → 재생
 - 명시적 사용자 선호는 높은 confidence로 반영
 - 이전 값과 변경 이력 조회 가능
 
-### Milestone 5 — Worker Integration
+### Milestone 7 — Worker Integration
 
 이 단계부터 Claude, GPT, Gemini 같은 외부 Worker 연결을 검토한다.
 
@@ -620,7 +690,9 @@ pytest -m "not model and not voice and not slow"
 
 ## 11. Security and Privacy
 
-- 원본 음성, 대화 DB, speaker reference, model checkpoint는 기본적으로 Git에서 제외한다.
+- 원본 영상·음성·자막, 대화 DB, Human Reference corpus, speaker reference, model checkpoint는 기본적으로 Git에서 제외한다.
+- Human Reference 원본과 파생 데이터는 사용자가 지정한 로컬 외장 저장소에 보관한다.
+- Git에는 schema, processing code, manifest 형식과 공개 가능한 synthetic fixture만 둔다.
 - `.env`, API key, access token은 commit하지 않는다.
 - Memory DB는 사용자가 조회, 수정, 삭제할 수 있어야 한다.
 - 향후 Tool 실행 시 read/draft/write/destructive 권한을 분리한다.
@@ -635,11 +707,18 @@ data/
 models/
 checkpoints/
 voice_references/
+human_reference/
+datasets/
 generated_audio/
 *.db
 *.sqlite
 *.wav
 *.mp3
+*.flac
+*.m4a
+*.mp4
+*.mkv
+*.webm
 ```
 
 샘플용 작은 공개 fixture만 `tests/fixtures/`에 둘 수 있다.
@@ -660,7 +739,8 @@ generated_audio/
 - 실제 모델 실패를 fake 응답으로 숨김
 - 테스트 없이 prompt만 반복 수정
 - 사용자 승인 없이 외부 서비스로 음성/대화 전송
-- 특정 실존 인물의 음성 복제를 프로젝트 목표로 설정
+- Human Reference의 script와 voice를 분리해 왜곡된 기준선을 만듦
+- Human Reference 재현 결과를 검증 없이 최종 겨울이 정체성으로 확정
 
 ---
 
