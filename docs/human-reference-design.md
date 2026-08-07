@@ -89,6 +89,8 @@ Set`, 두 조건을 모두 만족하는 `Coupled Gold Set`을 구분한다.
 
 코드가 특정 Host mount path를 가정하지 않도록 dataset root는 명시적인 Python config나
 CLI 인자로 전달한다. 데이터가 없을 때 몰래 synthetic 또는 fake data로 전환하지 않는다.
+외장 root의 초기화, sentinel, private manifest와 실패 정책은
+[Human Reference External Storage](reference-data-storage.md)를 따른다.
 
 ## Dataset split and leakage
 
