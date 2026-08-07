@@ -24,11 +24,12 @@ profile로 시작합니다. 이는 실제 음색 모델과 분리된 말하기 �
 다음 단계는 [Milestone 4 — Human Reference Baseline](https://github.com/WK-Hanelso/winter-ai/issues/66)입니다.
 실제 한 사람의 대화 맥락, 말투, 분위기와 목소리를 같은 시간축에 정렬하고, CLI와 Voice가
 공유할 수 있는 행동 기준선을 먼저 검증합니다. CLI는 shared lexical response를 표시하고,
-Voice는 동일한 text와 delivery plan을 local TTS로 실현합니다. 현재는
-[설계 이슈 #67](https://github.com/WK-Hanelso/winter-ai/issues/67)만 진행 중이며, 실제 영상
-수집이나 Qwen/TTS 학습은 시작하지 않았습니다. 구조, 데이터 경계와 학습 decision gate는
+Voice는 동일한 text와 delivery plan을 local TTS로 실현합니다. 결합 기준 설계 #67은
+완료됐고, 현재는 [Reference 선정 기준 #69](https://github.com/WK-Hanelso/winter-ai/issues/69)를
+진행 중입니다. 실제 인물 선택, 영상 수집이나 Qwen/TTS 학습은 시작하지 않았습니다.
+구조, 데이터 경계와 학습 decision gate는
 [Human Reference 설계](docs/human-reference-design.md), [ADR-0002](docs/adr/0002-coupled-human-reference-baseline.md),
-[roadmap](docs/roadmap.md)에 기록합니다.
+[선정 기준](docs/reference-human-selection.md), [roadmap](docs/roadmap.md)에 기록합니다.
 
 ## 겨울이 시작하기
 

@@ -147,4 +147,6 @@ Qwen이 tone shift, 관계 맥락 또는 dialogue act를 반복적으로 오판�
 ## Milestone sequence
 
 세부 순서와 완료 조건은 [roadmap](roadmap.md)을 따른다. 다음 작업은 Reference Human을
-바로 선택하는 것이 아니라, 먼저 선정 기준과 source 기간·상황 범위를 정의하는 것이다.
+바로 선택하는 것이 아니라, 먼저 [Reference Human 선정 기준](reference-human-selection.md)에
+따라 같은 관찰 예산으로 후보의 데이터 적합성을 비교하는 것이다. 실제 인물 이름과 source
+URL은 공개 GitHub가 아닌 외장 저장소의 private manifest에 둔다.

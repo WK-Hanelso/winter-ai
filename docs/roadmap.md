@@ -9,7 +9,7 @@
 - Milestone 1: shared Core와 CLI 경로 완료, 실제 Push-to-talk PR은 열려 있음
 - Milestone 2: Identity와 explicit Memory lifecycle 기반 완료
 - Milestone 3: Voice Identity 0.1 기반과 MeloTTS 평가 완료, CosyVoice 비교는 보류
-- Milestone 4: Human Reference Baseline 설계 시작
+- Milestone 4: Human Reference Baseline 설계 완료, Reference 선정 기준 작성 중
 
 ## Milestone 4 — Human Reference Baseline
 
@@ -17,8 +17,8 @@ Epic: [#66](https://github.com/WK-Hanelso/winter-ai/issues/66)
 
 | Order | Work item | Output | Gate |
 | ---: | --- | --- | --- |
-| 1 | 설계 결정과 문서 기준선 | ADR, architecture, roadmap | 합의가 문서와 일치 |
-| 2 | Reference 선정 기준 | 인물·기간·영상 포함/제외 기준 | 수집 범위 승인 |
+| 1 | [설계 결정과 문서 기준선](https://github.com/WK-Hanelso/winter-ai/issues/67) | ADR, architecture, roadmap | 완료 |
+| 2 | [Reference 선정 기준](https://github.com/WK-Hanelso/winter-ai/issues/69) | hard gate, rubric, evidence template | 후보 조사 시작 가능 |
 | 3 | 외장 저장소와 manifest | 재현 가능한 storage contract | Git 유입 방지 검증 |
 | 4 | Multimodal schema | scene alignment와 annotation schema | synthetic fixture validation |
 | 5 | 소규모 수집·정렬 probe | 2~3시간 이하 raw source의 usable subset | 사용 가능 비율과 수동 비용 기록 |
