@@ -4,8 +4,15 @@
 /models/
 /checkpoints/
 /voice_references/
+/human_reference/
+/datasets/
 /generated_audio/
 *.db
 *.sqlite
 *.wav
 *.mp3
+*.flac
+*.m4a
+*.mp4
+*.mkv
+*.webm

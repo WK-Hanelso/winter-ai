@@ -21,6 +21,15 @@ Voice Identity 0.1은 Python config의 `neutral`, `calm`, `warm`, `serious` Pros
 profile로 시작합니다. 이는 실제 음색 모델과 분리된 말하기 계획이며, 설계 초안은
 [Voice 설계 문서](docs/voice-design.md)에 기록합니다.
 
+다음 단계는 [Milestone 4 — Human Reference Baseline](https://github.com/WK-Hanelso/winter-ai/issues/66)입니다.
+실제 한 사람의 대화 맥락, 말투, 분위기와 목소리를 같은 시간축에 정렬하고, CLI와 Voice가
+공유할 수 있는 행동 기준선을 먼저 검증합니다. CLI는 shared lexical response를 표시하고,
+Voice는 동일한 text와 delivery plan을 local TTS로 실현합니다. 현재는
+[설계 이슈 #67](https://github.com/WK-Hanelso/winter-ai/issues/67)만 진행 중이며, 실제 영상
+수집이나 Qwen/TTS 학습은 시작하지 않았습니다. 구조, 데이터 경계와 학습 decision gate는
+[Human Reference 설계](docs/human-reference-design.md), [ADR-0002](docs/adr/0002-coupled-human-reference-baseline.md),
+[roadmap](docs/roadmap.md)에 기록합니다.
+
 ## 겨울이 시작하기
 
 먼저 `.env.example`을 `.env`로 복사해 local model 경로를 채운 뒤, 아래 명령으로
@@ -52,7 +61,7 @@ GPU에 올라간 상태로 한국어 응답을 생성했습니다. 정확한 모
 CUDA 경로는 명시적으로 실패하며, 이 제한과 CPU 결과를 같은 문서에 기록합니다.
 
 한국어 TTS는 MeloTTS로 local WAV 합성에 성공했습니다. 이는 독립 runtime probe이며
-최종 Companion Voice 또는 특정 인물 음성 복제를 의미하지 않습니다.
+아직 Human Reference Voice 재현이나 최종 Companion Voice를 검증한 결과는 아닙니다.
 
 CPU 개발 환경을 기본값으로 두고, GPU와 Voice 장치는 명시적인 Compose overlay에서만
 전달합니다. 선택 근거는 [ADR-0001](docs/adr/0001-docker-development-baseline.md)에
@@ -63,8 +72,9 @@ CPU 개발 환경을 기본값으로 두고, GPU와 Voice 장치는 명시적인
 - Docker-first: 애플리케이션과 의존성은 컨테이너에서 실행합니다.
 - Local-first: 초기 대화 기능은 외부 상용 LLM API에 의존하지 않습니다.
 - Shared Core: CLI와 Voice는 하나의 `CompanionCore`를 공유합니다.
+- Coupled Reference: Human Reference의 context, 말투, 분위기와 음성을 함께 정렬합니다.
 - Offline tests: 기본 테스트는 인터넷, GPU, 마이크, 모델 가중치, API 키 없이 실행됩니다.
-- Privacy: 음성, 대화 DB, 모델 파일과 비밀 정보는 Git에 저장하지 않습니다.
+- Privacy: 원본 영상·음성·자막, Reference corpus, 대화 DB, 모델 파일과 비밀 정보는 Git에 저장하지 않습니다.
 
 Host와 Container의 책임, 조사된 환경 사양, 재확인해야 할 항목은
 [환경 기준 문서](docs/environment.md)에 기록합니다.
