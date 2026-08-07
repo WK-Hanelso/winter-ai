@@ -9,7 +9,8 @@
 - Milestone 1: shared Core와 CLI 경로 완료, 실제 Push-to-talk PR은 열려 있음
 - Milestone 2: Identity와 explicit Memory lifecycle 기반 완료
 - Milestone 3: Voice Identity 0.1 기반과 MeloTTS 평가 완료, CosyVoice 비교는 보류
-- Milestone 4: Human Reference 선정 기준·외장 storage 계약 완료, multimodal schema 검증 중
+- Milestone 4: Human Reference 선정 기준·외장 storage·multimodal schema 완료,
+  소규모 실제 수집 probe는 사용자 입력 gate 대기
 
 ## Milestone 4 — Human Reference Baseline
 
@@ -20,8 +21,8 @@ Epic: [#66](https://github.com/WK-Hanelso/winter-ai/issues/66)
 | 1 | [설계 결정과 문서 기준선](https://github.com/WK-Hanelso/winter-ai/issues/67) | ADR, architecture, roadmap | 완료 |
 | 2 | [Reference 선정 기준](https://github.com/WK-Hanelso/winter-ai/issues/69) | hard gate, rubric, evidence template | 완료 |
 | 3 | [외장 저장소와 manifest](https://github.com/WK-Hanelso/winter-ai/issues/71) | 재현 가능한 storage contract | 완료 |
-| 4 | [Multimodal schema](https://github.com/WK-Hanelso/winter-ai/issues/73) | scene alignment와 annotation schema | synthetic fixture validation |
-| 5 | 소규모 수집·정렬 probe | 2~3시간 이하 raw source의 usable subset | 사용 가능 비율과 수동 비용 기록 |
+| 4 | [Multimodal schema](https://github.com/WK-Hanelso/winter-ai/issues/73) | scene alignment와 annotation schema | 완료 |
+| 5 | [소규모 수집·정렬 probe](https://github.com/WK-Hanelso/winter-ai/issues/75) | 3시간 이하 raw source의 usable subset | 사용자 입력 후 사용 가능 비율과 수동 비용 기록 |
 | 6 | 행동·분위기 annotation | held-out 가능한 behavior labels | inter-annotation/수동 검토 기록 |
 | 7 | Reference Voice baseline | 원본 대비 동일 script 합성 | voice reproduction gap 분리 |
 | 8 | CLI behavior baseline | prompt/few-shot Reference 응답 | held-out behavior score 기록 |
@@ -32,6 +33,10 @@ Epic: [#66](https://github.com/WK-Hanelso/winter-ai/issues/66)
 각 작은 Issue가 끝날 때 무엇 때문에 무엇을 했고, 그 결과 이제 무엇이 가능한지 사용자에게
 보고한다. 데이터가 부족하거나 결과가 나쁘다는 이유만으로 다음 학습 단계를 자동 승인하지
 않는다.
+
+Order 5의 실제 source 접근 전에는 사용자가 Reference Human, source 목록과 전용 외장
+storage 절대경로를 승인해야 한다. 실제 identity와 URL은 외장 private manifest에만 두며,
+승인이나 mount 확인이 없으면 다운로드·storage write·synthetic fallback을 수행하지 않는다.
 
 ## Milestone 5 — Winter Character Foundation
 
