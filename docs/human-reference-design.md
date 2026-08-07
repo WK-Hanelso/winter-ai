@@ -42,8 +42,8 @@ Voice는 같은 response의 pace, energy, pitch, pause, emphasis와 비언어 ev
 
 ## Corpus unit
 
-하나의 scene record는 최소한 아래 정보를 연결해야 한다. 실제 schema와 필수/선택 필드는
-multimodal schema Issue에서 확정한다.
+하나의 scene record는 최소한 아래 정보를 연결한다. 확정된 필드, 시간축, 검증 규칙과
+합성 예시는 [Multimodal Scene Schema](reference-scene-schema.md)를 따른다.
 
 ```text
 source_id / scene_id / source_date
@@ -148,7 +148,7 @@ Qwen이 tone shift, 관계 맥락 또는 dialogue act를 반복적으로 오판�
 
 ## Milestone sequence
 
-세부 순서와 완료 조건은 [roadmap](roadmap.md)을 따른다. 다음 작업은 Reference Human을
-바로 선택하는 것이 아니라, 먼저 [Reference Human 선정 기준](reference-human-selection.md)에
-따라 같은 관찰 예산으로 후보의 데이터 적합성을 비교하는 것이다. 실제 인물 이름과 source
+세부 순서와 완료 조건은 [roadmap](roadmap.md)을 따른다. 후보 비교는
+[Reference Human 선정 기준](reference-human-selection.md)을 사용하고, 수집 결과는
+[Multimodal Scene Schema](reference-scene-schema.md)로 정렬한다. 실제 인물 이름과 source
 URL은 공개 GitHub가 아닌 외장 저장소의 private manifest에 둔다.

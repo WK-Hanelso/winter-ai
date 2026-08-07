@@ -1,0 +1,126 @@
+{
+  "annotations": [
+    {
+      "annotation_id": "annotation-001",
+      "annotation_source": "human",
+      "confidence": 0.9,
+      "evidence_spans": [
+        {
+          "end_ms": 130000,
+          "start_ms": 124000
+        }
+      ],
+      "label": "support",
+      "target_id": "turn-002",
+      "task": "dialogue_act"
+    }
+  ],
+  "atmosphere": {
+    "after": {
+      "annotation_source": "human",
+      "confidence": 0.8,
+      "labels": [
+        "calm",
+        "supported"
+      ],
+      "summary": "상대가 도움을 제안받아 긴장이 낮아진 상태"
+    },
+    "before": {
+      "annotation_source": "human",
+      "confidence": 0.8,
+      "labels": [
+        "tired",
+        "low_energy"
+      ],
+      "summary": "상대가 피로를 직접 표현한 상태"
+    }
+  },
+  "candidate_id": "candidate-001",
+  "context": {
+    "activity": "하루 일과를 마친 뒤 대화",
+    "preceding_context": "상대가 바쁜 하루를 보냈다고 설명했다.",
+    "relationship_context": "친한 대화 상대",
+    "setting": "조용한 실내"
+  },
+  "media_assets": [
+    {
+      "asset_id": "audio-001",
+      "kind": "audio",
+      "media_type": "audio/wav",
+      "relative_path": "aligned/scenes/synthetic-scene-001/audio.wav",
+      "sha256": null
+    }
+  ],
+  "quality": {
+    "audio_quality": "clean",
+    "edit_status": "continuous",
+    "overlap_ratio": 0.0,
+    "scriptedness": "spontaneous"
+  },
+  "scene_id": "synthetic-scene-001",
+  "scene_kind": "coupled",
+  "schema_version": 1,
+  "source_date": "2026-01-15",
+  "source_id": "source-001",
+  "span": {
+    "end_ms": 137000,
+    "start_ms": 120000
+  },
+  "turns": [
+    {
+      "delivery": {
+        "energy_dbfs": null,
+        "pause_after_ms": null,
+        "pause_before_ms": null,
+        "pitch_median_hz": null,
+        "pitch_range_semitones": null,
+        "speech_rate_syllables_per_second": null
+      },
+      "dialogue_act": "disclosure",
+      "media_asset_id": "audio-001",
+      "nonverbal_events": [],
+      "normalized_transcript": "오늘은 좀 지쳤어.",
+      "raw_transcript": "오늘은 좀 지쳤어.",
+      "speaker_ref": "interlocutor-001",
+      "speaker_role": "interlocutor",
+      "span": {
+        "end_ms": 123000,
+        "start_ms": 120500
+      },
+      "turn_id": "turn-001"
+    },
+    {
+      "delivery": {
+        "energy_dbfs": -23.1,
+        "pause_after_ms": 500,
+        "pause_before_ms": 1000,
+        "pitch_median_hz": 142.0,
+        "pitch_range_semitones": 4.8,
+        "speech_rate_syllables_per_second": 4.2
+      },
+      "dialogue_act": "support",
+      "media_asset_id": "audio-001",
+      "nonverbal_events": [
+        {
+          "annotation_source": "human",
+          "confidence": 0.95,
+          "event_id": "event-001",
+          "kind": "hesitation",
+          "span": {
+            "end_ms": 124300,
+            "start_ms": 124000
+          }
+        }
+      ],
+      "normalized_transcript": "그럼 잠깐 쉬었다 하자. 급한 건 내가 같이 정리해볼게.",
+      "raw_transcript": "음... 그럼 잠깐 쉬었다 하자. 급한 건 내가 같이 정리해볼게.",
+      "speaker_ref": "reference-001",
+      "speaker_role": "reference",
+      "span": {
+        "end_ms": 130000,
+        "start_ms": 124000
+      },
+      "turn_id": "turn-002"
+    }
+  ]
+}

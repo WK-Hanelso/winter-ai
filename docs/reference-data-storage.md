@@ -50,14 +50,15 @@ root를 안전하게 식별하고 초기화하는 계약이다.
 
 - `raw`: 원본 또는 원본에서 손실 없이 분리한 자료
 - `derived`: 전처리 결과. 원본을 덮어쓰지 않는다.
-- `aligned`: 이후 multimodal schema로 정렬된 scene
+- `aligned`: [multimodal scene schema](reference-scene-schema.md)로 정렬된 scene
 - `annotations`: 사람·자동 annotation과 confidence
 - `splits`: train/validation/test membership manifest
 - `artifacts`: Reference Voice 또는 model 실험 결과
 - `reports`: 품질·수량·검증 결과
 - `quarantine`: 화자, 출처, 품질 또는 중복이 확인되지 않은 자료
 
-Scene record의 상세 필드는 다음 Multimodal Schema Issue에서 정의한다.
+Scene record의 상세 필드와 검증 규칙은
+[Human Reference Multimodal Scene Schema](reference-scene-schema.md)에 정의한다.
 
 ## Sentinel and drive identity
 
@@ -152,7 +153,6 @@ pytest `tmp_path`만 사용한다.
 ## Deferred work
 
 - 실제 외장 storage 경로 선택과 초기화
-- scene-level multimodal schema
 - checksum, deduplication과 provenance index
 - backup 및 복구 정책
 - source ingest CLI
