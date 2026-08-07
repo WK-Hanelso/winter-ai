@@ -27,9 +27,12 @@ profile로 시작합니다. 이는 실제 음색 모델과 분리된 말하기 �
 Voice는 동일한 text와 delivery plan을 local TTS로 실현합니다. 결합 기준 설계 #67은
 완료됐고 Reference 선정 기준 #69와
 [외장 storage 계약 #71](https://github.com/WK-Hanelso/winter-ai/issues/71)도 확정했습니다.
-현재는 [멀티모달 장면 schema #73](https://github.com/WK-Hanelso/winter-ai/issues/73)으로
-맥락·전후 분위기·원문/정규화 문장·음성 전달을 source-relative 시간축에 정렬하고 있습니다.
+멀티모달 장면 schema #73도 완료해 맥락·전후 분위기·원문/정규화 문장·음성 전달을
+source-relative 시간축에 정렬하고 검증할 수 있습니다. 현재 작업은
+[소규모 수집·정렬 probe #75](https://github.com/WK-Hanelso/winter-ai/issues/75)입니다.
 실제 외장하드, 인물 선택, 영상 수집이나 Qwen/TTS 학습은 시작하지 않았습니다.
+실제 source 접근 전에는 Reference Human, 승인할 source 목록과 전용 외장 storage 절대경로를
+사용자에게 확인하며, 이 값은 public GitHub에 기록하지 않습니다.
 구조, 데이터 경계와 학습 decision gate는
 [Human Reference 설계](docs/human-reference-design.md), [ADR-0002](docs/adr/0002-coupled-human-reference-baseline.md),
 [선정 기준](docs/reference-human-selection.md), [외장 storage](docs/reference-data-storage.md),
