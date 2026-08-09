@@ -65,7 +65,12 @@ def test_core_sends_bounded_repository_context_to_the_chat_model() -> None:
 
     core.respond_to_text("현재 질문")
 
-    assert chat_model.requests[0].messages == (
+    # System blocks are asserted elsewhere; this test is about the conversation
+    # window staying inside its budget.
+    conversation = tuple(
+        message for message in chat_model.requests[0].messages if message.role != "system"
+    )
+    assert conversation == (
         ConversationMessage(role="assistant", content="첫 응답"),
         ConversationMessage(role="user", content="현재 질문"),
     )
@@ -84,6 +89,7 @@ def test_core_prefixes_identity_as_system_message() -> None:
     )
     core = CompanionCore(model, InMemoryConversationRepository(), identity=identity)
     core.respond_to_text("안녕")
+    # Identity leads: it frames every other system block.
     assert model.requests[0].messages[0].role == "system"
     assert "You are Winter." in model.requests[0].messages[0].content
 
@@ -101,8 +107,10 @@ def test_core_injects_selected_active_memory_as_distinct_system_message(tmp_path
         model, repository, memory_retriever=ActiveMemoryRetriever(memory_repository)
     )
     core.respond_to_text("Python config는?")
-    assert model.requests[0].messages[0].role == "system"
-    assert memory.id in model.requests[0].messages[0].content
+    system_messages = [
+        message for message in model.requests[0].messages if message.role == "system"
+    ]
+    assert any(memory.id in message.content for message in system_messages)
 
 
 def test_core_creates_candidate_only_for_explicit_memory_request(tmp_path) -> None:
@@ -140,3 +148,33 @@ def test_core_does_not_create_candidate_for_ordinary_or_empty_request(tmp_path) 
     assert core.respond_to_text("Python config를 선호해").memory_candidate_ids == ()
     assert core.respond_to_text("기억해").memory_candidate_ids == ()
     assert memory_repository.list() == ()
+
+
+def test_system_messages_are_ordered_identity_then_memory_then_style(tmp_path) -> None:
+    memory_repository = SqliteMemoryRepository(tmp_path / "memory.sqlite")
+    memory = memory_repository.add_candidate(
+        kind="preference", content="천우는 Python config를 선호한다"
+    )
+    memory_repository.transition(memory.id, "approved")
+    memory_repository.transition(memory.id, "active")
+    identity = CompanionIdentity(
+        "Winter", "companion", ("calm",), ("honesty",), ("respect",), ("no impersonation",), "1"
+    )
+    model = CapturingChatModel()
+    core = CompanionCore(
+        model,
+        InMemoryConversationRepository(),
+        identity=identity,
+        memory_retriever=ActiveMemoryRetriever(memory_repository),
+    )
+
+    core.respond_to_text("Python config는?")
+
+    system_messages = [
+        message for message in model.requests[0].messages if message.role == "system"
+    ]
+    assert len(system_messages) == 3
+    # Identity frames everything; style sits closest to the generated turn.
+    assert "You are Winter." in system_messages[0].content
+    assert memory.id in system_messages[1].content
+    assert "반말" in system_messages[2].content

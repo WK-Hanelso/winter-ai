@@ -14,6 +14,9 @@ class VerbalStylePlan:
     tone: str = "neutral"
     directness: float = 0.7
     sentence_length: str = "normal"
+    # Plain vs polite speech is a visible part of who the companion sounds like,
+    # so it travels with the plan rather than living only in the prompt.
+    register: str = "polite_casual"
 
 
 @dataclass(frozen=True)

@@ -48,15 +48,26 @@ class CompanionCore:
         )
         if self._context_builder is not None:
             messages = self._context_builder.build(self._conversation_repository.list_messages())
+        # Built in one place and in a deliberate order. Repeated prepends put the
+        # last-added block first, which pushed identity behind style and memory.
+        # Identity leads because it frames everything else; style sits closest to
+        # the turn being generated, where a register instruction is least likely
+        # to be dropped.
+        system_messages: list[ConversationMessage] = []
         if self._identity is not None:
-            messages = (ConversationMessage("system", self._identity.system_message()),) + messages
+            system_messages.append(
+                ConversationMessage("system", self._identity.system_message())
+            )
         if self._memory_retriever is not None:
             selected = self._memory_retriever.retrieve(text)
             if selected:
-                messages = (ConversationMessage("system", memory_context(selected)),) + messages
+                system_messages.append(
+                    ConversationMessage("system", memory_context(selected))
+                )
         style_instruction = self._verbal_style_planner.instruction(dialogue_act)
         if style_instruction is not None:
-            messages = (ConversationMessage("system", style_instruction),) + messages
+            system_messages.append(ConversationMessage("system", style_instruction))
+        messages = tuple(system_messages) + messages
         result = self._chat_model.generate(ChatRequest(prompt=text, messages=messages))
         response_text = result.text
         if candidate_ids:

@@ -23,6 +23,13 @@ from companion.core import CompanionCore
 from companion.identity import IdentityRepositoryError, JsonIdentityRepository
 from companion.memory import ActiveMemoryRetriever, MemoryRepositoryError, SqliteMemoryRepository
 from companion.ports import ChatModel, ConversationRepository
+from companion.verbal_style import (
+    ALLOWED_PROFILES,
+    DEFAULT_PROFILE,
+    VerbalStyleError,
+    VerbalStylePlanner,
+    load_verbal_style,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -60,6 +67,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--identity-path", type=Path)
     parser.add_argument("--memory-db", type=Path)
     parser.add_argument("--memory-kind", default="semantic")
+    parser.add_argument(
+        "--verbal-style",
+        choices=ALLOWED_PROFILES,
+        default=DEFAULT_PROFILE,
+        help="wording policy profile; reference_broadcast is measured from the Reference",
+    )
     parser.add_argument(
         "--conversation-db",
         type=Path,
@@ -124,6 +137,11 @@ def run(
     except MemoryRepositoryError as error:
         print(f"Memory unavailable: {error}", file=stdout)
         return 1
+    try:
+        style_profile = load_verbal_style(getattr(args, "verbal_style", DEFAULT_PROFILE))
+    except VerbalStyleError as error:
+        print(f"Verbal style unavailable: {error}", file=stdout)
+        return 1
     if getattr(args, "show_identity", False):
         print(
             identity.system_message() if identity else "No identity path selected.",
@@ -153,6 +171,7 @@ def run(
         identity,
         memory_retriever,
         memory_repository,
+        verbal_style_planner=VerbalStylePlanner(style_profile),
     )
     if args.prompt is not None:
         return _run_turn(core, args.prompt, stdout)
