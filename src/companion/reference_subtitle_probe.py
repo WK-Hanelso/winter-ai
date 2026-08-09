@@ -538,11 +538,30 @@ def _merged_seconds(cues: tuple[SubtitleCue, ...]) -> float:
 
 
 def _incremental_text(previous: str, current: str) -> str:
-    if not current or current == previous:
+    """Return only the words this cue adds to its predecessor.
+
+    Rolling captions repeat the *tail* of the previous cue at the head of the
+    next one, not necessarily the whole of it. Matching on a whole-string prefix
+    misses the partial overlaps and inflated every text measurement by roughly a
+    third on real data, so the overlap is found token by token.
+
+    Repetition inside a single cue survives untouched: only the boundary between
+    two cues is deduplicated.
+    """
+    if not current:
         return ""
-    if previous and current.startswith(previous):
-        return current[len(previous) :].strip()
-    return current
+    previous_tokens = previous.split()
+    current_tokens = current.split()
+    overlap = _leading_overlap(previous_tokens, current_tokens)
+    return " ".join(current_tokens[overlap:])
+
+
+def _leading_overlap(previous: list[str], current: list[str]) -> int:
+    """Length of the longest suffix of ``previous`` that starts ``current``."""
+    for length in range(min(len(previous), len(current)), 0, -1):
+        if previous[-length:] == current[:length]:
+            return length
+    return 0
 
 
 def _clean_cue_text(value: str) -> str:

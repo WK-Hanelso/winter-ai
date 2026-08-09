@@ -80,3 +80,29 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # Registration only. Touches the manifest, never the network.
+  reference-source-register:
+    build:
+      context: .
+      dockerfile: Dockerfile.reference-source-probe
+    image: winter-ai:reference-source-probe
+    entrypoint: ["python3", "/workspace/experiments/reference_source_register.py"]
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    working_dir: /workspace
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - .:/workspace:ro
+      - ${REFERENCE_STORAGE_ROOT:?REFERENCE_STORAGE_ROOT is required}:/reference-data
+    environment:
+      REFERENCE_STORAGE_ID: ${REFERENCE_STORAGE_ID:?REFERENCE_STORAGE_ID is required}
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /workspace/src
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
