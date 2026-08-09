@@ -265,6 +265,17 @@ docker compose run --rm dev python -m companion.cli \
 docker compose run --rm dev pytest
 ```
 
+lint와 type check는 다음 명령으로 실행합니다. 세 명령 모두 통과해야
+`AGENTS.md`의 Definition of Done을 만족합니다.
+
+```bash
+docker compose run --rm dev ruff check .
+docker compose run --rm dev mypy
+```
+
+규칙은 `pyproject.toml`의 `[tool.ruff]`와 `[tool.mypy]`에 있습니다. 완화한
+항목에는 그 이유를 주석으로 적었습니다.
+
 실제 LLM checkpoint는 Git과 Docker 이미지에 넣지 않습니다. 내려받은 파일의 경로를
 명시해 Host에서 다음 수동 probe를 실행할 수 있습니다.
 

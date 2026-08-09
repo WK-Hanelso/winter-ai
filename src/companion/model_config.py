@@ -31,8 +31,12 @@ _ALLOWED_RUNTIMES = {"llama_cpp", "whisper_cpp", "melotts"}
 def load_model_config(profile: str) -> ModelConfig:
     if profile not in _ALLOWED_PROFILES:
         raise ModelConfigError(f"unsupported model profile: {profile}")
-    raw_models: dict[str, dict[str, Any]] = import_module(f"configs.models.{profile}").MODELS
-    return ModelConfig(**{name: _parse(name, raw_models.get(name)) for name in ("llm", "stt", "tts")})
+    raw_models: dict[str, dict[str, Any]] = import_module(
+        f"configs.models.{profile}"
+    ).MODELS
+    return ModelConfig(
+        **{name: _parse(name, raw_models.get(name)) for name in ("llm", "stt", "tts")}
+    )
 
 
 def _parse(name: str, raw: dict[str, Any] | None) -> ModelRuntimeConfig:

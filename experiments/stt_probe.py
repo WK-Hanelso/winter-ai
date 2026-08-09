@@ -7,11 +7,10 @@ Docker or the runtime failure is returned to the caller unchanged.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
 import shlex
 import subprocess
-from typing import Sequence
-
 
 IMAGES = {
     "cpu": "ghcr.io/ggml-org/whisper.cpp:main-vulkan",

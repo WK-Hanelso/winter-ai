@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING, Protocol, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Protocol
 
 from companion.contracts import (
     AudioInput,

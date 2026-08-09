@@ -27,7 +27,7 @@ def test_fake_speech_adapters_round_trip_text_deterministically() -> None:
         AudioInput(data=b"ignored", media_type="audio/fake")
     )
     audio = FakeTextToSpeech().synthesize(SpeechRequest(text=transcript.text))
-    assert audio.data == "테스트".encode("utf-8")
+    assert audio.data == "테스트".encode()
     assert audio.media_type == "audio/fake"
 
 

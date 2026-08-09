@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import json
 import math
@@ -9,10 +10,9 @@ import os
 from pathlib import Path, PurePosixPath
 import subprocess
 from tempfile import TemporaryDirectory
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from companion.reference_storage import ReferenceStorage
-
 
 PROBE_SCHEMA_VERSION = 1
 DEFAULT_DURATION_CAP_SECONDS = 3 * 60 * 60

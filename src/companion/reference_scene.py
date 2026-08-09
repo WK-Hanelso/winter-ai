@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 import json
@@ -9,13 +10,12 @@ import math
 import os
 from pathlib import Path
 import re
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 from companion.reference_storage import (
     ReferenceStorageError,
     validate_managed_relative_path,
 )
-
 
 SCENE_SCHEMA_VERSION = 1
 
@@ -503,12 +503,12 @@ def _validate_scene(scene: SceneRecord) -> None:
     for turn in scene.turns:
         if not _contains_span(scene.span, turn.span):
             raise ReferenceSceneError("every turn span must be inside scene span")
-        asset = assets.get(turn.media_asset_id)
-        if asset is None:
+        turn_asset = assets.get(turn.media_asset_id)
+        if turn_asset is None:
             raise ReferenceSceneError(
                 f"turn {turn.turn_id!r} references an unknown media asset"
             )
-        if asset.kind not in {"audio", "video"}:
+        if turn_asset.kind not in {"audio", "video"}:
             raise ReferenceSceneError("turn media asset must be audio or video")
         for event in turn.nonverbal_events:
             if event.event_id in event_ids:
@@ -632,10 +632,10 @@ def _text_list(value: Any, label: str) -> tuple[str, ...]:
 
 
 def _enum(value: Any, choices: set[str], label: str) -> str:
-    value = _text(value, label)
-    if value not in choices:
+    text = _text(value, label)
+    if text not in choices:
         raise ReferenceSceneError(f"{label} must be one of {sorted(choices)}")
-    return value
+    return text
 
 
 def _integer(value: Any, label: str) -> int:
@@ -692,14 +692,14 @@ def _optional_nonnegative_integer(value: Any, label: str) -> int | None:
 
 
 def _source_date(value: Any) -> str:
-    value = _text(value, "source_date")
+    text = _text(value, "source_date")
     try:
-        parsed = date.fromisoformat(value)
+        parsed = date.fromisoformat(text)
     except ValueError as error:
         raise ReferenceSceneError("source_date must use ISO YYYY-MM-DD form") from error
-    if parsed.isoformat() != value:
+    if parsed.isoformat() != text:
         raise ReferenceSceneError("source_date must use ISO YYYY-MM-DD form")
-    return value
+    return text
 
 
 T = TypeVar("T")

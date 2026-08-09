@@ -3,17 +3,25 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
 import sys
-from typing import Sequence, TextIO
+from typing import TextIO
 
-from companion.adapters.fake import AdapterUnavailableError, FakeChatModel, InMemoryConversationRepository
+from companion.adapters.fake import (
+    AdapterUnavailableError,
+    FakeChatModel,
+    InMemoryConversationRepository,
+)
 from companion.adapters.llama_cpp import LlamaCppHttpChatModel
-from companion.adapters.sqlite_repository import ConversationRepositoryError, SqliteConversationRepository
+from companion.adapters.sqlite_repository import (
+    ConversationRepositoryError,
+    SqliteConversationRepository,
+)
 from companion.context import ConversationContextBuilder
+from companion.core import CompanionCore
 from companion.identity import IdentityRepositoryError, JsonIdentityRepository
 from companion.memory import ActiveMemoryRetriever, MemoryRepositoryError, SqliteMemoryRepository
-from companion.core import CompanionCore
 from companion.ports import ChatModel, ConversationRepository
 
 
@@ -44,7 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
     actions.add_argument("--memory-activate", metavar="ID")
     actions.add_argument("--memory-deprecate", metavar="ID")
     actions.add_argument("--memory-replace", nargs=2, metavar=("ID", "CONTENT"))
-    actions.add_argument("--memory-delete", metavar="ID", help="permanently delete an unreferenced memory")
+    actions.add_argument(
+        "--memory-delete",
+        metavar="ID",
+        help="permanently delete an unreferenced memory",
+    )
     parser.add_argument("--identity-path", type=Path)
     parser.add_argument("--memory-db", type=Path)
     parser.add_argument("--memory-kind", default="semantic")
@@ -113,9 +125,21 @@ def run(
         print(f"Memory unavailable: {error}", file=stdout)
         return 1
     if getattr(args, "show_identity", False):
-        print(identity.system_message() if identity else "No identity path selected.", file=stdout)
+        print(
+            identity.system_message() if identity else "No identity path selected.",
+            file=stdout,
+        )
         return 0
-    if any(getattr(args, name, None) for name in ("list_memories", "memory_add", "memory_approve", "memory_activate", "memory_deprecate", "memory_replace", "memory_delete")):
+    memory_actions = (
+        "list_memories",
+        "memory_add",
+        "memory_approve",
+        "memory_activate",
+        "memory_deprecate",
+        "memory_replace",
+        "memory_delete",
+    )
+    if any(getattr(args, name, None) for name in memory_actions):
         return _handle_memory(args, stdout)
     if getattr(args, "show_history", False):
         return _show_history(repository, stdout)
@@ -173,7 +197,8 @@ def _show_history(repository: ConversationRepository, stdout: TextIO) -> int:
 
 def _handle_memory(args: argparse.Namespace, stdout: TextIO) -> int:
     if not args.memory_db:
-        print("Memory unavailable: --memory-db is required.", file=stdout); return 1
+        print("Memory unavailable: --memory-db is required.", file=stdout)
+        return 1
     try:
         repo = SqliteMemoryRepository(args.memory_db)
         if args.memory_add:
@@ -191,11 +216,18 @@ def _handle_memory(args: argparse.Namespace, stdout: TextIO) -> int:
             print(f"Memory {deleted.id} was permanently deleted.", file=stdout)
             return 0
         else:
-            for memory in repo.list(): print(f"{memory.id} {memory.status} {memory.kind} supersedes={memory.supersedes}: {memory.content}", file=stdout)
+            for memory in repo.list():
+                print(
+                    f"{memory.id} {memory.status} {memory.kind} "
+                    f"supersedes={memory.supersedes}: {memory.content}",
+                    file=stdout,
+                )
             return 0
     except MemoryRepositoryError as error:
-        print(f"Memory unavailable: {error}", file=stdout); return 1
-    print(f"Memory {memory.id} is {memory.status}.", file=stdout); return 0
+        print(f"Memory unavailable: {error}", file=stdout)
+        return 1
+    print(f"Memory {memory.id} is {memory.status}.", file=stdout)
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:

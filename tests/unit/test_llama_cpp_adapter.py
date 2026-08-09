@@ -1,13 +1,12 @@
-import json
 from io import BytesIO
+import json
 from urllib.error import URLError
 
 import pytest
 
 from companion.adapters.fake import AdapterUnavailableError
 from companion.adapters.llama_cpp import LlamaCppHttpChatModel
-from companion.contracts import ChatRequest
-from companion.contracts import ConversationMessage
+from companion.contracts import ChatRequest, ConversationMessage
 
 
 class FakeHttpResponse:
@@ -32,7 +31,7 @@ def test_llama_adapter_posts_openai_compatible_request(monkeypatch: pytest.Monke
         captured["body"] = request.data  # type: ignore[attr-defined]
         captured["timeout"] = timeout
         return FakeHttpResponse(
-            '{"choices": [{"message": {"content": "로컬 응답"}}]}'.encode("utf-8")
+            '{"choices": [{"message": {"content": "로컬 응답"}}]}'.encode()
         )
 
     monkeypatch.setattr("companion.adapters.llama_cpp.urlopen", fake_urlopen)
