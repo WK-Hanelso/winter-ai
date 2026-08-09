@@ -319,6 +319,19 @@ docker compose -f compose.reference-source.yaml run --rm reference-source-probe 
 실행 규약, 실패 정책, 설계 결정은
 [source metadata preflight 문서](docs/reference-source-probe.md)를 따릅니다.
 
+자막이 `raw_transcript`로 쓸 수 있는 품질인지 측정하는 probe는 같은 image에서
+텍스트만 내려받아 실행합니다.
+
+```bash
+docker compose -f compose.reference-source.yaml run --rm reference-subtitle-probe \
+  --candidate-id <candidate-id> \
+  --report-relative-path reports/<name>.json \
+  --duration <source-id>=<seconds>
+```
+
+측정 지표와 판정 기준은
+[자막 품질 측정 문서](docs/reference-subtitle-quality.md)를 따릅니다.
+
 모델 선택값은 `configs/models/`의 Python profile로 관리합니다. 기본값은 `base`,
 RTX 2060 6 GiB profile은 `rtx2060_6gb`(Vulkan GPU backend, 37 layers), CPU
 profile은 `cpu`입니다.
