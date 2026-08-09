@@ -294,6 +294,20 @@ python3 experiments/tts_probe.py \
   --output-path /path/outside/git/melotts-korean.wav
 ```
 
+Human Reference source의 메타데이터 preflight probe는 별도 pinned image로
+실행합니다. media를 다운로드하지 않고 duration, audio format, 자막 언어만
+조회합니다. 외장 storage mount와 `.env`의 `REFERENCE_STORAGE_ROOT`,
+`REFERENCE_STORAGE_ID`가 필요합니다.
+
+```bash
+docker compose -f compose.reference-source.yaml run --rm reference-source-probe \
+  --candidate-id <candidate-id> \
+  --report-relative-path reports/<name>.json
+```
+
+실행 규약, 실패 정책, 설계 결정은
+[source metadata preflight 문서](docs/reference-source-probe.md)를 따릅니다.
+
 모델 선택값은 `configs/models/`의 Python profile로 관리합니다. 기본값은 `base`,
 RTX 2060 6 GiB profile은 `rtx2060_6gb`(Vulkan GPU backend, 37 layers), CPU
 profile은 `cpu`입니다.

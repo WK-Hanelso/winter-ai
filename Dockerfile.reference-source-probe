@@ -1,0 +1,36 @@
+# Node base image is deliberate, not a mistake.
+#
+# 이 저장소는 Python 프로젝트지만 이 probe image만 Node를 base로 쓴다.
+# 최근 yt-dlp의 YouTube extractor는 player script를 해석하기 위해 외부
+# JavaScript runtime을 요구한다. runtime이 없으면 metadata 조회 자체가
+# 실패하거나 신뢰할 수 없는 결과를 낸다.
+#
+# Host에 Node를 임의로 설치하지 않는다는 원칙(AGENTS.md의 Docker-first
+# baseline, docs/adr/0001-docker-development-baseline.md)을 지키기 위해,
+# JS runtime과 yt-dlp를 함께 고정한 격리 image로 분리했다. 그래서 Node를
+# base로 두고 python3를 얹는 방향이 반대 방향보다 단순하다.
+#
+# 의존성 고정 범위: yt-dlp는 정확한 version으로 pin하지만 transitive
+# dependency는 pin하지 않는다. requirements/melotts-probe.lock은 일반 정책이
+# 아니라 git ref 설치에서 실제로 발생한 충돌을 실험으로 해소한 기록이며,
+# 이 image에서는 그런 충돌이 관측되지 않았다. 완전한 lock은 network build가
+# 필요하므로 별도 issue로 분리했다. 근거: docs/reference-source-probe.md
+FROM node:22-bookworm-slim
+
+ARG YT_DLP_VERSION=2026.7.4
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/workspace/src \
+    YTDLP_NO_PLUGINS=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates python3 python3-pip \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m pip install --break-system-packages --no-cache-dir \
+        "yt-dlp[default]==${YT_DLP_VERSION}"
+
+WORKDIR /workspace
+
+ENTRYPOINT ["python3", "/workspace/experiments/reference_source_probe.py"]
