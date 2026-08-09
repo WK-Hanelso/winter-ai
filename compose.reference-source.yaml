@@ -1,0 +1,25 @@
+services:
+  reference-source-probe:
+    build:
+      context: .
+      dockerfile: Dockerfile.reference-source-probe
+    image: winter-ai:reference-source-probe
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    working_dir: /workspace
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - .:/workspace:ro
+      - ${REFERENCE_STORAGE_ROOT:?REFERENCE_STORAGE_ROOT is required}:/reference-data
+    environment:
+      REFERENCE_STORAGE_ID: ${REFERENCE_STORAGE_ID:?REFERENCE_STORAGE_ID is required}
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /workspace/src
+      YTDLP_NO_PLUGINS: "1"
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
