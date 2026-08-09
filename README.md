@@ -345,6 +345,21 @@ docker compose -f compose.reference-source.yaml run --rm reference-audio-ingest 
 수집 계약과 실패 정책은
 [오디오 수집 문서](docs/reference-audio-ingest.md)를 따릅니다.
 
+수집한 오디오의 전사 품질은 구간 단위로 측정합니다. whisper.cpp image에 ffmpeg가
+포함돼 있어 자르기·리샘플·전사가 한 runtime에서 끝납니다.
+
+```bash
+PYTHONPATH=src python3 experiments/reference_transcription_probe.py \\
+  --audio-path <외장>/raw/audio/<candidate>/<source>.webm \\
+  --reference-vtt <외장>/raw/subtitles/<candidate>/<source>.ko-orig.vtt \\
+  --model-path <모델>/ggml-small.bin \\
+  --work-dir <외장>/derived/audio/stt-pilot \\
+  --source-id <source-id> --start-seconds 600 --duration-seconds 300
+```
+
+측정 방법과 결과는
+[STT 파일럿 문서](docs/reference-transcription-probe.md)를 따릅니다.
+
 모델 선택값은 `configs/models/`의 Python profile로 관리합니다. 기본값은 `base`,
 RTX 2060 6 GiB profile은 `rtx2060_6gb`(Vulkan GPU backend, 37 layers), CPU
 profile은 `cpu`입니다.

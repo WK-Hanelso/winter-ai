@@ -297,7 +297,7 @@ def measure_source_subtitles(
 
     parsed = {track: parse_webvtt(document) for track, document in track_documents.items()}
     metrics = tuple(
-        _track_metrics(track, cues, duration_seconds)
+        track_metrics(track, cues, duration_seconds)
         for track, cues in sorted(parsed.items())
     )
     missing = tuple(
@@ -312,7 +312,7 @@ def measure_source_subtitles(
         # the opposite: there is nothing human to measure. Refuse the number.
         identical = _comparable(parsed[HUMAN_TRACK]) == _comparable(parsed[AUTOMATIC_TRACK])
         if not identical:
-            comparison = _compare(parsed[HUMAN_TRACK], parsed[AUTOMATIC_TRACK])
+            comparison = compare_tracks(parsed[HUMAN_TRACK], parsed[AUTOMATIC_TRACK])
     return SourceSubtitleMetrics(
         source_id=source_id,
         duration_seconds=duration_seconds,
@@ -451,11 +451,12 @@ def dump_subtitle_probe_report(
     return destination
 
 
-def _track_metrics(
+def track_metrics(
     track: str,
     cues: tuple[SubtitleCue, ...],
     duration_seconds: float | None,
 ) -> TrackMetrics:
+    """Measure one parsed track. Public so other probes reuse the same maths."""
     text = " ".join(cue.text for cue in cues)
     characters = len(text.replace(" ", ""))
     covered = _merged_seconds(cues)
@@ -476,10 +477,11 @@ def _track_metrics(
     )
 
 
-def _compare(
+def compare_tracks(
     human: tuple[SubtitleCue, ...],
     automatic: tuple[SubtitleCue, ...],
 ) -> TrackComparison:
+    """Compare two transcripts of the same audio. Public for reuse."""
     human_text = _comparable(human)
     automatic_text = _comparable(automatic)
     human_characters = len(human_text.replace(" ", ""))
