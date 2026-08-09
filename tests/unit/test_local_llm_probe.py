@@ -1,8 +1,7 @@
 from pathlib import Path
 
-import pytest
-
 from experiments.local_llm_probe import build_docker_command
+import pytest
 
 
 def test_probe_command_mounts_runtime_and_model_read_only(tmp_path: Path) -> None:

@@ -23,7 +23,6 @@ from companion.reference_storage import (
     initialize_reference_storage,
 )
 
-
 FIXED_STORAGE_ID = "10000000-0000-4000-8000-000000000001"
 PRIVATE_URI_ONE = "fixture-source://one"
 PRIVATE_URI_TWO = "fixture-source://two"

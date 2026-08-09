@@ -11,7 +11,6 @@ from companion.cli.orchestration import CliOrchestrator
 from companion.contracts import AudioInput
 from companion.core import CompanionCore
 from companion.memory import SqliteMemoryRepository
-from companion.ports import SpeechToText
 from companion.voice.orchestration import VoiceOrchestrator
 
 
@@ -38,7 +37,11 @@ class FailingSpeechToText:
 
 def test_voice_propagates_stt_failure_without_calling_core() -> None:
     repository = InMemoryConversationRepository()
-    voice = VoiceOrchestrator(CompanionCore(FakeChatModel(), repository), FailingSpeechToText(), FakeTextToSpeech())
+    voice = VoiceOrchestrator(
+        CompanionCore(FakeChatModel(), repository),
+        FailingSpeechToText(),
+        FakeTextToSpeech(),
+    )
 
     with pytest.raises(AdapterUnavailableError, match="stt is unavailable"):
         voice.handle_audio(AudioInput(b"audio", "audio/fake"))
@@ -47,9 +50,17 @@ def test_voice_propagates_stt_failure_without_calling_core() -> None:
 
 def test_cli_and_voice_create_explicit_memory_candidates_through_the_same_core(tmp_path) -> None:
     memory_repository = SqliteMemoryRepository(tmp_path / "memories.sqlite")
-    core = CompanionCore(FakeChatModel(), InMemoryConversationRepository(), memory_repository=memory_repository)
+    core = CompanionCore(
+        FakeChatModel(),
+        InMemoryConversationRepository(),
+        memory_repository=memory_repository,
+    )
     cli = CliOrchestrator(core)
-    voice = VoiceOrchestrator(core, FakeSpeechToText("기억해. Voice에서도 후보를 저장해"), FakeTextToSpeech())
+    voice = VoiceOrchestrator(
+        core,
+        FakeSpeechToText("기억해. Voice에서도 후보를 저장해"),
+        FakeTextToSpeech(),
+    )
 
     cli_response = cli.handle_text("기억해. CLI에서도 후보를 저장해")
     voice_output = voice.handle_audio(AudioInput(b"audio", "audio/fake"))

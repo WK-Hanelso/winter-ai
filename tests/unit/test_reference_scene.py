@@ -14,7 +14,6 @@ from companion.reference_scene import (
     scene_record_to_dict,
 )
 
-
 FIXTURE_PATH = Path(__file__).parents[1] / "fixtures" / "reference_scene_v1.json"
 
 

@@ -6,7 +6,8 @@ from typing import Any
 from companion.response import ProsodyPlan
 
 
-class VoiceProfileError(ValueError): pass
+class VoiceProfileError(ValueError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -23,8 +24,14 @@ def load_voice_identity(profile: str = "base") -> VoiceIdentity:
     except (ImportError, KeyError, TypeError) as error:
         raise VoiceProfileError(f"invalid voice profile {profile}: {error}") from error
     required = {"neutral", "calm", "warm", "serious"}
-    if not raw.get("name") or not raw.get("verbal_style") or not required <= profiles.keys():
-        raise VoiceProfileError("voice profile must define identity and neutral/calm/warm/serious plans")
+    if (
+        not raw.get("name")
+        or not raw.get("verbal_style")
+        or not required <= profiles.keys()
+    ):
+        raise VoiceProfileError(
+            "voice profile must define identity and neutral/calm/warm/serious plans"
+        )
     return VoiceIdentity(raw["name"], raw["verbal_style"], profiles)
 
 
@@ -33,5 +40,9 @@ class ProsodyPlanner:
         self._identity = identity or load_voice_identity()
 
     def plan(self, dialogue_act: str) -> ProsodyPlan:
-        style = {"memory_candidate": "warm", "warning": "serious", "support": "calm"}.get(dialogue_act, "neutral")
+        style = {
+            "memory_candidate": "warm",
+            "warning": "serious",
+            "support": "calm",
+        }.get(dialogue_act, "neutral")
         return self._identity.profiles[style]

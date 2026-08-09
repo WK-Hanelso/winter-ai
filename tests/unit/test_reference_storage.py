@@ -178,7 +178,7 @@ def test_private_manifest_rejects_unsafe_paths(
 
 def test_load_rejects_wrong_storage_id_and_schema_version(tmp_path: Path) -> None:
     repository_root, external_root = _roots(tmp_path)
-    storage = initialize_reference_storage(external_root, repository_root)
+    initialize_reference_storage(external_root, repository_root)
 
     with pytest.raises(ReferenceStorageError, match="storage ID"):
         load_reference_storage(

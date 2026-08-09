@@ -7,7 +7,6 @@ from pathlib import Path
 import shlex
 import subprocess
 
-
 DEFAULT_TEXT = "안녕하세요. 로컬 컴패니언의 음성 출력 경로를 확인하고 있습니다."
 
 
@@ -32,7 +31,12 @@ def main() -> int:
     args = parser.parse_args()
     args.cache_dir.mkdir(parents=True, exist_ok=True)
     args.output_path.parent.mkdir(parents=True, exist_ok=True)
-    command = build_command(args.cache_dir.resolve(), args.output_path.resolve(), args.text, args.speed)
+    command = build_command(
+        args.cache_dir.resolve(),
+        args.output_path.resolve(),
+        args.text,
+        args.speed,
+    )
     print("Running:", shlex.join(command), flush=True)
     return subprocess.run(command, check=False).returncode
 

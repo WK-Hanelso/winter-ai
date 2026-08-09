@@ -7,11 +7,10 @@ does not provide a fake fallback when Docker, GPU access, or the runtime fails.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
 import shlex
 import subprocess
-from typing import Sequence
-
 
 DEFAULT_PROMPT = "한국어로 한 문장만 답해줘. 로컬 AI 컴패니언의 역할을 설명해줘."
 

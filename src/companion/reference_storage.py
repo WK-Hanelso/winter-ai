@@ -9,7 +9,6 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import UUID, uuid4
 
-
 SCHEMA_VERSION = 1
 SENTINEL_FILENAME = ".winter-reference-storage.json"
 MANIFEST_FILENAME = "private-manifest.json"

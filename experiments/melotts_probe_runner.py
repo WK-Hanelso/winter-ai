@@ -17,7 +17,12 @@ def main() -> int:
 
     args.output_path.parent.mkdir(parents=True, exist_ok=True)
     model = TTS(language="KR", device="cpu")
-    model.tts_to_file(args.text, model.hps.data.spk2id["KR"], str(args.output_path), speed=args.speed)
+    model.tts_to_file(
+        args.text,
+        model.hps.data.spk2id["KR"],
+        str(args.output_path),
+        speed=args.speed,
+    )
     return 0
 
 

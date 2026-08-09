@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 import json
 import os
 from pathlib import Path
@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
             storage,
             arguments.candidate_id,
             YtDlpMetadataRunner(arguments.yt_dlp_executable),
-            generated_at=datetime.now(timezone.utc).isoformat(),
+            generated_at=datetime.now(UTC).isoformat(),
             duration_cap_seconds=arguments.duration_cap_seconds,
         )
         dump_private_probe_report(storage, arguments.report_relative_path, report)

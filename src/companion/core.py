@@ -1,11 +1,11 @@
-from companion.contracts import ChatRequest, ConversationMessage
 from companion.context import ConversationContextBuilder
+from companion.contracts import ChatRequest, ConversationMessage
 from companion.identity import CompanionIdentity
 from companion.memory import ActiveMemoryRetriever, extract_explicit_memory_content, memory_context
 from companion.ports import ChatModel, ConversationRepository, MemoryCandidateRepository
-from companion.response import CompanionResponse, ProsodyPlan
-from companion.voice_profile import ProsodyPlanner
+from companion.response import CompanionResponse
 from companion.verbal_style import VerbalStylePlanner
+from companion.voice_profile import ProsodyPlanner
 
 _MEMORY_CANDIDATE_NOTICE = "기억 후보로 저장했어. 검토 후 활성화할 수 있어."
 
@@ -43,7 +43,9 @@ class CompanionCore:
             )
             candidate_ids = (candidate.id,)
         dialogue_act = "memory_candidate" if candidate_ids else "answer"
-        messages = (ConversationMessage(role="user", content=text),)
+        messages: tuple[ConversationMessage, ...] = (
+            ConversationMessage(role="user", content=text),
+        )
         if self._context_builder is not None:
             messages = self._context_builder.build(self._conversation_repository.list_messages())
         if self._identity is not None:
