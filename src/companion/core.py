@@ -1,5 +1,6 @@
 from companion.context import ConversationContextBuilder
 from companion.contracts import ChatRequest, ConversationMessage
+from companion.grounding import GroundingPolicy
 from companion.identity import CompanionIdentity
 from companion.memory import ActiveMemoryRetriever, extract_explicit_memory_content, memory_context
 from companion.ports import ChatModel, ConversationRepository, MemoryCandidateRepository
@@ -23,6 +24,7 @@ class CompanionCore:
         memory_repository: MemoryCandidateRepository | None = None,
         prosody_planner: ProsodyPlanner | None = None,
         verbal_style_planner: VerbalStylePlanner | None = None,
+        grounding_policy: GroundingPolicy | None = None,
     ) -> None:
         self._chat_model = chat_model
         self._conversation_repository = conversation_repository
@@ -32,6 +34,7 @@ class CompanionCore:
         self._memory_repository = memory_repository
         self._prosody_planner = prosody_planner or ProsodyPlanner()
         self._verbal_style_planner = verbal_style_planner or VerbalStylePlanner()
+        self._grounding_policy = grounding_policy or GroundingPolicy()
 
     def respond_to_text(self, text: str) -> CompanionResponse:
         self._conversation_repository.append(ConversationMessage(role="user", content=text))
@@ -67,6 +70,12 @@ class CompanionCore:
         style_instruction = self._verbal_style_planner.instruction(dialogue_act)
         if style_instruction is not None:
             system_messages.append(ConversationMessage("system", style_instruction))
+        # Grounding goes last, closest to the generated turn. It is the one
+        # constraint that must survive when the others compete for attention:
+        # a fluent invented answer is worse than an awkward honest one.
+        grounding_instruction = self._grounding_policy.instruction()
+        if grounding_instruction is not None:
+            system_messages.append(ConversationMessage("system", grounding_instruction))
         messages = tuple(system_messages) + messages
         result = self._chat_model.generate(ChatRequest(prompt=text, messages=messages))
         response_text = result.text

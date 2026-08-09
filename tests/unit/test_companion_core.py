@@ -150,7 +150,7 @@ def test_core_does_not_create_candidate_for_ordinary_or_empty_request(tmp_path) 
     assert memory_repository.list() == ()
 
 
-def test_system_messages_are_ordered_identity_then_memory_then_style(tmp_path) -> None:
+def test_system_messages_are_ordered_identity_memory_style_grounding(tmp_path) -> None:
     memory_repository = SqliteMemoryRepository(tmp_path / "memory.sqlite")
     memory = memory_repository.add_candidate(
         kind="preference", content="천우는 Python config를 선호한다"
@@ -173,8 +173,10 @@ def test_system_messages_are_ordered_identity_then_memory_then_style(tmp_path) -
     system_messages = [
         message for message in model.requests[0].messages if message.role == "system"
     ]
-    assert len(system_messages) == 3
-    # Identity frames everything; style sits closest to the generated turn.
+    assert len(system_messages) == 4
+    # Identity frames everything; grounding sits closest to the generated turn
+    # because it is the constraint that must not be dropped.
     assert "You are Winter." in system_messages[0].content
     assert memory.id in system_messages[1].content
     assert "반말" in system_messages[2].content
+    assert "지어내지 마" in system_messages[3].content

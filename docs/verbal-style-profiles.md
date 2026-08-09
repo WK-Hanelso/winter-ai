@@ -70,7 +70,7 @@ register → 길이 제한 → 담화 표지 → 머뭇거림 → dialogue act�
 지금은 한 곳에서 명시적 순서로 조립한다.
 
 ```
-[identity, memory, style, ...대화 이력]
+[identity, memory, style, grounding, ...대화 이력]
 ```
 
 - **identity가 먼저다.** 나머지 전부를 규정하기 때문이다
@@ -104,8 +104,8 @@ profile 이름이 잘못되면 즉시 실패한다. 기본 말투로 조용히 �
 - **방송 register에서 관찰된 말투다.** 다수 청자를 향한 발화이며 1:1 대화와 다를 수
   있다. 대화 source로 보정하는 것은 관계 정보 단계의 일이다
 - **응답 품질을 정량 평가하지 않았다.** held-out 평가는 별도 issue다
-- 위 실측에서 Reference profile은 개인적 경험을 지어냈다(`라면 먹었어`). 그 실행에는
-  identity를 로드하지 않아 `immutable_boundaries`가 적용되지 않았다. 말투와 경계의
-  상호작용은 별도로 확인해야 한다
+- 위 실측에서 Reference profile은 개인적 경험을 지어냈다(`라면 먹었어`). 확인 결과
+  **identity를 로드해도 막히지 않았고 오히려 더 구체적으로 지어냈다.** 별도의
+  [grounding 정책](grounding-policy.md)으로 처리했다
 - prosody와 통합되지 않았다. Joint Utterance Planner는 후속이다
 - `ADR-0002` 결정 6: Human Reference는 최종 겨울이가 아니다. 이 profile은 기준선이다
