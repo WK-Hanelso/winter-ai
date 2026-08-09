@@ -19,6 +19,7 @@ def _profile(**overrides: object) -> VerbalStyleProfile:
         "name": "test",
         "register": "plain",
         "max_sentences": 2,
+        "max_words_per_sentence": 8,
         "shared_instruction": True,
         "discourse_markers": ("근데",),
         "hesitation_markers": ("뭔가",),
@@ -46,9 +47,11 @@ def test_reference_profile_is_the_default_and_uses_plain_speech() -> None:
     profile = load_verbal_style()
 
     assert DEFAULT_PROFILE == "reference_broadcast"
-    # Measured politeness ratio was 0.31, so plain speech is the base register.
-    assert profile.register == "plain"
-    assert profile.max_sentences == 2
+    # Measured politeness ratio was 0.31: plain dominates but polite still
+    # appears, so the register is a mixture rather than an absolute rule.
+    assert profile.register == "mostly_plain"
+    assert profile.max_sentences == 1
+    assert profile.max_words_per_sentence == 8
 
 
 def test_hand_written_profile_is_still_loadable_for_comparison() -> None:
@@ -83,6 +86,17 @@ def test_instruction_states_the_register_first() -> None:
 
     assert instruction is not None
     assert instruction.startswith(REGISTER_INSTRUCTIONS["plain"])
+
+
+def test_instruction_states_a_word_target_when_the_profile_has_one() -> None:
+    # Sentence count alone did not control length in measurement.
+    with_words = VerbalStylePlanner(_profile()).instruction("answer")
+    without_words = VerbalStylePlanner(
+        _profile(max_words_per_sentence=None)
+    ).instruction("answer")
+
+    assert with_words is not None and "8단어" in with_words
+    assert without_words is not None and "단어를 넘기지" not in without_words
 
 
 def test_instruction_mentions_discourse_and_hesitation_markers() -> None:
@@ -136,6 +150,8 @@ def test_malformed_profiles_are_refused() -> None:
         _parse("p", {**base, "hesitation_usage": "always"})
     with pytest.raises(VerbalStyleError, match="max_sentences"):
         _parse("p", {**base, "max_sentences": 0})
+    with pytest.raises(VerbalStyleError, match="max_words_per_sentence"):
+        _parse("p", {**base, "max_words_per_sentence": 0})
     with pytest.raises(VerbalStyleError, match="must define acts"):
         _parse("p", {**base, "acts": {"warning": {}}})
     with pytest.raises(VerbalStyleError, match="numeric directness"):
