@@ -37,8 +37,8 @@ profile로 분리하면 세 가지가 가능해진다.
 
 | 설정 | 측정 근거 |
 | --- | --- |
-| `register: plain` | 존댓말 비율 0.312 / 0.308 |
-| `max_sentences: 2` | 평균 발화 3.00 / 2.69 단어, 중앙값 2~3 |
+| `register: mostly_plain` | 존댓말 비율 0.312 / 0.308 — 반말이 우세하되 존댓말도 나타난다 |
+| `max_sentences: 1`, `max_words_per_sentence: 8` | 평균 발화 3.00 / 2.69 단어. 문장 수만으로는 길이가 통제되지 않아 단어 상한을 함께 둔다 ([평가](style-holdout-evaluation.md) §4) |
 | 격식체 미사용 | 35분간 격식체 종결 각 1회 |
 | `discourse_markers: ("근데",)` | 양쪽 전사 상위 어휘 |
 | `hesitation_markers` | `뭔가` 양쪽 1위, 이어서 `약간`·`진짜`·`그러니까` |
@@ -109,3 +109,16 @@ profile 이름이 잘못되면 즉시 실패한다. 기본 말투로 조용히 �
   [grounding 정책](grounding-policy.md)으로 처리했다
 - prosody와 통합되지 않았다. Joint Utterance Planner는 후속이다
 - `ADR-0002` 결정 6: Human Reference는 최종 겨울이가 아니다. 이 profile은 기준선이다
+
+## 9. 측정된 성능
+
+[held-out 평가](style-holdout-evaluation.md) 기준 스타일 거리(낮을수록 가까움).
+
+| profile | 평균 거리 (3회) |
+| --- | ---: |
+| `base` | 0.619 |
+| `reference_broadcast` | 0.252 |
+| 바닥값 (Reference 자기 거리) | 0.162 |
+
+남은 거리의 대부분은 **존댓말 비율**이다. 모델은 범주 선택을 규칙으로 다루므로
+"넷 중 하나는 존댓말" 같은 분포가 프롬프트로 유도되지 않는다.

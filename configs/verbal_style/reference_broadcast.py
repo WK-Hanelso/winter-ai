@@ -3,7 +3,7 @@
 Every value here traces to `docs/reference-speech-style.md`, where two
 independent transcripts of the same 35 minutes agreed:
 
-- politeness ratio 0.312 / 0.308  -> plain speech is the default register
+- politeness ratio 0.312 / 0.308  -> plain speech dominates, polite still appears
 - mean 3.00 / 2.69 words per utterance -> utterances are short
 - one formal ending in 35 minutes -> the formal register is not used
 - `근데` ranks high in both transcripts -> it is the topic-shift marker
@@ -20,8 +20,12 @@ is a baseline, not the final companion.
 
 VERBAL_STYLE = {
     "name": "reference-broadcast-2026-08",
-    "register": "plain",
-    "max_sentences": 2,
+    # Plain speech dominates but does not own the register: roughly a quarter of
+    # classified endings were polite. An absolute "use plain speech only" rule
+    # measured further from the Reference than the mixture does.
+    "register": "mostly_plain",
+    "max_sentences": 1,
+    "max_words_per_sentence": 8,
     "shared_instruction": True,
     "discourse_markers": ("근데",),
     "hesitation_markers": ("뭔가", "약간", "진짜", "그러니까"),

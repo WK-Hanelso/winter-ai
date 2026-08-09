@@ -23,6 +23,10 @@ ALLOWED_PROFILES = ("base", "reference_broadcast")
 # Plain speech and polite speech are not interchangeable in Korean; picking the
 # wrong one is the most visible way to sound like someone else.
 REGISTER_INSTRUCTIONS = {
+    # Measured registers are mixtures, not switches. An absolute rule produced
+    # 0% polite endings where the Reference had 26%, which scored further away
+    # than allowing the mixture.
+    "mostly_plain": "한국어로 주로 반말을 쓰되 가끔 존댓말도 섞어. 격식체는 쓰지 마.",
     "plain": "한국어 반말로 말해. 존댓말과 격식체는 쓰지 마.",
     "polite_casual": "한국어 존댓말로 말해. 격식체는 쓰지 마.",
     "polite_formal": "한국어 격식체로 말해.",
@@ -39,6 +43,9 @@ class VerbalStyleProfile:
     name: str
     register: str
     max_sentences: int
+    # Sentence count alone did not control length: generated utterances ran
+    # roughly twice the Reference's word count. A word target does.
+    max_words_per_sentence: int | None
     # False reproduces the pre-Reference behaviour, where ordinary turns carried
     # no style instruction at all. Kept exact so the two can be compared.
     shared_instruction: bool
@@ -84,13 +91,18 @@ class VerbalStylePlanner:
         parts: list[str] = []
         if self._profile.shared_instruction:
             parts.append(REGISTER_INSTRUCTIONS[self._profile.register])
-            parts.append(f"한 번에 {self._profile.max_sentences}문장 이내로 짧게 말해.")
+            length = f"한 번에 {self._profile.max_sentences}문장 이내로 말해."
+            if self._profile.max_words_per_sentence:
+                length += f" 한 문장은 {self._profile.max_words_per_sentence}단어를 넘기지 마."
+            parts.append(length)
             if self._profile.discourse_markers:
                 markers = ", ".join(self._profile.discourse_markers)
                 parts.append(f"화제를 바꿀 때는 {markers} 같은 말을 자연스럽게 써.")
             if self._profile.hesitation_usage == "sparing" and self._profile.hesitation_markers:
                 markers = ", ".join(self._profile.hesitation_markers)
-                parts.append(f"가끔 {markers} 같은 말이 섞여도 괜찮아. 매 문장에 넣지는 마.")
+                parts.append(
+                    f"{markers} 같은 말은 아주 드물게만 써. 대부분의 문장에는 넣지 마."
+                )
         act_instruction = self._act(dialogue_act).get("instruction")
         if act_instruction:
             parts.append(act_instruction)
@@ -112,6 +124,13 @@ def _parse(profile: str, raw: dict[str, Any]) -> VerbalStyleProfile:
     max_sentences = raw.get("max_sentences")
     if not isinstance(max_sentences, int) or isinstance(max_sentences, bool) or max_sentences < 1:
         raise VerbalStyleError(f"max_sentences in profile {profile} must be a positive integer")
+    max_words = raw.get("max_words_per_sentence")
+    if max_words is not None and (
+        not isinstance(max_words, int) or isinstance(max_words, bool) or max_words < 1
+    ):
+        raise VerbalStyleError(
+            f"max_words_per_sentence in profile {profile} must be a positive integer or None"
+        )
     acts = raw.get("acts")
     if not isinstance(acts, dict) or "default" not in acts:
         raise VerbalStyleError(f"profile {profile} must define acts including 'default'")
@@ -124,6 +143,7 @@ def _parse(profile: str, raw: dict[str, Any]) -> VerbalStyleProfile:
         name=str(raw.get("name") or profile),
         register=register,
         max_sentences=max_sentences,
+        max_words_per_sentence=max_words,
         shared_instruction=shared,
         discourse_markers=_strings(profile, raw.get("discourse_markers", ())),
         hesitation_markers=_strings(profile, raw.get("hesitation_markers", ())),
