@@ -332,6 +332,19 @@ docker compose -f compose.reference-source.yaml run --rm reference-subtitle-prob
 측정 지표와 판정 기준은
 [자막 품질 측정 문서](docs/reference-subtitle-quality.md)를 따릅니다.
 
+승인된 source의 오디오를 수집할 때는 한 번에 하나씩, 재인코딩 없이 받습니다.
+
+```bash
+docker compose -f compose.reference-source.yaml run --rm reference-audio-ingest \\
+  --candidate-id <candidate-id> \\
+  --source-id <source-id> \\
+  --report-relative-path reports/<name>.json \\
+  --expected-duration-seconds <seconds>
+```
+
+수집 계약과 실패 정책은
+[오디오 수집 문서](docs/reference-audio-ingest.md)를 따릅니다.
+
 모델 선택값은 `configs/models/`의 Python profile로 관리합니다. 기본값은 `base`,
 RTX 2060 6 GiB profile은 `rtx2060_6gb`(Vulkan GPU backend, 37 layers), CPU
 profile은 `cpu`입니다.
