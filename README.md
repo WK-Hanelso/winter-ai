@@ -371,6 +371,20 @@ PYTHONPATH=src python3 experiments/reference_transcription_probe.py \\
 측정 방법과 결과는
 [STT 파일럿 문서](docs/reference-transcription-probe.md)를 따릅니다.
 
+전사에서 말투 특성을 추출할 때는 대조 전사를 함께 측정합니다. 두 전사에 모두
+나타나는 특성만 설계 근거로 씁니다.
+
+```bash
+PYTHONPATH=src python3 experiments/reference_speech_style.py \\
+  --source-id <source-id> \\
+  --transcript <외장>/derived/audio/stt-pilot/<source>-0-<duration>.vtt \\
+  --secondary-transcript <외장>/raw/subtitles/<candidate>/<source>.ko-orig.vtt \\
+  --report-path <외장>/reports/<name>.json
+```
+
+측정 항목과 결과는
+[말투 특성 문서](docs/reference-speech-style.md)를 따릅니다.
+
 모델 선택값은 `configs/models/`의 Python profile로 관리합니다. 기본값은 `base`,
 RTX 2060 6 GiB profile은 `rtx2060_6gb`(Vulkan GPU backend, 37 layers), CPU
 profile은 `cpu`입니다.
