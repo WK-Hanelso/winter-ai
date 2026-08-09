@@ -385,6 +385,17 @@ PYTHONPATH=src python3 experiments/reference_speech_style.py \\
 측정 항목과 결과는
 [말투 특성 문서](docs/reference-speech-style.md)를 따릅니다.
 
+말투는 `configs/verbal_style/`의 Python profile로 관리합니다. 기본값은
+`reference_broadcast`이며 Reference 측정에 근거합니다. 이전 정책은 `base`로 남겨
+비교할 수 있습니다.
+
+```bash
+docker compose run --rm dev python -m companion.cli --backend fake \\
+  --verbal-style reference_broadcast --prompt "안녕"
+```
+
+근거와 한계는 [말투 profile 문서](docs/verbal-style-profiles.md)를 따릅니다.
+
 모델 선택값은 `configs/models/`의 Python profile로 관리합니다. 기본값은 `base`,
 RTX 2060 6 GiB profile은 `rtx2060_6gb`(Vulkan GPU backend, 37 layers), CPU
 profile은 `cpu`입니다.

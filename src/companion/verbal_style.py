@@ -1,18 +1,156 @@
-"""Interface-independent wording policy for Companion responses."""
+"""Interface-independent wording policy, loaded from a measured profile.
+
+The previous policy was three hand-written English instructions with no evidence
+behind them. Style now comes from ``configs/verbal_style/*.py`` so that what the
+companion sounds like is data a person can inspect, diff and swap — and so the
+Reference-derived profile can be compared against the old one on the same input.
+
+A profile that is missing or malformed raises. There is no fallback to a default
+style: silently answering in the wrong register is worse than refusing to start.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from importlib import import_module
+from typing import Any
+
 from companion.response import VerbalStylePlan
+
+DEFAULT_PROFILE = "reference_broadcast"
+ALLOWED_PROFILES = ("base", "reference_broadcast")
+
+# Plain speech and polite speech are not interchangeable in Korean; picking the
+# wrong one is the most visible way to sound like someone else.
+REGISTER_INSTRUCTIONS = {
+    "plain": "한국어 반말로 말해. 존댓말과 격식체는 쓰지 마.",
+    "polite_casual": "한국어 존댓말로 말해. 격식체는 쓰지 마.",
+    "polite_formal": "한국어 격식체로 말해.",
+}
+ALLOWED_HESITATION_USAGE = ("never", "sparing")
+
+
+class VerbalStyleError(ValueError):
+    """Raised when a style profile cannot be used without guessing."""
+
+
+@dataclass(frozen=True)
+class VerbalStyleProfile:
+    name: str
+    register: str
+    max_sentences: int
+    # False reproduces the pre-Reference behaviour, where ordinary turns carried
+    # no style instruction at all. Kept exact so the two can be compared.
+    shared_instruction: bool
+    discourse_markers: tuple[str, ...]
+    hesitation_markers: tuple[str, ...]
+    hesitation_usage: str
+    acts: dict[str, dict[str, Any]]
+
+
+def load_verbal_style(profile: str = DEFAULT_PROFILE) -> VerbalStyleProfile:
+    if profile not in ALLOWED_PROFILES:
+        raise VerbalStyleError(f"unsupported verbal style profile: {profile}")
+    try:
+        raw: dict[str, Any] = import_module(f"configs.verbal_style.{profile}").VERBAL_STYLE
+    except (ImportError, AttributeError) as error:
+        raise VerbalStyleError(f"could not load verbal style profile {profile}") from error
+    return _parse(profile, raw)
 
 
 class VerbalStylePlanner:
+    def __init__(self, profile: VerbalStyleProfile | None = None) -> None:
+        self._profile = profile or load_verbal_style()
+
+    @property
+    def profile(self) -> VerbalStyleProfile:
+        return self._profile
+
     def plan(self, dialogue_act: str) -> VerbalStylePlan:
-        if dialogue_act == "memory_candidate":
-            return VerbalStylePlan(tone="warm", directness=0.55, sentence_length="short")
-        if dialogue_act == "warning":
-            return VerbalStylePlan(tone="serious", directness=0.9, sentence_length="short")
-        return VerbalStylePlan()
+        act = self._act(dialogue_act)
+        return VerbalStylePlan(
+            tone=act["tone"],
+            directness=act["directness"],
+            sentence_length=act["sentence_length"],
+            register=self._profile.register,
+        )
 
     def instruction(self, dialogue_act: str) -> str | None:
-        if dialogue_act == "memory_candidate":
-            return "Respond briefly and warmly in Korean. Do not pressure the user."
-        if dialogue_act == "warning":
-            return "Respond briefly and clearly in Korean. State the important point first."
-        return None
+        """Return the system instruction for this turn, or None when silent.
+
+        The register line is always first: it is the constraint the model is
+        most likely to drop when later instructions compete for attention.
+        """
+        parts: list[str] = []
+        if self._profile.shared_instruction:
+            parts.append(REGISTER_INSTRUCTIONS[self._profile.register])
+            parts.append(f"한 번에 {self._profile.max_sentences}문장 이내로 짧게 말해.")
+            if self._profile.discourse_markers:
+                markers = ", ".join(self._profile.discourse_markers)
+                parts.append(f"화제를 바꿀 때는 {markers} 같은 말을 자연스럽게 써.")
+            if self._profile.hesitation_usage == "sparing" and self._profile.hesitation_markers:
+                markers = ", ".join(self._profile.hesitation_markers)
+                parts.append(f"가끔 {markers} 같은 말이 섞여도 괜찮아. 매 문장에 넣지는 마.")
+        act_instruction = self._act(dialogue_act).get("instruction")
+        if act_instruction:
+            parts.append(act_instruction)
+        return " ".join(parts) if parts else None
+
+    def _act(self, dialogue_act: str) -> dict[str, Any]:
+        return self._profile.acts.get(dialogue_act, self._profile.acts["default"])
+
+
+def _parse(profile: str, raw: dict[str, Any]) -> VerbalStyleProfile:
+    if not isinstance(raw, dict):
+        raise VerbalStyleError(f"verbal style profile {profile} must be a mapping")
+    register = raw.get("register")
+    if register not in REGISTER_INSTRUCTIONS:
+        raise VerbalStyleError(f"unsupported register in profile {profile}: {register!r}")
+    usage = raw.get("hesitation_usage")
+    if usage not in ALLOWED_HESITATION_USAGE:
+        raise VerbalStyleError(f"unsupported hesitation usage in profile {profile}: {usage!r}")
+    max_sentences = raw.get("max_sentences")
+    if not isinstance(max_sentences, int) or isinstance(max_sentences, bool) or max_sentences < 1:
+        raise VerbalStyleError(f"max_sentences in profile {profile} must be a positive integer")
+    acts = raw.get("acts")
+    if not isinstance(acts, dict) or "default" not in acts:
+        raise VerbalStyleError(f"profile {profile} must define acts including 'default'")
+    for name, act in acts.items():
+        _validate_act(profile, name, act)
+    shared = raw.get("shared_instruction", True)
+    if not isinstance(shared, bool):
+        raise VerbalStyleError(f"shared_instruction in profile {profile} must be a boolean")
+    return VerbalStyleProfile(
+        name=str(raw.get("name") or profile),
+        register=register,
+        max_sentences=max_sentences,
+        shared_instruction=shared,
+        discourse_markers=_strings(profile, raw.get("discourse_markers", ())),
+        hesitation_markers=_strings(profile, raw.get("hesitation_markers", ())),
+        hesitation_usage=usage,
+        acts=acts,
+    )
+
+
+def _validate_act(profile: str, name: str, act: Any) -> None:
+    if not isinstance(act, dict):
+        raise VerbalStyleError(f"act {name} in profile {profile} must be a mapping")
+    for field in ("tone", "sentence_length"):
+        if not isinstance(act.get(field), str) or not act[field]:
+            raise VerbalStyleError(f"act {name} in profile {profile} needs a {field}")
+    directness = act.get("directness")
+    if isinstance(directness, bool) or not isinstance(directness, (int, float)):
+        raise VerbalStyleError(f"act {name} in profile {profile} needs a numeric directness")
+    if not 0.0 <= float(directness) <= 1.0:
+        raise VerbalStyleError(f"directness in act {name} of profile {profile} must be 0..1")
+    instruction = act.get("instruction")
+    if instruction is not None and (not isinstance(instruction, str) or not instruction.strip()):
+        raise VerbalStyleError(f"act {name} in profile {profile} has an empty instruction")
+
+
+def _strings(profile: str, value: Any) -> tuple[str, ...]:
+    if not isinstance(value, (tuple, list)) or not all(
+        isinstance(item, str) and item.strip() for item in value
+    ):
+        raise VerbalStyleError(f"profile {profile} has an invalid marker list")
+    return tuple(value)
