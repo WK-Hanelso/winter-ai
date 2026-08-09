@@ -1,6 +1,8 @@
 .env
 .env.*
 .claude/
+__pycache__/
+*.py[cod]
 /data/
 /models/
 /checkpoints/
@@ -10,10 +12,24 @@
 /generated_audio/
 *.db
 *.sqlite
+
+# Reference media and anything derived from it. The private storage root lives
+# outside this repository by contract, so these patterns are a second line of
+# defence for stray copies in a scratch directory.
 *.wav
 *.mp3
 *.flac
 *.m4a
+*.opus
+*.ogg
 *.mp4
 *.mkv
 *.webm
+
+# Subtitles and transcripts are private speech content, not just text. They are
+# easier to search than audio, so they must never reach a public remote.
+*.vtt
+*.srt
+*.ass
+*.sbv
+*.ttml

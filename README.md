@@ -345,6 +345,17 @@ docker compose -f compose.reference-source.yaml run --rm reference-audio-ingest 
 수집 계약과 실패 정책은
 [오디오 수집 문서](docs/reference-audio-ingest.md)를 따릅니다.
 
+승인된 candidate와 source 등록은 전용 명령으로 합니다. manifest를 직접 편집하지
+않습니다.
+
+```bash
+docker compose -f compose.reference-source.yaml run --rm reference-source-register --list
+docker compose -f compose.reference-source.yaml run --rm reference-source-register \\
+  --add-source <candidate-id> --source-uri <URI>
+```
+
+URI는 외장 private manifest에만 저장되며 stdout과 report에는 나오지 않습니다.
+
 수집한 오디오의 전사 품질은 구간 단위로 측정합니다. whisper.cpp image에 ffmpeg가
 포함돼 있어 자르기·리샘플·전사가 한 runtime에서 끝납니다.
 

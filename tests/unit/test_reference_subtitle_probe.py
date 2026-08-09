@@ -372,3 +372,37 @@ def test_report_path_must_stay_directly_under_reports(tmp_path: Path) -> None:
     for bad_path in ("raw/subtitles.json", "reports/nested/subtitles.json", "reports/x.txt"):
         with pytest.raises(ReferenceSubtitleProbeError, match="reports/\\*.json"):
             dump_subtitle_probe_report(storage, bad_path, report)
+
+
+def test_parse_webvtt_removes_partial_tail_overlap_not_only_whole_prefixes() -> None:
+    # The real YouTube pattern: each cue repeats the *tail* of the previous one.
+    # Matching whole-string prefixes alone misses this and inflates every count.
+    document = (
+        "WEBVTT\n\n"
+        "00:00:01.000 --> 00:00:02.000\n안녕 하세요 여러분\n\n"
+        "00:00:02.000 --> 00:00:03.000\n하세요 여러분 오늘은\n\n"
+        "00:00:03.000 --> 00:00:04.000\n여러분 오늘은 연습을 했어요\n"
+    )
+
+    cues = parse_webvtt(document)
+
+    assert [cue.text for cue in cues] == ["안녕 하세요 여러분", "오늘은", "연습을 했어요"]
+
+
+def test_parse_webvtt_keeps_repetition_inside_a_single_cue() -> None:
+    # Repeated words are spoken form and must survive; only the cue boundary
+    # is deduplicated.
+    document = "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n진짜 진짜 좋아요\n"
+
+    assert parse_webvtt(document)[0].text == "진짜 진짜 좋아요"
+
+
+def test_parse_webvtt_drops_a_cue_fully_contained_in_its_predecessor() -> None:
+    document = (
+        "WEBVTT\n\n"
+        "00:00:01.000 --> 00:00:02.000\n안녕 하세요\n\n"
+        "00:00:02.000 --> 00:00:03.000\n하세요\n\n"
+        "00:00:03.000 --> 00:00:04.000\n하세요 반가워요\n"
+    )
+
+    assert [cue.text for cue in parse_webvtt(document)] == ["안녕 하세요", "반가워요"]
