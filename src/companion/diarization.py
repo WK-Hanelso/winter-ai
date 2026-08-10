@@ -248,13 +248,20 @@ class SpeakerTurn:
 
 @dataclass(frozen=True)
 class Exchange:
-    """What someone said, and what the Reference said back."""
+    """What someone said, and what the Reference said back.
+
+    The response's time span travels with it. Voice work needs the recording of
+    an utterance beside its text, and the span is the only place that link
+    exists — the text alone cannot be traced back to audio later.
+    """
 
     prompt_speaker: int
     prompt_text: str
     response_text: str
     prompt_seconds: float
     response_seconds: float
+    response_start_seconds: float = 0.0
+    response_end_seconds: float = 0.0
 
 
 def assign_words_to_speakers(
@@ -290,6 +297,62 @@ def assign_words_to_speakers(
     return tuple(turns)
 
 
+def bridge_short_gaps(
+    turns: tuple[SpeakerTurn, ...],
+    *,
+    maximum_gap_seconds: float = 1.0,
+) -> tuple[SpeakerTurn, ...]:
+    """Rejoin one speaker's turn where a breath split it in two.
+
+    A pause inside an utterance shows up as a short unassigned turn, and the
+    speaker's words end up in two turns instead of one. Pairing then takes only
+    the fragment nearest the reply, which is how a question arrives as two
+    words.
+
+    Only gaps shorter than ``maximum_gap_seconds`` are bridged, and only between
+    the same speaker. A long silence is a real boundary, and bridging across a
+    different speaker would merge two people's words into one utterance.
+    """
+    if not turns:
+        raise DiarizationError("no turns to bridge")
+    merged: list[SpeakerTurn] = [turns[0]]
+    index = 1
+    while index < len(turns):
+        current = turns[index]
+        previous = merged[-1]
+        gap_is_bridgeable = (
+            current.speaker == UNASSIGNED_SPEAKER
+            and current.duration_seconds <= maximum_gap_seconds
+            and index + 1 < len(turns)
+            and turns[index + 1].speaker == previous.speaker
+            and previous.speaker != UNASSIGNED_SPEAKER
+        )
+        if gap_is_bridgeable:
+            following = turns[index + 1]
+            merged[-1] = SpeakerTurn(
+                speaker=previous.speaker,
+                start_seconds=previous.start_seconds,
+                end_seconds=following.end_seconds,
+                text=f"{previous.text} {following.text}".strip(),
+                word_count=previous.word_count + following.word_count,
+            )
+            index += 2
+            continue
+        if current.speaker == previous.speaker != UNASSIGNED_SPEAKER:
+            merged[-1] = SpeakerTurn(
+                speaker=previous.speaker,
+                start_seconds=previous.start_seconds,
+                end_seconds=current.end_seconds,
+                text=f"{previous.text} {current.text}".strip(),
+                word_count=previous.word_count + current.word_count,
+            )
+            index += 1
+            continue
+        merged.append(current)
+        index += 1
+    return tuple(merged)
+
+
 def build_exchanges(
     turns: tuple[SpeakerTurn, ...],
     reference_speaker: int,
@@ -318,6 +381,8 @@ def build_exchanges(
                         response_text=turn.text,
                         prompt_seconds=previous.duration_seconds,
                         response_seconds=turn.duration_seconds,
+                        response_start_seconds=turn.start_seconds,
+                        response_end_seconds=turn.end_seconds,
                     )
                 )
             previous = None

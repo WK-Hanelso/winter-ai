@@ -85,16 +85,24 @@ print(i['reference_speaker'] if i.get('is_confident') else 'LOW ' + str(i.get('r
   esac
   echo "  Reference = 화자 $REF"
 
+  # Already built. The pair writer refuses to overwrite, so without this a
+  # resumed run reports failure on every chunk it finished last time.
+  if [[ -f "$REFERENCE_STORAGE_ROOT/derived/transcripts/raw/pairs-$STEM.json" ]]; then
+    echo "  이미 생성됨 — 건너뜀"; continue
+  fi
+
   docker compose run --rm -v "$REFERENCE_STORAGE_ROOT:/ref" dev \
     python experiments/reference_exchange_probe.py \
     --words-vtt "/ref/derived/audio/stt-pilot/$WORDS.vtt" \
     --spans-path "/ref/reports/spans-$STEM.json" \
-    --reference-speaker "$REF" --source-id "$SOURCE_ID" \
-    --pairs-path "/ref/derived/transcripts/raw/pairs-$STEM.json" 2>&1 \
+    --reference-speaker "$REF" --source-id "$STEM" \
+    --pairs-path "/ref/derived/transcripts/raw/pairs-$STEM.json" \
+    --audio-path "/ref/derived/audio/stt-pilot/$WORDS.wav" \
+    --clips-dir "/ref/derived/audio/responses" 2>&1 \
     | quiet | python3 -c "
 import json,sys
 raw=sys.stdin.read()
 d=json.loads(raw[raw.index('{'):]) if '{' in raw else {}
-print('  쌍', d.get('exchange_count','?'), '| Reference 턴', d.get('reference_turn_count','?'))
+print('  쌍', d.get('exchange_count','?'), '| Reference 턴', d.get('reference_turn_count','?'), '| 음성 클립', d.get('response_clips','?'))
 " || echo "  쌍 생성 실패"
 done
