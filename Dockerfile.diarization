@@ -1,0 +1,59 @@
+# Speaker diarization runtime, pinned and isolated.
+#
+# Uses NVIDIA NeMo's Sortformer rather than a hand-written clustering pipeline.
+# An earlier attempt scored transcript windows against an enrolled voice and
+# failed: absolute similarity collapses when the enrolment and the target come
+# from acoustically different recordings (docs/speaker-verification.md).
+# Sortformer is trained for this task end to end and detects overlapping speech,
+# which no thresholding scheme here could.
+#
+# pyannote scores slightly better on public benchmarks but is gated behind an
+# account and terms acceptance. Sortformer is ungated, so the probe runs without
+# anyone holding an external account. Its licence is CC-BY-NC-4.0, which suits a
+# private personal project; note the restriction before any other use.
+FROM python:3.11-slim-bookworm
+
+ARG TORCH_VERSION=2.4.1
+ARG TORCHAUDIO_VERSION=2.4.1
+# 3.0.0 exists but changed APIs; the model card targets the 2.x line.
+ARG NEMO_VERSION=2.7.3
+ARG MODEL_FILE=diar_sortformer_4spk-v1.nemo
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/workspace/src:/workspace \
+    DIARIZATION_MODEL=/opt/diarization/diar_sortformer_4spk-v1.nemo \
+    HF_HUB_OFFLINE=1
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y libsndfile1 ffmpeg curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        "torch==${TORCH_VERSION}" "torchaudio==${TORCHAUDIO_VERSION}"
+
+RUN pip install --no-cache-dir Cython packaging \
+    && pip install --no-cache-dir "nemo_toolkit[asr]==${NEMO_VERSION}"
+
+# NeMo pulls the newest torch, but torchaudio stopped tracking torch at 2.9 and
+# its compiled extension refuses to load against a mismatched build. Restore a
+# matching CPU pair afterwards, then prove it imports: a broken pair should fail
+# the build, not the run.
+ARG TORCH_PAIR_VERSION=2.9.1
+RUN pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        "torch==${TORCH_PAIR_VERSION}" "torchaudio==${TORCH_PAIR_VERSION}" \
+    && python -c "import torchaudio, torch; print('torch', torch.__version__, 'torchaudio', torchaudio.__version__)" \
+    && python -c "from nemo.collections.asr.models import SortformerEncLabelModel; print('nemo ok')"
+
+# Fetched at build time so a run needs no network, matching the other probes.
+RUN mkdir -p /opt/diarization \
+    && curl -fsSL -o "/opt/diarization/${MODEL_FILE}" \
+        "https://huggingface.co/nvidia/diar_sortformer_4spk-v1/resolve/main/${MODEL_FILE}" \
+    && chmod -R a+rX /opt/diarization
+
+WORKDIR /workspace
+
+ENTRYPOINT ["python", "/workspace/experiments/reference_diarization_probe.py"]

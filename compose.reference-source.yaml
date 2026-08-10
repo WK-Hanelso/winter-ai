@@ -132,3 +132,30 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # Sortformer diarization. Separate image: NeMo is 8 GiB and has no business in
+  # the transcription or embedding runtimes.
+  reference-diarization-probe:
+    build:
+      context: .
+      dockerfile: Dockerfile.diarization
+    image: winter-ai:diarization
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    working_dir: /workspace
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - .:/workspace:ro
+      - ${REFERENCE_STORAGE_ROOT:?REFERENCE_STORAGE_ROOT is required}:/reference-data
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /workspace/src
+      HF_HUB_OFFLINE: "1"
+      HOME: /tmp
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
