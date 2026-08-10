@@ -47,6 +47,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--report-path", type=Path)
+    parser.add_argument(
+        "--spans-path",
+        type=Path,
+        help="write the speaker timeline here so the embedding probe can label it",
+    )
     return parser
 
 
@@ -76,6 +81,25 @@ def main(argv: list[str] | None = None) -> int:
     except (DiarizationError, OSError, RuntimeError, ValueError) as error:
         print(json.dumps({"status": "error", "error": str(error)}, ensure_ascii=False))
         return 2
+
+    if arguments.spans_path:
+        # Handed to a different image on purpose: NeMo and the speaker embedder
+        # have no reason to share a runtime.
+        descriptor = os.open(
+            arguments.spans_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+        )
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            json.dump(
+                {
+                    "source_id": arguments.source_id,
+                    "spans": [
+                        [span.start_seconds, span.end_seconds, span.speaker]
+                        for span in spans
+                    ],
+                },
+                file,
+            )
+            file.write("\n")
 
     if arguments.report_path:
         descriptor = os.open(

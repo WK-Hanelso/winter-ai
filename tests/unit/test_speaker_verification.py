@@ -264,3 +264,73 @@ def test_blocked_labels_are_accepted_as_turn_taking() -> None:
 
     assert split.mean_run_windows >= 2.0
     assert split.is_usable
+
+
+def test_the_speaker_closest_to_the_enrolment_is_named() -> None:
+    from companion.speaker_verification import identify_reference_speaker
+
+    result = identify_reference_speaker(
+        {0: _vec(0.1, 1.0), 1: _vec(1.0, 0.1)},
+        {0: 60.0, 1: 60.0},
+        _vec(1.0, 0.0),
+    )
+
+    assert result.reference_speaker == 1
+    assert result.is_confident
+
+
+def test_two_equally_close_speakers_are_refused_rather_than_guessed() -> None:
+    from companion.speaker_verification import identify_reference_speaker
+
+    result = identify_reference_speaker(
+        {0: _vec(1.0, 0.0), 1: _vec(1.0, 0.0)},
+        {0: 60.0, 1: 60.0},
+        _vec(1.0, 0.0),
+    )
+
+    assert result.reference_speaker is None
+    assert not result.is_confident
+    assert "no speaker leads" in result.reason
+
+
+def test_a_speaker_with_seconds_of_audio_is_skipped_not_ranked() -> None:
+    from companion.speaker_verification import identify_reference_speaker
+
+    # A centroid from 1.6 seconds describes that noise, not a person.
+    result = identify_reference_speaker(
+        {0: _vec(0.1, 1.0), 1: _vec(1.0, 0.1), 3: _vec(1.0, 0.0)},
+        {0: 60.0, 1: 60.0, 3: 1.6},
+        _vec(1.0, 0.0),
+    )
+
+    assert result.skipped_speakers == (3,)
+    assert result.reference_speaker == 1
+
+
+def test_a_single_remaining_speaker_cannot_be_confirmed() -> None:
+    from companion.speaker_verification import identify_reference_speaker
+
+    result = identify_reference_speaker(
+        {0: _vec(1.0, 0.0), 1: _vec(0.0, 1.0)},
+        {0: 60.0, 1: 2.0},
+        _vec(1.0, 0.0),
+    )
+
+    assert result.reference_speaker is None
+    assert "nothing to compare" in result.reason
+
+
+def test_identification_summary_carries_the_reason() -> None:
+    from companion.speaker_verification import (
+        identify_reference_speaker,
+        public_identification_summary,
+    )
+
+    summary = public_identification_summary(
+        identify_reference_speaker(
+            {0: _vec(0.1, 1.0), 1: _vec(1.0, 0.1)}, {0: 60.0, 1: 60.0}, _vec(1.0, 0.0)
+        )
+    )
+
+    assert summary["reference_speaker"] == 1
+    assert summary["reason"]

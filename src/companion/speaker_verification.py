@@ -439,3 +439,98 @@ def public_cluster_summary(split: ClusterSplit) -> dict[str, Any]:
         "longest_run_windows": split.longest_run_windows,
         "is_usable": split.is_usable,
     }
+
+
+@dataclass(frozen=True)
+class ReferenceIdentification:
+    """Which diarized speaker is the Reference, and how sure that is.
+
+    Only the *ranking* of similarities is trusted. Absolute values are not
+    comparable across recordings — an earlier probe failed precisely because the
+    same voice scores lower when the room and microphone change. The margin
+    between the best and second-best speaker survives that shift; the raw
+    numbers do not.
+    """
+
+    similarities: tuple[tuple[int, float], ...]
+    reference_speaker: int | None
+    margin: float | None
+    skipped_speakers: tuple[int, ...]
+    reason: str
+
+    @property
+    def is_confident(self) -> bool:
+        return self.reference_speaker is not None and self.reason == "one speaker leads"
+
+
+def identify_reference_speaker(
+    speaker_embeddings: dict[int, tuple[float, ...]],
+    speaker_seconds: dict[int, float],
+    enrolment: tuple[float, ...],
+    *,
+    minimum_speaker_seconds: float = 10.0,
+    minimum_margin: float = 0.1,
+) -> ReferenceIdentification:
+    """Rank diarized speakers by similarity to the enrolled voice.
+
+    Speakers with too little audio are skipped rather than ranked: a centroid
+    built from a couple of seconds says more about the noise in those seconds
+    than about who was speaking.
+    """
+    if not speaker_embeddings:
+        raise SpeakerVerificationError("no speaker embeddings to identify")
+    skipped = tuple(
+        sorted(
+            speaker
+            for speaker in speaker_embeddings
+            if speaker_seconds.get(speaker, 0.0) < minimum_speaker_seconds
+        )
+    )
+    ranked = sorted(
+        (
+            (speaker, cosine_similarity(vector, enrolment))
+            for speaker, vector in speaker_embeddings.items()
+            if speaker not in skipped
+        ),
+        key=lambda entry: entry[1],
+        reverse=True,
+    )
+    if not ranked:
+        return ReferenceIdentification(
+            similarities=(),
+            reference_speaker=None,
+            margin=None,
+            skipped_speakers=skipped,
+            reason="every speaker held too little audio to judge",
+        )
+    if len(ranked) == 1:
+        return ReferenceIdentification(
+            similarities=tuple(ranked),
+            reference_speaker=None,
+            margin=None,
+            skipped_speakers=skipped,
+            reason="only one speaker remained; nothing to compare against",
+        )
+    margin = ranked[0][1] - ranked[1][1]
+    leads = margin >= minimum_margin
+    return ReferenceIdentification(
+        similarities=tuple(ranked),
+        reference_speaker=ranked[0][0] if leads else None,
+        margin=margin,
+        skipped_speakers=skipped,
+        reason="one speaker leads" if leads else "no speaker leads clearly",
+    )
+
+
+def public_identification_summary(result: ReferenceIdentification) -> dict[str, Any]:
+    return {
+        "similarities": [
+            {"speaker": speaker, "similarity": round(value, 4)}
+            for speaker, value in result.similarities
+        ],
+        "reference_speaker": result.reference_speaker,
+        "margin": None if result.margin is None else round(result.margin, 4),
+        "skipped_speakers": list(result.skipped_speakers),
+        "is_confident": result.is_confident,
+        "reason": result.reason,
+    }
