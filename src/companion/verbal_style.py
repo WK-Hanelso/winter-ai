@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from importlib import import_module
+import random
 from typing import Any
 
 from companion.response import VerbalStylePlan
@@ -39,9 +40,28 @@ class VerbalStyleError(ValueError):
 
 
 @dataclass(frozen=True)
+class TurnStyle:
+    """One turn's style, decided once.
+
+    ``plan`` and ``instruction`` must agree. When the register is sampled per
+    turn, deciding them in two separate calls would roll the dice twice and the
+    companion could be told to use plain speech while the response metadata says
+    polite.
+    """
+
+    plan: VerbalStylePlan
+    instruction: str | None
+
+
+@dataclass(frozen=True)
 class VerbalStyleProfile:
     name: str
     register: str
+    # Measured share of polite endings. A model treats "mostly plain" as an
+    # absolute rule and never produces the minority register, so the mixture is
+    # produced here instead: each turn draws one register and is instructed
+    # absolutely. None keeps the register fixed.
+    polite_ratio: float | None
     max_sentences: int
     # Sentence count alone did not control length: generated utterances ran
     # roughly twice the Reference's word count. A word target does.
@@ -66,31 +86,62 @@ def load_verbal_style(profile: str = DEFAULT_PROFILE) -> VerbalStyleProfile:
 
 
 class VerbalStylePlanner:
-    def __init__(self, profile: VerbalStyleProfile | None = None) -> None:
+    def __init__(
+        self,
+        profile: VerbalStyleProfile | None = None,
+        *,
+        rng: random.Random | None = None,
+    ) -> None:
         self._profile = profile or load_verbal_style()
+        self._rng = rng or random.Random()
 
     @property
     def profile(self) -> VerbalStyleProfile:
         return self._profile
 
+    def plan_turn(self, dialogue_act: str) -> TurnStyle:
+        """Decide this turn's register once, then derive both outputs from it."""
+        register = self._draw_register()
+        return TurnStyle(
+            plan=self._plan(dialogue_act, register),
+            instruction=self._instruction(dialogue_act, register),
+        )
+
     def plan(self, dialogue_act: str) -> VerbalStylePlan:
+        """Inspection only. Use ``plan_turn`` for a turn: this draws its own."""
+        return self._plan(dialogue_act, self._draw_register())
+
+    def _draw_register(self) -> str:
+        if self._profile.polite_ratio is None:
+            return self._profile.register
+        return (
+            "polite_casual"
+            if self._rng.random() < self._profile.polite_ratio
+            else "plain"
+        )
+
+    def _plan(self, dialogue_act: str, register: str) -> VerbalStylePlan:
         act = self._act(dialogue_act)
         return VerbalStylePlan(
             tone=act["tone"],
             directness=act["directness"],
             sentence_length=act["sentence_length"],
-            register=self._profile.register,
+            register=register,
         )
 
     def instruction(self, dialogue_act: str) -> str | None:
-        """Return the system instruction for this turn, or None when silent.
+        """Inspection only. Use ``plan_turn`` for a turn: this draws its own."""
+        return self._instruction(dialogue_act, self._draw_register())
+
+    def _instruction(self, dialogue_act: str, register: str) -> str | None:
+        """Build the system instruction, or None when the profile is silent.
 
         The register line is always first: it is the constraint the model is
         most likely to drop when later instructions compete for attention.
         """
         parts: list[str] = []
         if self._profile.shared_instruction:
-            parts.append(REGISTER_INSTRUCTIONS[self._profile.register])
+            parts.append(REGISTER_INSTRUCTIONS[register])
             length = f"한 번에 {self._profile.max_sentences}문장 이내로 말해."
             if self._profile.max_words_per_sentence:
                 length += f" 한 문장은 {self._profile.max_words_per_sentence}단어를 넘기지 마."
@@ -139,9 +190,17 @@ def _parse(profile: str, raw: dict[str, Any]) -> VerbalStyleProfile:
     shared = raw.get("shared_instruction", True)
     if not isinstance(shared, bool):
         raise VerbalStyleError(f"shared_instruction in profile {profile} must be a boolean")
+    polite_ratio = raw.get("polite_ratio")
+    if polite_ratio is not None and (
+        isinstance(polite_ratio, bool)
+        or not isinstance(polite_ratio, (int, float))
+        or not 0.0 <= float(polite_ratio) <= 1.0
+    ):
+        raise VerbalStyleError(f"polite_ratio in profile {profile} must be 0..1 or None")
     return VerbalStyleProfile(
         name=str(raw.get("name") or profile),
         register=register,
+        polite_ratio=None if polite_ratio is None else float(polite_ratio),
         max_sentences=max_sentences,
         max_words_per_sentence=max_words,
         shared_instruction=shared,

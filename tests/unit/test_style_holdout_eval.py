@@ -47,7 +47,8 @@ def test_responses_are_profiled_and_blank_ones_dropped() -> None:
 def test_probe_questions_are_everyday_and_not_about_facts() -> None:
     # The evaluation asks how it speaks, not what it knows; a factual question
     # would measure the model's knowledge instead of its register.
-    assert len(PROBE_QUESTIONS) >= 10
+    # Ten answers leave the rate traits dominated by sampling noise.
+    assert len(PROBE_QUESTIONS) >= 30
     assert all("?" in question or question.strip() for question in PROBE_QUESTIONS)
 
 

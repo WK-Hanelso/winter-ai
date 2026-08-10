@@ -36,6 +36,11 @@ from companion.verbal_style import ALLOWED_PROFILES, VerbalStylePlanner, load_ve
 
 # Everyday prompts a companion would actually get. Deliberately mundane: the
 # question is how it speaks, not what it knows.
+#
+# Thirty rather than ten. Once the register is drawn per turn, ten answers leave
+# the rate traits — utterance length, hesitation — dominated by which registers
+# happened to come up. Widening the probe reduces that noise; it does not tune
+# anything toward the metric.
 PROBE_QUESTIONS = (
     "오늘 어땠어?",
     "요즘 뭐가 제일 재밌어?",
@@ -47,6 +52,26 @@ PROBE_QUESTIONS = (
     "기분이 좀 그래",
     "내일 발표가 있어",
     "고마워",
+    "지금 뭐 해?",
+    "커피 마실까 말까",
+    "그거 재밌었어?",
+    "오늘 좀 추운 것 같아",
+    "나 방금 실수했어",
+    "이번 주 어떻게 보냈어?",
+    "심심하다",
+    "그 사람 어떤 것 같아?",
+    "운동 좀 해야 할까?",
+    "요즘 뭐 듣고 있어?",
+    "일찍 잘까?",
+    "그냥 좀 답답해",
+    "이거 어떻게 생각해?",
+    "다음 주에 시간 돼?",
+    "배고파",
+    "오랜만이야",
+    "그때 기억나?",
+    "좀 도와줄래?",
+    "나 잘하고 있는 걸까",
+    "잘 자",
 )
 
 
