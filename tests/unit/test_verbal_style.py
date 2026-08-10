@@ -18,6 +18,7 @@ def _profile(**overrides: object) -> VerbalStyleProfile:
     defaults = {
         "name": "test",
         "register": "plain",
+        "polite_ratio": None,
         "max_sentences": 2,
         "max_words_per_sentence": 8,
         "shared_instruction": True,
@@ -47,9 +48,10 @@ def test_reference_profile_is_the_default_and_uses_plain_speech() -> None:
     profile = load_verbal_style()
 
     assert DEFAULT_PROFILE == "reference_broadcast"
-    # Measured politeness ratio was 0.31: plain dominates but polite still
-    # appears, so the register is a mixture rather than an absolute rule.
+    # The mixture is produced by drawing a register per turn, not by asking the
+    # model for a ratio it treats as a rule.
     assert profile.register == "mostly_plain"
+    assert profile.polite_ratio == 0.26
     assert profile.max_sentences == 1
     assert profile.max_words_per_sentence == 8
 
@@ -139,6 +141,7 @@ def test_malformed_profiles_are_refused() -> None:
 
     base = {
         "register": "plain",
+        "polite_ratio": None,
         "max_sentences": 2,
         "hesitation_usage": "sparing",
         "acts": {"default": {"tone": "a", "directness": 0.5, "sentence_length": "short"}},
@@ -152,6 +155,8 @@ def test_malformed_profiles_are_refused() -> None:
         _parse("p", {**base, "max_sentences": 0})
     with pytest.raises(VerbalStyleError, match="max_words_per_sentence"):
         _parse("p", {**base, "max_words_per_sentence": 0})
+    with pytest.raises(VerbalStyleError, match="polite_ratio"):
+        _parse("p", {**base, "polite_ratio": 1.5})
     with pytest.raises(VerbalStyleError, match="must define acts"):
         _parse("p", {**base, "acts": {"warning": {}}})
     with pytest.raises(VerbalStyleError, match="numeric directness"):
@@ -163,3 +168,38 @@ def test_malformed_profiles_are_refused() -> None:
         )
     with pytest.raises(VerbalStyleError, match="invalid marker list"):
         _parse("p", {**base, "discourse_markers": ("", )})
+
+
+def test_drawing_a_register_per_turn_reproduces_the_measured_share() -> None:
+    import random
+
+    planner = VerbalStylePlanner(_profile(polite_ratio=0.26), rng=random.Random(7))
+
+    registers = [planner.plan_turn("answer").plan.register for _ in range(400)]
+    polite = registers.count("polite_casual") / len(registers)
+
+    # The model produced 0% polite when asked for a mixture; drawing it here
+    # lands near the measured share instead.
+    assert 0.2 < polite < 0.32
+    assert set(registers) == {"plain", "polite_casual"}
+
+
+def test_a_turn_decides_its_register_once() -> None:
+    import random
+
+    planner = VerbalStylePlanner(_profile(polite_ratio=0.5), rng=random.Random(1))
+
+    for _ in range(50):
+        turn = planner.plan_turn("answer")
+        assert turn.instruction is not None
+        # Two separate draws could tell the model one register while reporting
+        # the other in the response metadata.
+        assert turn.instruction.startswith(REGISTER_INSTRUCTIONS[turn.plan.register])
+
+
+def test_a_fixed_register_profile_never_varies() -> None:
+    import random
+
+    planner = VerbalStylePlanner(_profile(polite_ratio=None), rng=random.Random(3))
+
+    assert {planner.plan_turn("answer").plan.register for _ in range(50)} == {"plain"}

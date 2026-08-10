@@ -67,9 +67,9 @@ class CompanionCore:
                 system_messages.append(
                     ConversationMessage("system", memory_context(selected))
                 )
-        style_instruction = self._verbal_style_planner.instruction(dialogue_act)
-        if style_instruction is not None:
-            system_messages.append(ConversationMessage("system", style_instruction))
+        turn_style = self._verbal_style_planner.plan_turn(dialogue_act)
+        if turn_style.instruction is not None:
+            system_messages.append(ConversationMessage("system", turn_style.instruction))
         # Grounding goes last, closest to the generated turn. It is the one
         # constraint that must survive when the others compete for attention:
         # a fluent invented answer is worse than an awkward honest one.
@@ -89,5 +89,5 @@ class CompanionCore:
             dialogue_act=dialogue_act,
             prosody=self._prosody_planner.plan(dialogue_act),
             memory_candidate_ids=candidate_ids,
-            verbal_style=self._verbal_style_planner.plan(dialogue_act),
+            verbal_style=turn_style.plan,
         )

@@ -8,6 +8,7 @@ it is grounded in anything.
 VERBAL_STYLE = {
     "name": "hand-written-baseline",
     "register": "polite_casual",
+    "polite_ratio": None,
     "max_sentences": 3,
     "max_words_per_sentence": None,
     # The old policy said nothing on ordinary turns. Reproduced exactly so the

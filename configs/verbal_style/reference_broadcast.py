@@ -24,6 +24,10 @@ VERBAL_STYLE = {
     # classified endings were polite. An absolute "use plain speech only" rule
     # measured further from the Reference than the mixture does.
     "register": "mostly_plain",
+    # Drawn per turn. Instructing "mostly plain" produced 0% polite in three
+    # runs: the model reads a mixture as a rule. Drawing one register per turn
+    # and instructing it absolutely reproduces the measured share instead.
+    "polite_ratio": 0.26,
     "max_sentences": 1,
     "max_words_per_sentence": 8,
     "shared_instruction": True,
