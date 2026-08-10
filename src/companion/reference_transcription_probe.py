@@ -117,6 +117,7 @@ def build_whisper_command(
     output_prefix: Path,
     language: str = "ko",
     threads: int | None = None,
+    word_timestamps: bool = False,
 ) -> list[str]:
     """Transcribe to WebVTT so the subtitle probe's parser and metrics apply.
 
@@ -137,6 +138,10 @@ def build_whisper_command(
         "-np",
         "-ng",
     ]
+    if word_timestamps:
+        # One word per cue. Speaker boundaries fall between words, so a cue that
+        # holds a whole sentence can never be credited to a single speaker.
+        command.extend(["-ml", "1", "-sow"])
     if threads is not None:
         if threads < 1:
             raise ReferenceTranscriptionProbeError("thread count must be at least 1")

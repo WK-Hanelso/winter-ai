@@ -75,6 +75,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--duration-seconds", type=float, required=True)
     parser.add_argument("--language", default="ko")
     parser.add_argument("--threads", type=int)
+    parser.add_argument("--word-timestamps", action="store_true")
     parser.add_argument("--image", default=DEFAULT_IMAGE)
     return parser.parse_args(argv)
 
@@ -102,6 +103,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
 
         stem = f"{args.source_id}-{int(segment.start_seconds)}-{int(segment.duration_seconds)}"
+        if args.word_timestamps:
+            stem += "-words"
         wav_name = f"{stem}.wav"
         # The source audio is staged inside the work directory so one bind mount
         # covers the input and every produced file. Keyed by source, not by
@@ -139,6 +142,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     output_prefix=Path("/work") / stem,
                     language=args.language,
                     threads=args.threads,
+                    word_timestamps=args.word_timestamps,
                 ),
             ),
             "whisper transcription",

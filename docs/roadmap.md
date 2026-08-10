@@ -33,7 +33,7 @@ Epic: [#66](https://github.com/WK-Hanelso/winter-ai/issues/66)
 | 8b | [grounding 정책](https://github.com/WK-Hanelso/winter-ai/issues/94) | 겪지 않은 경험·없는 기억 진술 억제 ([문서](grounding-policy.md)) | 프롬프트 제약은 보장이 아님을 전제 |
 | 8c | [말투 held-out 평가](https://github.com/WK-Hanelso/winter-ai/issues/96) | 스타일 거리와 바닥값 ([문서](style-holdout-evaluation.md)) | Order 10 학습 결정의 근거 |
 | 6 | 행동·분위기 annotation | held-out 가능한 behavior labels | inter-annotation/수동 검토 기록 |
-| 6a | [화자 분리](https://github.com/WK-Hanelso/winter-ai/issues/98) | Sortformer + Reference 화자 판정 완료 ([문서](diarization.md)) | 쌍 데이터 구성에는 단어 단위 정렬 필요 |
+| 6a | [화자 분리](https://github.com/WK-Hanelso/winter-ai/issues/98) | Sortformer + 화자 판정 + 단어 정렬로 쌍 데이터 생성 ([문서](diarization.md)) | 5분당 11쌍. 확장 규모 추정 가능 |
 | 7 | Reference Voice baseline | 원본 대비 동일 script 합성 | voice reproduction gap 분리 |
 | 8 | CLI behavior baseline | prompt/few-shot Reference 응답 | held-out behavior score 기록 |
 | 9 | Voice joint baseline | shared text + Reference delivery | text/voice/joint gap 분리 |
