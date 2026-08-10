@@ -224,3 +224,27 @@ def test_docker_command_omits_user_mapping_when_not_requested() -> None:
     )
 
     assert "--user" not in command
+
+
+def test_word_timestamp_mode_asks_whisper_for_one_word_per_cue() -> None:
+    command = build_whisper_command(
+        model_path=Path("/models/m.bin"),
+        audio_path=Path("/work/a.wav"),
+        output_prefix=Path("/work/a"),
+        word_timestamps=True,
+    )
+
+    # Speaker boundaries fall between words, so a sentence-sized cue can never
+    # be credited to one speaker.
+    assert command[command.index("-ml") + 1] == "1"
+    assert "-sow" in command
+
+
+def test_word_timestamps_are_off_unless_requested() -> None:
+    command = build_whisper_command(
+        model_path=Path("/models/m.bin"),
+        audio_path=Path("/work/a.wav"),
+        output_prefix=Path("/work/a"),
+    )
+
+    assert "-ml" not in command

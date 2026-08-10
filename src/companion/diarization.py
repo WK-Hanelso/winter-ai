@@ -229,3 +229,143 @@ def _speaker_at(start: float, end: float, spans: tuple[SpeakerSpan, ...]) -> int
     if tied or best_overlap <= 0:
         return UNASSIGNED_SPEAKER
     return best_speaker
+
+
+@dataclass(frozen=True)
+class SpeakerTurn:
+    """Consecutive words from one speaker, joined back into an utterance."""
+
+    speaker: int
+    start_seconds: float
+    end_seconds: float
+    text: str
+    word_count: int
+
+    @property
+    def duration_seconds(self) -> float:
+        return self.end_seconds - self.start_seconds
+
+
+@dataclass(frozen=True)
+class Exchange:
+    """What someone said, and what the Reference said back."""
+
+    prompt_speaker: int
+    prompt_text: str
+    response_text: str
+    prompt_seconds: float
+    response_seconds: float
+
+
+def assign_words_to_speakers(
+    words: tuple[SubtitleCue, ...],
+    spans: tuple[SpeakerSpan, ...],
+) -> tuple[SpeakerTurn, ...]:
+    """Group word-level cues into turns using the speaker timeline.
+
+    A word is credited to whoever is speaking at its midpoint. Unlike a whole
+    cue, a single word cannot straddle a speaker change in any meaningful way,
+    so the midpoint is not an approximation here — it is the answer.
+
+    Consecutive words with the same speaker become one turn. That is what makes
+    an interview into utterances instead of a word list.
+    """
+    if not words:
+        raise DiarizationError("no words to assign")
+    labelled = [
+        (_speaker_at(word.start_seconds, word.end_seconds, spans), word)
+        for word in sorted(words, key=lambda cue: cue.start_seconds)
+    ]
+    turns: list[SpeakerTurn] = []
+    current: list[SubtitleCue] = []
+    current_speaker = labelled[0][0]
+    for speaker, word in labelled:
+        if speaker != current_speaker and current:
+            turns.append(_turn(current_speaker, current))
+            current = []
+        current_speaker = speaker
+        current.append(word)
+    if current:
+        turns.append(_turn(current_speaker, current))
+    return tuple(turns)
+
+
+def build_exchanges(
+    turns: tuple[SpeakerTurn, ...],
+    reference_speaker: int,
+    *,
+    minimum_words: int = 2,
+) -> tuple[Exchange, ...]:
+    """Pair each Reference turn with the turn that prompted it.
+
+    Only a turn from a different, identified speaker counts as a prompt.
+    Unassigned audio in between is skipped rather than treated as a prompt:
+    silence and overlap are not something anyone said.
+    """
+    exchanges: list[Exchange] = []
+    previous: SpeakerTurn | None = None
+    for turn in turns:
+        if turn.speaker == reference_speaker:
+            if (
+                previous is not None
+                and previous.word_count >= minimum_words
+                and turn.word_count >= minimum_words
+            ):
+                exchanges.append(
+                    Exchange(
+                        prompt_speaker=previous.speaker,
+                        prompt_text=previous.text,
+                        response_text=turn.text,
+                        prompt_seconds=previous.duration_seconds,
+                        response_seconds=turn.duration_seconds,
+                    )
+                )
+            previous = None
+            continue
+        if turn.speaker == UNASSIGNED_SPEAKER:
+            continue
+        previous = turn
+    return tuple(exchanges)
+
+
+def public_exchange_summary(
+    turns: tuple[SpeakerTurn, ...],
+    exchanges: tuple[Exchange, ...],
+    reference_speaker: int,
+) -> dict[str, Any]:
+    """Counts and durations only. No utterance text appears here."""
+    reference_turns = [turn for turn in turns if turn.speaker == reference_speaker]
+    return {
+        "turn_count": len(turns),
+        "reference_turn_count": len(reference_turns),
+        "reference_words": sum(turn.word_count for turn in reference_turns),
+        "reference_seconds": round(
+            sum(turn.duration_seconds for turn in reference_turns), 2
+        ),
+        "exchange_count": len(exchanges),
+        "exchange_prompt_words": sum(
+            len(exchange.prompt_text.split()) for exchange in exchanges
+        ),
+        "exchange_response_words": sum(
+            len(exchange.response_text.split()) for exchange in exchanges
+        ),
+        "mean_response_words": (
+            0.0
+            if not exchanges
+            else round(
+                sum(len(exchange.response_text.split()) for exchange in exchanges)
+                / len(exchanges),
+                2,
+            )
+        ),
+    }
+
+
+def _turn(speaker: int, words: list[SubtitleCue]) -> SpeakerTurn:
+    return SpeakerTurn(
+        speaker=speaker,
+        start_seconds=words[0].start_seconds,
+        end_seconds=words[-1].end_seconds,
+        text=" ".join(word.text for word in words),
+        word_count=len(words),
+    )
