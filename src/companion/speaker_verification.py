@@ -122,6 +122,17 @@ def iter_windows(
     return tuple(windows)
 
 
+def audible_cues(cues: tuple[Any, ...]) -> tuple[Any, ...]:
+    """Drop cues that cover no time.
+
+    Word-level transcription gives some words an identical start and end, so a
+    third of a chunk's cues can be zero length. There is no audio to embed
+    there, and asking for a window over an empty span is an error rather than a
+    quiet no-op.
+    """
+    return tuple(cue for cue in cues if cue.end_seconds > cue.start_seconds)
+
+
 def cosine_similarity(left: tuple[float, ...], right: tuple[float, ...]) -> float:
     if len(left) != len(right):
         raise SpeakerVerificationError("embeddings must have the same dimension")
