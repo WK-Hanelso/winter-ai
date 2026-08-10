@@ -24,11 +24,16 @@ import torchaudio
 
 from companion.reference_subtitle_probe import SubtitleCue, parse_webvtt
 from companion.speaker_verification import (
+    DEFAULT_HOP_SECONDS,
+    DEFAULT_WINDOW_SECONDS,
     MINIMUM_RELIABLE_SECONDS,
     SegmentScore,
     SpeakerVerificationError,
     cosine_similarity,
+    iter_windows,
+    label_clusters,
     positive_control_rate,
+    public_cluster_summary,
     public_verification_summary,
     verify_segments,
 )
@@ -123,25 +128,69 @@ def _unit(vector: tuple[float, ...]) -> tuple[float, ...]:
     return tuple(value / norm for value in vector)
 
 
+def window_embeddings(
+    encoder: EncoderClassifier,
+    waveform: torch.Tensor,
+    cues: tuple[SubtitleCue, ...],
+    *,
+    window_seconds: float,
+    hop_seconds: float,
+) -> tuple[tuple[float, ...], ...]:
+    vectors: list[tuple[float, ...]] = []
+    for cue in cues:
+        for start, end in iter_windows(
+            cue.start_seconds,
+            cue.end_seconds,
+            window_seconds=window_seconds,
+            hop_seconds=hop_seconds,
+        ):
+            window = _window(waveform, start, end)
+            if window is not None:
+                vectors.append(embed(encoder, window))
+    if not vectors:
+        raise SpeakerVerificationError("no usable windows to embed")
+    return tuple(vectors)
+
+
 def score_segments(
     encoder: EncoderClassifier,
     waveform: torch.Tensor,
     cues: tuple[SubtitleCue, ...],
     enrolment: tuple[float, ...],
+    *,
+    by_window: bool,
+    window_seconds: float = DEFAULT_WINDOW_SECONDS,
+    hop_seconds: float = DEFAULT_HOP_SECONDS,
 ) -> tuple[SegmentScore, ...]:
+    """Score either whole cues or windows cut inside them.
+
+    Cue-level scoring is kept so the two can be compared on the same audio; it
+    was the approach that failed, and the comparison is the evidence.
+    """
     scores: list[SegmentScore] = []
     for index, cue in enumerate(cues):
-        window = _window(waveform, cue.start_seconds, cue.end_seconds)
-        if window is None:
-            continue
-        scores.append(
-            SegmentScore(
-                index=index,
-                start_seconds=cue.start_seconds,
-                end_seconds=cue.end_seconds,
-                similarity=cosine_similarity(embed(encoder, window), enrolment),
+        spans = (
+            iter_windows(
+                cue.start_seconds,
+                cue.end_seconds,
+                window_seconds=window_seconds,
+                hop_seconds=hop_seconds,
             )
+            if by_window
+            else ((cue.start_seconds, cue.end_seconds),)
         )
+        for start, end in spans:
+            window = _window(waveform, start, end)
+            if window is None:
+                continue
+            scores.append(
+                SegmentScore(
+                    index=index,
+                    start_seconds=start,
+                    end_seconds=end,
+                    similarity=cosine_similarity(embed(encoder, window), enrolment),
+                )
+            )
     if not scores:
         raise SpeakerVerificationError("no usable segments to score")
     return tuple(scores)
@@ -156,6 +205,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-audio", type=Path, required=True)
     parser.add_argument("--target-vtt", type=Path, required=True)
     parser.add_argument("--target-source-id", required=True)
+    parser.add_argument("--window-seconds", type=float, default=DEFAULT_WINDOW_SECONDS)
+    parser.add_argument("--hop-seconds", type=float, default=DEFAULT_HOP_SECONDS)
     parser.add_argument(
         "--model-dir",
         type=Path,
@@ -184,31 +235,82 @@ def main(argv: list[str] | None = None) -> int:
 
         # The held-out part of the single-speaker source: every one of these is
         # the Reference, so a low acceptance rate condemns the method itself.
-        control_scores = score_segments(encoder, enrolment_audio, control_cues, enrolment)
-
         target_audio = load_audio(arguments.target_audio)
         target_cues = parse_webvtt(arguments.target_vtt.read_text(encoding="utf-8"))
-        target_scores = score_segments(encoder, target_audio, target_cues, enrolment)
 
-        target_report = verify_segments(arguments.target_source_id, target_scores)
-        control_report = verify_segments("enrolment-control", control_scores)
-        threshold = target_report.separation.threshold
+        def measure(by_window: bool) -> dict[str, object]:
+            control = score_segments(
+                encoder,
+                enrolment_audio,
+                control_cues,
+                enrolment,
+                by_window=by_window,
+                window_seconds=arguments.window_seconds,
+                hop_seconds=arguments.hop_seconds,
+            )
+            target = score_segments(
+                encoder,
+                target_audio,
+                target_cues,
+                enrolment,
+                by_window=by_window,
+                window_seconds=arguments.window_seconds,
+                hop_seconds=arguments.hop_seconds,
+            )
+            target_report = verify_segments(arguments.target_source_id, target)
+            threshold = target_report.separation.threshold
+            return {
+                "positive_control": public_verification_summary(
+                    verify_segments("enrolment-control", control)
+                ),
+                "target": public_verification_summary(target_report),
+                "positive_control_rate_at_target_threshold": (
+                    None
+                    if threshold is None
+                    else round(positive_control_rate(control, threshold), 4)
+                ),
+            }
+
         payload: dict[str, object] = {
             "generated_at": datetime.now(UTC).isoformat(),
             "minimum_reliable_seconds": MINIMUM_RELIABLE_SECONDS,
+            "window_seconds": arguments.window_seconds,
+            "hop_seconds": arguments.hop_seconds,
             "enrolment": {
                 "train_segments": len(train_cues),
                 "control_segments": len(control_cues),
                 "windows_used": min(arguments.enrolment_windows, len(train_cues)),
             },
-            "positive_control": public_verification_summary(control_report),
-            "target": public_verification_summary(target_report),
-            "positive_control_rate_at_target_threshold": (
-                None
-                if threshold is None
-                else round(positive_control_rate(control_scores, threshold), 4)
-            ),
+            # Both are reported: the cue-level run is the approach that failed,
+            # and keeping it makes the comparison the evidence.
+            "by_cue": measure(by_window=False),
+            "by_window": measure(by_window=True),
         }
+
+        # Absolute similarity collapses across recordings. Clustering inside the
+        # target removes that shift; the enrolment then only names a group.
+        target_vectors = window_embeddings(
+            encoder,
+            target_audio,
+            target_cues,
+            window_seconds=arguments.window_seconds,
+            hop_seconds=arguments.hop_seconds,
+        )
+        payload["clustered"] = public_cluster_summary(
+            label_clusters(target_vectors, enrolment)
+        )
+        control_vectors = window_embeddings(
+            encoder,
+            enrolment_audio,
+            control_cues,
+            window_seconds=arguments.window_seconds,
+            hop_seconds=arguments.hop_seconds,
+        )
+        # Single-speaker audio must NOT split convincingly. If it does, the
+        # clustering is finding something other than speakers.
+        payload["clustered_control"] = public_cluster_summary(
+            label_clusters(control_vectors, enrolment)
+        )
     except (SpeakerVerificationError, OSError, RuntimeError) as error:
         print(json.dumps({"status": "error", "error": str(error)}, ensure_ascii=False))
         return 2

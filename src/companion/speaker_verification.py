@@ -27,6 +27,13 @@ SPEAKER_VERIFICATION_SCHEMA_VERSION = 1
 MINIMUM_RELIABLE_SECONDS = 1.5
 
 
+# A transcript cue is not a speaker unit. In an interview one cue routinely
+# holds a question and its answer, so scoring the cue whole averages two voices
+# into something that matches neither. Windows are cut inside the cue instead.
+DEFAULT_WINDOW_SECONDS = 1.5
+DEFAULT_HOP_SECONDS = 0.75
+
+
 class SpeakerVerificationError(RuntimeError):
     """Raised when a verification result cannot be reported honestly."""
 
@@ -79,6 +86,40 @@ class VerificationReport:
     separation: SeparationCheck
     reliable_count: int
     short_count: int
+
+
+def iter_windows(
+    start_seconds: float,
+    end_seconds: float,
+    *,
+    window_seconds: float = DEFAULT_WINDOW_SECONDS,
+    hop_seconds: float = DEFAULT_HOP_SECONDS,
+) -> tuple[tuple[float, float], ...]:
+    """Cut a span into overlapping windows.
+
+    Overlap matters: a speaker change landing mid-window would otherwise mix two
+    voices in every window that covers it. With a hop of half the window, the
+    change is cleanly inside at least one window on each side of it.
+
+    A span shorter than one window yields the whole span, so short cues are still
+    scored rather than silently dropped.
+    """
+    if window_seconds <= 0 or hop_seconds <= 0:
+        raise SpeakerVerificationError("window and hop must be positive")
+    if end_seconds <= start_seconds:
+        raise SpeakerVerificationError("window span must be positive")
+    span = end_seconds - start_seconds
+    if span <= window_seconds:
+        return ((start_seconds, end_seconds),)
+    windows: list[tuple[float, float]] = []
+    position = start_seconds
+    while position + window_seconds <= end_seconds + 1e-9:
+        windows.append((position, position + window_seconds))
+        position += hop_seconds
+    # Keep the tail: without it the last moments of a long cue are never scored.
+    if windows and windows[-1][1] < end_seconds - 1e-9:
+        windows.append((max(start_seconds, end_seconds - window_seconds), end_seconds))
+    return tuple(windows)
 
 
 def cosine_similarity(left: tuple[float, ...], right: tuple[float, ...]) -> float:
@@ -247,4 +288,154 @@ def public_verification_summary(report: VerificationReport) -> dict[str, Any]:
             "is_bimodal": separation.is_bimodal,
             "reason": separation.reason,
         },
+    }
+
+
+@dataclass(frozen=True)
+class ClusterSplit:
+    """Two groups found inside one recording, then labelled by enrolment.
+
+    Absolute similarity to an enrolment voice collapses when the two recordings
+    differ acoustically: the whole target drifts down and no threshold separates
+    anyone. Clustering inside the target first removes that shift, because it
+    lands on both speakers equally. The enrolment is then only used to say which
+    of the two groups is the Reference.
+    """
+
+    sizes: tuple[int, int]
+    centroid_similarities: tuple[float, float]
+    reference_index: int
+    margin: float
+    internal_separation: float
+    # Turn-taking leaves long runs of one speaker; noise and music are scattered
+    # through the other speaker's audio. A split that is real turn-taking has
+    # runs of several windows, not alternation every window.
+    mean_run_windows: float
+    longest_run_windows: int
+
+    @property
+    def is_usable(self) -> bool:
+        """Both groups substantial, one clearly closer, and runs long enough.
+
+        The run-length test is what separates two speakers from one speaker
+        interrupted by music: single-speaker audio also splits into two clusters,
+        so cluster quality alone proves nothing.
+        """
+        smaller = min(self.sizes)
+        return (
+            smaller >= 3
+            and smaller / sum(self.sizes) >= 0.1
+            and self.margin >= 0.05
+            and self.internal_separation >= 0.1
+            and self.mean_run_windows >= 2.0
+        )
+
+
+def unit(vector: tuple[float, ...]) -> tuple[float, ...]:
+    norm = math.sqrt(sum(value * value for value in vector))
+    if norm == 0.0:
+        raise SpeakerVerificationError("embedding has zero magnitude")
+    return tuple(value / norm for value in vector)
+
+
+def _centroid(vectors: list[tuple[float, ...]]) -> tuple[float, ...]:
+    dimension = len(vectors[0])
+    return unit(
+        tuple(sum(v[i] for v in vectors) / len(vectors) for i in range(dimension))
+    )
+
+
+def two_means(
+    embeddings: tuple[tuple[float, ...], ...],
+    *,
+    iterations: int = 20,
+) -> tuple[tuple[int, ...], tuple[tuple[float, ...], tuple[float, ...]]]:
+    """Split embeddings into two groups by cosine distance.
+
+    Seeded deterministically from the farthest pair reachable in two passes, so
+    the same audio always yields the same split. A random start would make every
+    run of the probe disagree with the last one.
+    """
+    if len(embeddings) < 2:
+        raise SpeakerVerificationError("need at least two embeddings to cluster")
+    points = [unit(vector) for vector in embeddings]
+    first = min(range(len(points)), key=lambda i: cosine_similarity(points[0], points[i]))
+    second = min(
+        range(len(points)), key=lambda i: cosine_similarity(points[first], points[i])
+    )
+    centroids = (points[first], points[second])
+    labels = tuple(0 for _ in points)
+    for _ in range(iterations):
+        new_labels = tuple(
+            0
+            if cosine_similarity(point, centroids[0]) >= cosine_similarity(point, centroids[1])
+            else 1
+            for point in points
+        )
+        groups: tuple[list[tuple[float, ...]], list[tuple[float, ...]]] = ([], [])
+        for label, point in zip(new_labels, points, strict=True):
+            groups[label].append(point)
+        if not groups[0] or not groups[1]:
+            break
+        centroids = (_centroid(groups[0]), _centroid(groups[1]))
+        if new_labels == labels:
+            labels = new_labels
+            break
+        labels = new_labels
+    return labels, centroids
+
+
+def run_lengths(labels: tuple[int, ...]) -> tuple[int, ...]:
+    """Lengths of consecutive same-label stretches, in order."""
+    if not labels:
+        raise SpeakerVerificationError("no labels to measure runs on")
+    runs: list[int] = [1]
+    for previous, current in zip(labels, labels[1:], strict=False):
+        if current == previous:
+            runs[-1] += 1
+        else:
+            runs.append(1)
+    return tuple(runs)
+
+
+def label_clusters(
+    embeddings: tuple[tuple[float, ...], ...],
+    enrolment: tuple[float, ...],
+) -> ClusterSplit:
+    labels, centroids = two_means(embeddings)
+    runs = run_lengths(labels)
+    sizes = (sum(1 for label in labels if label == 0), sum(1 for label in labels if label == 1))
+    if not all(sizes):
+        raise SpeakerVerificationError("clustering collapsed into a single group")
+    similarities = (
+        cosine_similarity(centroids[0], enrolment),
+        cosine_similarity(centroids[1], enrolment),
+    )
+    reference_index = 0 if similarities[0] >= similarities[1] else 1
+    return ClusterSplit(
+        sizes=sizes,
+        centroid_similarities=similarities,
+        reference_index=reference_index,
+        margin=abs(similarities[0] - similarities[1]),
+        internal_separation=1.0 - cosine_similarity(centroids[0], centroids[1]),
+        mean_run_windows=sum(runs) / len(runs),
+        longest_run_windows=max(runs),
+    )
+
+
+def public_cluster_summary(split: ClusterSplit) -> dict[str, Any]:
+    return {
+        "sizes": list(split.sizes),
+        "centroid_similarity_to_enrolment": [
+            round(value, 4) for value in split.centroid_similarities
+        ],
+        "reference_cluster": split.reference_index,
+        "reference_share": round(
+            split.sizes[split.reference_index] / sum(split.sizes), 4
+        ),
+        "margin": round(split.margin, 4),
+        "internal_separation": round(split.internal_separation, 4),
+        "mean_run_windows": round(split.mean_run_windows, 2),
+        "longest_run_windows": split.longest_run_windows,
+        "is_usable": split.is_usable,
     }

@@ -138,3 +138,129 @@ def test_summary_carries_the_failure_reason_not_only_a_threshold() -> None:
     assert summary["separation"]["is_bimodal"] is False
     assert summary["separation"]["reason"]
     assert summary["source_id"] == "source-003"
+
+
+def test_windows_overlap_so_a_speaker_change_lands_inside_one_of_them() -> None:
+    from companion.speaker_verification import iter_windows
+
+    windows = iter_windows(0.0, 4.5, window_seconds=1.5, hop_seconds=0.75)
+
+    assert windows[0] == (0.0, 1.5)
+    assert windows[1] == (0.75, 2.25)
+    # Consecutive windows share half their length.
+    assert windows[1][0] < windows[0][1]
+
+
+def test_a_span_shorter_than_one_window_is_still_scored() -> None:
+    from companion.speaker_verification import iter_windows
+
+    # Dropping short cues would silently discard the shortest turns, which in a
+    # conversation are exactly the interesting ones.
+    assert iter_windows(10.0, 10.8, window_seconds=1.5) == ((10.0, 10.8),)
+
+
+def test_the_tail_of_a_long_span_is_not_left_unscored() -> None:
+    from companion.speaker_verification import iter_windows
+
+    windows = iter_windows(0.0, 4.0, window_seconds=1.5, hop_seconds=0.75)
+
+    assert windows[-1][1] == 4.0
+
+
+def test_windows_reject_impossible_parameters() -> None:
+    from companion.speaker_verification import SpeakerVerificationError, iter_windows
+
+    with pytest.raises(SpeakerVerificationError, match="must be positive"):
+        iter_windows(0.0, 1.0, window_seconds=0.0)
+    with pytest.raises(SpeakerVerificationError, match="span must be positive"):
+        iter_windows(5.0, 5.0)
+
+
+def _vec(*values: float) -> tuple[float, ...]:
+    return values
+
+
+def test_two_means_finds_the_two_groups_and_is_deterministic() -> None:
+    from companion.speaker_verification import two_means
+
+    points = (
+        _vec(1.0, 0.0), _vec(0.98, 0.2), _vec(0.95, 0.1),
+        _vec(0.0, 1.0), _vec(0.2, 0.98), _vec(0.1, 0.95),
+    )
+
+    labels, _ = two_means(points)
+    again, _ = two_means(points)
+
+    assert labels == again  # a random seed would make runs disagree
+    assert len(set(labels)) == 2
+    assert labels[0] == labels[1] == labels[2]
+    assert labels[3] == labels[4] == labels[5]
+
+
+def test_clustering_labels_the_group_nearer_the_enrolment_as_the_reference() -> None:
+    from companion.speaker_verification import label_clusters
+
+    speaker_a = (_vec(1.0, 0.0), _vec(0.98, 0.2), _vec(0.95, 0.1), _vec(0.99, 0.05))
+    speaker_b = (_vec(0.0, 1.0), _vec(0.2, 0.98), _vec(0.1, 0.95), _vec(0.05, 0.99))
+
+    split = label_clusters(speaker_a + speaker_b, _vec(1.0, 0.0))
+
+    reference = split.centroid_similarities[split.reference_index]
+    other = split.centroid_similarities[1 - split.reference_index]
+    assert reference > other
+    assert split.is_usable
+
+
+def test_a_split_with_no_clear_winner_is_marked_unusable() -> None:
+    from companion.speaker_verification import label_clusters
+
+    # Enrolment sits exactly between the two groups: it cannot name either.
+    speaker_a = (_vec(1.0, 0.0), _vec(0.98, 0.2), _vec(0.95, 0.1), _vec(0.99, 0.05))
+    speaker_b = (_vec(0.0, 1.0), _vec(0.2, 0.98), _vec(0.1, 0.95), _vec(0.05, 0.99))
+
+    split = label_clusters(speaker_a + speaker_b, _vec(0.7071, 0.7071))
+
+    assert not split.is_usable
+
+
+def test_a_tiny_second_group_is_marked_unusable() -> None:
+    from companion.speaker_verification import label_clusters
+
+    points = tuple(_vec(1.0, 0.0) for _ in range(20)) + (_vec(0.0, 1.0),)
+
+    assert not label_clusters(points, _vec(1.0, 0.0)).is_usable
+
+
+def test_run_lengths_measure_consecutive_stretches() -> None:
+    from companion.speaker_verification import run_lengths
+
+    assert run_lengths((0, 0, 0, 1, 1, 0)) == (3, 2, 1)
+    assert run_lengths((0,)) == (1,)
+
+
+def test_alternating_labels_are_rejected_as_turn_taking() -> None:
+    from companion.speaker_verification import label_clusters
+
+    # Two groups interleaved every window is noise sitting inside one speaker,
+    # not a conversation: nobody swaps turns twice a second.
+    alternating = tuple(
+        _vec(1.0, 0.0) if index % 2 == 0 else _vec(0.0, 1.0) for index in range(24)
+    )
+
+    split = label_clusters(alternating, _vec(1.0, 0.0))
+
+    assert split.mean_run_windows < 2.0
+    assert not split.is_usable
+
+
+def test_blocked_labels_are_accepted_as_turn_taking() -> None:
+    from companion.speaker_verification import label_clusters
+
+    blocked = tuple(_vec(1.0, 0.0) for _ in range(12)) + tuple(
+        _vec(0.0, 1.0) for _ in range(12)
+    )
+
+    split = label_clusters(blocked, _vec(1.0, 0.0))
+
+    assert split.mean_run_windows >= 2.0
+    assert split.is_usable
