@@ -72,14 +72,33 @@ Sortformer는 `(시작, 끝, 화자)` 타임라인만 낸다. 이미 측정을 �
 전사 한 줄에 두 사람 이상의 말이 들어 있다는 것이 이 수치로 확인된다. 앞선 검증
 방식이 실패한 이유이며, 화자 분리 없이 대화 데이터를 만들 수 없다는 근거다.
 
-### 화자가 4명으로 나왔다
+### 어느 화자가 Reference인가 — 판정됨
 
-2명을 예상했으나 4명이 나왔다. 해석이 필요하다.
+화자 타임라인을 speaker-embedding image로 넘겨 화자별 평균 목소리 벡터를 만들고,
+단독 방송에서 얻은 등록 음성과 비교했다.
 
-- 화자 3은 1.6초(0.9%)로 잡음일 가능성이 높다
-- 화자 2는 26.3초(15.3%)로 무시하기 어렵다. 진행자가 둘이거나, 과분할이거나,
-  방청·효과음일 수 있다
-- **이 measurement만으로는 판정할 수 없다**
+| 화자 | 발화 시간 | 등록 음성 유사도 | 해석 |
+| ---: | ---: | ---: | --- |
+| **1** | 49.6초 | **0.742** | **Reference** |
+| 0 | 70.1초 | 0.250 | 다른 사람 |
+| 2 | 68.1초 | 0.098 | 사람 목소리가 아님 |
+| 3 | 1.6초 | — | 발화 부족으로 제외 |
+
+차이 0.492로 판정에 확신이 있다.
+
+**순위만 신뢰한다.** 절대값은 녹음이 바뀌면 함께 내려앉는다. 앞선 시도가 실패한
+이유가 그것이고, 순위와 차이는 그 변화를 함께 겪으므로 살아남는다.
+
+### 화자 4명의 정체
+
+2명을 예상했으나 4명이 나왔다. 유사도가 설명해 준다.
+
+- 화자 2는 **0.098**로, 앞서 측정한 무음·음악 구간 수준(0.113)이다. 사람이 아니라
+  배경음이 화자로 잡힌 것으로 본다
+- 화자 3은 1.6초로 잡음이다
+
+즉 실제 사람은 둘이며, Sortformer가 비발화 구간을 화자로 분리했다. 4명이라는 숫자
+자체는 오류가 아니라 **해석이 필요한 출력**이었다.
 
 ### 미배정 26.3%
 
@@ -87,13 +106,33 @@ Sortformer는 `(시작, 끝, 화자)` 타임라인만 낸다. 이미 측정을 �
 구분하지 않는다. 겹침은 원리상 어느 화자에게도 줄 수 없지만, 무음은 분리해서
 세는 편이 source 품질을 보는 데 낫다.
 
+## 5. 파이프라인
+
+두 image를 파일로 잇는다. NeMo와 speaker embedder는 런타임을 공유할 이유가 없다.
+
+```
+오디오 ──▶ whisper 전사 ──┐
+                          ├──▶ 화자 라벨된 조각 ──▶ 어느 화자가 Reference인가
+오디오 ──▶ Sortformer ────┘
+```
+
 ## 5. 실행
 
 ```bash
 docker compose -f compose.reference-source.yaml run --rm reference-diarization-probe \
   --audio <외장>/derived/audio/stt-pilot/<source>-<start>-<duration>.wav \
   --transcript <외장>/derived/audio/stt-pilot/<source>-<start>-<duration>.vtt \
-  --source-id <source-id>
+  --source-id <source-id> \\
+  --spans-path <외장>/reports/spans-<name>.json
+
+# 2단계 — 어느 화자가 Reference인가
+docker compose -f compose.reference-source.yaml run --rm reference-speaker-probe \\
+  --enrolment-audio <외장>/derived/.../<solo>-0-<duration>.wav \\
+  --enrolment-vtt   <외장>/derived/.../<solo>-0-<duration>.vtt \\
+  --target-audio    <외장>/derived/.../<target>.wav \\
+  --target-vtt      <외장>/derived/.../<target>.vtt \\
+  --target-source-id <source-id> \\
+  --spans-path      <외장>/reports/spans-<name>.json
 ```
 
 ## 6. 구축에서 걸린 것
@@ -110,10 +149,8 @@ NeMo 설치 뒤 맞는 CPU 짝(2.9.1)으로 되돌리고, **빌드 시점에 imp
 
 ## 7. 남은 작업
 
-- **어느 화자가 Reference인지 판정.** 등록 음성 비교(`speaker_verification`)를 화자별
-  오디오에 적용하면 된다. 앞선 시도에서 만든 부분이 여기서 쓰인다
-- 화자 2의 정체 확인
 - 미배정에서 겹침과 무음 분리
+- 화자 2가 배경음이라는 해석의 독립적 확인
 - 다른 구간·다른 source에서 재현
 - 쪼개진 cue의 텍스트 처리 — 현재는 전체 텍스트가 양쪽에 남는다. 실제 쌍 데이터를
   만들려면 단어 단위 정렬이 필요하다

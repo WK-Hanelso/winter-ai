@@ -22,6 +22,7 @@ from speechbrain.inference.speaker import EncoderClassifier
 import torch
 import torchaudio
 
+from companion.diarization import SpeakerSpan, parse_spans
 from companion.reference_subtitle_probe import SubtitleCue, parse_webvtt
 from companion.speaker_verification import (
     DEFAULT_HOP_SECONDS,
@@ -30,10 +31,12 @@ from companion.speaker_verification import (
     SegmentScore,
     SpeakerVerificationError,
     cosine_similarity,
+    identify_reference_speaker,
     iter_windows,
     label_clusters,
     positive_control_rate,
     public_cluster_summary,
+    public_identification_summary,
     public_verification_summary,
     verify_segments,
 )
@@ -196,6 +199,42 @@ def score_segments(
     return tuple(scores)
 
 
+def speaker_centroids(
+    encoder: EncoderClassifier,
+    waveform: torch.Tensor,
+    spans: tuple[SpeakerSpan, ...],
+    *,
+    window_seconds: float,
+    hop_seconds: float,
+) -> tuple[dict[int, tuple[float, ...]], dict[int, float]]:
+    """One averaged voice vector per diarized speaker, plus how long each spoke."""
+    collected: dict[int, list[tuple[float, ...]]] = {}
+    seconds: dict[int, float] = {}
+    for span in spans:
+        seconds[span.speaker] = seconds.get(span.speaker, 0.0) + span.duration_seconds
+        for start, end in iter_windows(
+            span.start_seconds,
+            span.end_seconds,
+            window_seconds=window_seconds,
+            hop_seconds=hop_seconds,
+        ):
+            window = _window(waveform, start, end)
+            if window is not None:
+                collected.setdefault(span.speaker, []).append(_unit(embed(encoder, window)))
+    if not collected:
+        raise SpeakerVerificationError("no usable audio for any diarized speaker")
+    centroids: dict[int, tuple[float, ...]] = {}
+    for speaker, vectors in collected.items():
+        dimension = len(vectors[0])
+        centroids[speaker] = _unit(
+            tuple(
+                sum(vector[index] for vector in vectors) / len(vectors)
+                for index in range(dimension)
+            )
+        )
+    return centroids, seconds
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--enrolment-audio", type=Path, required=True)
@@ -213,6 +252,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path(os.environ.get("SPEAKER_MODEL_DIR", "/opt/speaker-model")),
     )
     parser.add_argument("--report-path", type=Path)
+    parser.add_argument(
+        "--spans-path",
+        type=Path,
+        help="speaker timeline from the diarization probe; enables speaker identification",
+    )
     return parser
 
 
@@ -296,6 +340,25 @@ def main(argv: list[str] | None = None) -> int:
             window_seconds=arguments.window_seconds,
             hop_seconds=arguments.hop_seconds,
         )
+        if arguments.spans_path:
+            raw_spans = json.loads(arguments.spans_path.read_text(encoding="utf-8"))
+            spans = parse_spans(
+                tuple((row[0], row[1], int(row[2])) for row in raw_spans["spans"])
+            )
+            centroids, seconds = speaker_centroids(
+                encoder,
+                target_audio,
+                spans,
+                window_seconds=arguments.window_seconds,
+                hop_seconds=arguments.hop_seconds,
+            )
+            payload["identified_speaker"] = public_identification_summary(
+                identify_reference_speaker(centroids, seconds, enrolment)
+            )
+            payload["speaker_seconds"] = {
+                str(speaker): round(value, 2) for speaker, value in sorted(seconds.items())
+            }
+
         payload["clustered"] = public_cluster_summary(
             label_clusters(target_vectors, enrolment)
         )
