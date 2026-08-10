@@ -385,6 +385,10 @@ PYTHONPATH=src python3 experiments/reference_speech_style.py \\
 측정 항목과 결과는
 [말투 특성 문서](docs/reference-speech-style.md)를 따릅니다.
 
+대화형 source에서 Reference 발화만 골라내는 화자 검증은 별도 pinned image로
+실행합니다. **현재 이 방법은 동작하지 않으며** 경위와 이유는
+[화자 검증 문서](docs/speaker-verification.md)에 있습니다.
+
 말투는 `configs/verbal_style/`의 Python profile로 관리합니다. 기본값은
 `reference_broadcast`이며 Reference 측정에 근거합니다. 이전 정책은 `base`로 남겨
 비교할 수 있습니다.

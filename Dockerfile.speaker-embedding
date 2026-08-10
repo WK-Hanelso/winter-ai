@@ -1,0 +1,63 @@
+# Speaker embedding runtime, pinned and isolated.
+#
+# Deliberately separate from the whisper.cpp image: that one is a C++ binary with
+# ffmpeg, this one needs a Python ML stack. Merging them would drag torch into
+# every transcription run.
+#
+# speechbrain's ECAPA checkpoint is used rather than pyannote because pyannote's
+# models require accepting terms and presenting a Hugging Face token. A probe
+# that cannot run without an external account is not reproducible here.
+#
+# The checkpoint is fetched at build time so a run needs no network, matching
+# Dockerfile.melotts-probe.
+FROM python:3.11-slim-bookworm
+
+ARG TORCH_VERSION=2.4.1
+ARG TORCHAUDIO_VERSION=2.4.1
+ARG SPEECHBRAIN_VERSION=1.0.2
+# speechbrain 1.0.2 imports requests.exceptions directly. huggingface_hub 1.x
+# dropped requests for httpx, so an unpinned resolve installs a hub that
+# speechbrain cannot import. Pin the last 0.x line.
+ARG HUGGINGFACE_HUB_VERSION=0.26.5
+# torchaudio ships no decoder of its own; without soundfile it loads nothing.
+ARG SOUNDFILE_VERSION=0.13.1
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/workspace/src:/workspace \
+    SPEAKER_MODEL_DIR=/opt/speaker-model \
+    SPEAKER_HF_CACHE=/opt/hf-cache \
+    HF_HUB_OFFLINE=1
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        "torch==${TORCH_VERSION}" "torchaudio==${TORCHAUDIO_VERSION}" \
+    && pip install --no-cache-dir \
+        "huggingface_hub==${HUGGINGFACE_HUB_VERSION}" \
+        "soundfile==${SOUNDFILE_VERSION}" \
+        "speechbrain==${SPEECHBRAIN_VERSION}"
+
+# speechbrain fills savedir with symlinks into root's Hugging Face cache, so the
+# files are unreadable to the non-root user the probe runs as. Dereference them
+# into real files.
+#
+# The cache is kept, not deleted: the checkpoint's hyperparams.yaml refers to
+# its files by Hub repository id, so an offline run still resolves through the
+# cache even though the weights also sit in the model directory.
+RUN HF_HUB_OFFLINE=0 python -c "\
+from speechbrain.inference.speaker import EncoderClassifier; \
+EncoderClassifier.from_hparams(source='speechbrain/spkrec-ecapa-voxceleb', savedir='/opt/speaker-model')" \
+    && cp -rL /opt/speaker-model /opt/speaker-model.real \
+    && rm -rf /opt/speaker-model \
+    && mv /opt/speaker-model.real /opt/speaker-model \
+    && mv /root/.cache/huggingface /opt/hf-cache \
+    && chmod -R a+rX /opt/speaker-model /opt/hf-cache
+
+WORKDIR /workspace
+
+ENTRYPOINT ["python", "/workspace/experiments/reference_speaker_probe.py"]

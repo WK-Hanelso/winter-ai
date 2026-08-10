@@ -24,10 +24,16 @@ Epic: [#66](https://github.com/WK-Hanelso/winter-ai/issues/66)
 | 4 | [Multimodal schema](https://github.com/WK-Hanelso/winter-ai/issues/73) | scene alignment와 annotation schema | 완료 |
 | 5 | [소규모 수집·정렬 probe](https://github.com/WK-Hanelso/winter-ai/issues/75) | 3시간 이하 raw source의 usable subset | 사용자 입력 후 사용 가능 비율과 수동 비용 기록 |
 | 5a | [source metadata preflight](https://github.com/WK-Hanelso/winter-ai/issues/77) | 다운로드 없는 접근성·duration·format 확인 ([문서](reference-source-probe.md)) | cap 초과 또는 접근 실패 시 실제 수집 진행 거부 |
-| 5b | [자막 품질 측정](https://github.com/WK-Hanelso/winter-ai/issues/82) | 자막의 `raw_transcript` 사용 가능성 판정 ([문서](reference-subtitle-quality.md)) | 편집 강도 측정 후 전사 방식 결정 |\n| 5c | [오디오 파일럿 수집](https://github.com/WK-Hanelso/winter-ai/issues/84) | source-003 오디오 확보 ([문서](reference-audio-ingest.md)) | 파일럿 성공 후 나머지 source 수집 여부 결정 |
+| 5b | [자막 품질 측정](https://github.com/WK-Hanelso/winter-ai/issues/82) | 자막의 `raw_transcript` 사용 가능성 판정 ([문서](reference-subtitle-quality.md)) | 편집 강도 측정 후 전사 방식 결정 |
+| 5c | [오디오 파일럿 수집](https://github.com/WK-Hanelso/winter-ai/issues/84) | source-003 오디오 확보 ([문서](reference-audio-ingest.md)) | 파일럿 성공 후 나머지 source 수집 여부 결정 |
 | 5d | [STT 파일럿](https://github.com/WK-Hanelso/winter-ai/issues/86) | 구간 전사 품질 측정 ([문서](reference-transcription-probe.md)) | 전사 방식 확정 전 diarization 설계 필요 |
-| 5e | [Voice Set 추가](https://github.com/WK-Hanelso/winter-ai/issues/88) | 단독 화자 source 확보와 STT 재측정 ([ADR](adr/0003-reference-transcription-strategy.md)) | 화자 분리 설계 후 전체 전사 진행 |\n| 5f | [말투 특성 추출](https://github.com/WK-Hanelso/winter-ai/issues/90) | 단독 화자 전사의 말투 통계 ([문서](reference-speech-style.md)) | VerbalStylePlanner 교체 설계의 입력 |\n| 8a | [말투 profile 적용](https://github.com/WK-Hanelso/winter-ai/issues/92) | Reference 근거 VerbalStyle profile ([문서](verbal-style-profiles.md)) | held-out 평가 전 baseline 확보 |\n| 8b | [grounding 정책](https://github.com/WK-Hanelso/winter-ai/issues/94) | 겪지 않은 경험·없는 기억 진술 억제 ([문서](grounding-policy.md)) | 프롬프트 제약은 보장이 아님을 전제 |\n| 8c | [말투 held-out 평가](https://github.com/WK-Hanelso/winter-ai/issues/96) | 스타일 거리와 바닥값 ([문서](style-holdout-evaluation.md)) | Order 10 학습 결정의 근거 |
+| 5e | [Voice Set 추가](https://github.com/WK-Hanelso/winter-ai/issues/88) | 단독 화자 source 확보와 STT 재측정 ([ADR](adr/0003-reference-transcription-strategy.md)) | 화자 분리 설계 후 전체 전사 진행 |
+| 5f | [말투 특성 추출](https://github.com/WK-Hanelso/winter-ai/issues/90) | 단독 화자 전사의 말투 통계 ([문서](reference-speech-style.md)) | VerbalStylePlanner 교체 설계의 입력 |
+| 8a | [말투 profile 적용](https://github.com/WK-Hanelso/winter-ai/issues/92) | Reference 근거 VerbalStyle profile ([문서](verbal-style-profiles.md)) | held-out 평가 전 baseline 확보 |
+| 8b | [grounding 정책](https://github.com/WK-Hanelso/winter-ai/issues/94) | 겪지 않은 경험·없는 기억 진술 억제 ([문서](grounding-policy.md)) | 프롬프트 제약은 보장이 아님을 전제 |
+| 8c | [말투 held-out 평가](https://github.com/WK-Hanelso/winter-ai/issues/96) | 스타일 거리와 바닥값 ([문서](style-holdout-evaluation.md)) | Order 10 학습 결정의 근거 |
 | 6 | 행동·분위기 annotation | held-out 가능한 behavior labels | inter-annotation/수동 검토 기록 |
+| 6a | [화자 검증](https://github.com/WK-Hanelso/winter-ai/issues/98) | cue 단위 검증 시도 — **실패** ([문서](speaker-verification.md)) | 화자 경계 segmentation 없이는 진행 불가 |
 | 7 | Reference Voice baseline | 원본 대비 동일 script 합성 | voice reproduction gap 분리 |
 | 8 | CLI behavior baseline | prompt/few-shot Reference 응답 | held-out behavior score 기록 |
 | 9 | Voice joint baseline | shared text + Reference delivery | text/voice/joint gap 분리 |
