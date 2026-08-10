@@ -30,6 +30,7 @@ from companion.speaker_verification import (
     MINIMUM_RELIABLE_SECONDS,
     SegmentScore,
     SpeakerVerificationError,
+    audible_cues,
     cosine_similarity,
     identify_reference_speaker,
     iter_windows,
@@ -140,7 +141,7 @@ def window_embeddings(
     hop_seconds: float,
 ) -> tuple[tuple[float, ...], ...]:
     vectors: list[tuple[float, ...]] = []
-    for cue in cues:
+    for cue in audible_cues(cues):
         for start, end in iter_windows(
             cue.start_seconds,
             cue.end_seconds,
@@ -171,7 +172,7 @@ def score_segments(
     was the approach that failed, and the comparison is the evidence.
     """
     scores: list[SegmentScore] = []
-    for index, cue in enumerate(cues):
+    for index, cue in enumerate(audible_cues(cues)):
         spans = (
             iter_windows(
                 cue.start_seconds,
@@ -267,7 +268,7 @@ def main(argv: list[str] | None = None) -> int:
 
         enrolment_cues = parse_webvtt(arguments.enrolment_vtt.read_text(encoding="utf-8"))
         enrolment_audio = load_audio(arguments.enrolment_audio)
-        ordered = sorted(enrolment_cues, key=lambda cue: cue.start_seconds)
+        ordered = sorted(audible_cues(enrolment_cues), key=lambda cue: cue.start_seconds)
         cut = int(len(ordered) * arguments.enrolment_ratio)
         if cut < 1 or cut >= len(ordered):
             raise SpeakerVerificationError("enrolment split left one side empty")

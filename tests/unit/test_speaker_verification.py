@@ -334,3 +334,30 @@ def test_identification_summary_carries_the_reason() -> None:
 
     assert summary["reference_speaker"] == 1
     assert summary["reason"]
+
+
+def test_zero_length_cues_are_dropped_before_windowing() -> None:
+    from companion.reference_subtitle_probe import SubtitleCue
+    from companion.speaker_verification import audible_cues
+
+    # Word-level transcription gives some words an identical start and end.
+    cues = (
+        SubtitleCue(0.0, 1.0, "있다"),
+        SubtitleCue(4.0, 4.0, "굉장한"),
+        SubtitleCue(5.0, 6.0, "또있다"),
+    )
+
+    kept = audible_cues(cues)
+
+    assert [cue.text for cue in kept] == ["있다", "또있다"]
+
+
+def test_dropping_empty_cues_leaves_windowing_valid() -> None:
+    from companion.reference_subtitle_probe import SubtitleCue
+    from companion.speaker_verification import audible_cues, iter_windows
+
+    cues = (SubtitleCue(4.0, 4.0, "0초"), SubtitleCue(0.0, 3.0, "정상"))
+
+    # Every surviving cue must be safe to window; the zero-length one is not.
+    for cue in audible_cues(cues):
+        assert iter_windows(cue.start_seconds, cue.end_seconds)

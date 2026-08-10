@@ -68,6 +68,21 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"status": "error", "error": str(error)}, ensure_ascii=False))
         return 2
 
+    # Writing is inside the reporting path too: an existing file or a bad
+    # directory used to raise past the handler and leave the caller with a
+    # traceback and no explanation.
+    try:
+        _write_outputs(arguments, exchanges, payload)
+    except OSError as error:
+        print(json.dumps({"status": "error", "error": str(error)}, ensure_ascii=False))
+        return 2
+
+    payload["status"] = "ok"
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def _write_outputs(arguments: argparse.Namespace, exchanges: tuple, payload: dict) -> None:
     for path, content in (
         (arguments.pairs_path, [
             {
@@ -87,10 +102,6 @@ def main(argv: list[str] | None = None) -> int:
         with os.fdopen(descriptor, "w", encoding="utf-8") as file:
             json.dump(content, file, ensure_ascii=False, indent=2, sort_keys=True)
             file.write("\n")
-
-    payload["status"] = "ok"
-    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
-    return 0
 
 
 if __name__ == "__main__":
