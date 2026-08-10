@@ -37,7 +37,7 @@ Epic: [#66](https://github.com/WK-Hanelso/winter-ai/issues/66)
 | 7 | Reference Voice baseline | 원본 대비 동일 script 합성 | voice reproduction gap 분리 |
 | 8 | CLI behavior baseline | prompt/few-shot Reference 응답 | held-out behavior score 기록 |
 | 9 | Voice joint baseline | shared text + Reference delivery | text/voice/joint gap 분리 |
-| 10 | 학습 방식 결정 | ADR과 benchmark | 필요한 component만 승인 |
+| 10 | [학습 방식 결정](https://github.com/WK-Hanelso/winter-ai/issues/103) | [ADR-0004](adr/0004-training-decision.md) | **지금 학습에 착수하는 component 없음.** D1·D2 선행 |
 | 11 | 수직 단면 검증 | 재현 명령·결과·한계 | Milestone 완료 보고 |
 
 각 작은 Issue가 끝날 때 무엇 때문에 무엇을 했고, 그 결과 이제 무엇이 가능한지 사용자에게
