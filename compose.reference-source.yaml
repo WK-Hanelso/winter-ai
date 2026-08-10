@@ -106,3 +106,29 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # Speaker embedding. Separate image because it needs a Python ML stack that
+  # the transcription runtime does not.
+  reference-speaker-probe:
+    build:
+      context: .
+      dockerfile: Dockerfile.speaker-embedding
+    image: winter-ai:speaker-embedding
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    working_dir: /workspace
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - .:/workspace:ro
+      - ${REFERENCE_STORAGE_ROOT:?REFERENCE_STORAGE_ROOT is required}:/reference-data
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /workspace/src
+      HF_HUB_OFFLINE: "1"
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"

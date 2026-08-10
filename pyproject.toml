@@ -55,5 +55,11 @@ no_implicit_optional = true
 module = "melo.*"
 ignore_missing_imports = true
 
+# torch, torchaudio and speechbrain live only in Dockerfile.speaker-embedding.
+# Installing them in the dev image would add gigabytes to every offline test run.
+[[tool.mypy.overrides]]
+module = ["torch.*", "torchaudio.*", "speechbrain.*"]
+ignore_missing_imports = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/companion"]
