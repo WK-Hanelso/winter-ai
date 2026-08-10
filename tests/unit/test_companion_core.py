@@ -178,5 +178,7 @@ def test_system_messages_are_ordered_identity_memory_style_grounding(tmp_path) -
     # because it is the constraint that must not be dropped.
     assert "You are Winter." in system_messages[0].content
     assert memory.id in system_messages[1].content
-    assert "반말" in system_messages[2].content
+    # Not "반말": the register is drawn per turn, so asserting on it would fail
+    # whenever the polite draw came up. The length rule is in every style block.
+    assert "문장 이내로" in system_messages[2].content
     assert "지어내지 마" in system_messages[3].content

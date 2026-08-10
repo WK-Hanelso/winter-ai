@@ -16,6 +16,7 @@ gap closes only after speaker separation, not here.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any
 
 from companion.reference_speech_style import EndingProfile, SpeechStyleProfile
@@ -198,3 +199,63 @@ def _relative_gap(candidate: float, reference: float) -> float:
     if reference <= 0:
         return 0.0 if candidate <= 0 else 1.0
     return min(abs(candidate - reference) / reference, 1.0)
+
+
+@dataclass(frozen=True)
+class DistanceInterval:
+    """A distance with the uncertainty of the runs it came from.
+
+    A single run cannot be compared with the floor: the spread between runs was
+    wider than the gap being judged. Reporting a point estimate without this is
+    what made an earlier result unjudgeable.
+    """
+
+    runs: int
+    mean: float
+    stdev: float
+    standard_error: float
+    low: float
+    high: float
+
+    def separated_from(self, value: float) -> bool:
+        """True when ``value`` lies outside the interval."""
+        return value < self.low or value > self.high
+
+
+def distance_interval(values: tuple[float, ...], *, z: float = 1.96) -> DistanceInterval:
+    """Mean and a normal-approximation interval over repeated runs."""
+    if not values:
+        raise ValueError("no run distances to summarise")
+    mean = sum(values) / len(values)
+    if len(values) == 1:
+        return DistanceInterval(1, mean, 0.0, 0.0, mean, mean)
+    variance = sum((value - mean) ** 2 for value in values) / (len(values) - 1)
+    stdev = math.sqrt(variance)
+    error = stdev / math.sqrt(len(values))
+    return DistanceInterval(
+        runs=len(values),
+        mean=mean,
+        stdev=stdev,
+        standard_error=error,
+        low=mean - z * error,
+        high=mean + z * error,
+    )
+
+
+def public_interval_summary(
+    interval: DistanceInterval,
+    *,
+    floor: float,
+) -> dict[str, Any]:
+    return {
+        "runs": interval.runs,
+        "mean": round(interval.mean, 4),
+        "stdev": round(interval.stdev, 4),
+        "confidence_low": round(interval.low, 4),
+        "confidence_high": round(interval.high, 4),
+        "floor": round(floor, 4),
+        # The question the measurement exists to answer: is the generated style
+        # still measurably further from the Reference than the Reference is from
+        # itself?
+        "separated_from_floor": interval.separated_from(floor),
+    }

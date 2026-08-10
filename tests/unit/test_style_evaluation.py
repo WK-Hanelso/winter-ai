@@ -139,3 +139,57 @@ def test_summary_reports_each_trait_and_completeness() -> None:
         "ending_mix",
     }
     assert summary["is_complete"] is True
+
+
+def test_repeated_runs_report_a_mean_and_an_interval() -> None:
+    from companion.style_evaluation import distance_interval
+
+    interval = distance_interval((0.20, 0.24, 0.22, 0.26, 0.23))
+
+    assert interval.runs == 5
+    assert interval.mean == pytest.approx(0.23, abs=0.005)
+    assert interval.low < interval.mean < interval.high
+
+
+def test_a_single_run_reports_no_uncertainty_rather_than_pretending() -> None:
+    from companion.style_evaluation import distance_interval
+
+    interval = distance_interval((0.25,))
+
+    assert interval.stdev == 0.0
+    assert interval.low == interval.high == 0.25
+
+
+def test_a_wide_spread_cannot_be_separated_from_the_floor() -> None:
+    from companion.style_evaluation import distance_interval
+
+    # The situation that made an earlier result unjudgeable.
+    wide = distance_interval((0.19, 0.27, 0.35, 0.18, 0.34))
+
+    assert not wide.separated_from(0.162 + 0.05)
+
+
+def test_a_tight_spread_far_from_the_floor_is_separated() -> None:
+    from companion.style_evaluation import distance_interval
+
+    tight = distance_interval((0.60, 0.61, 0.62, 0.59, 0.60))
+
+    assert tight.separated_from(0.162)
+
+
+def test_summary_states_the_question_the_measurement_answers() -> None:
+    from companion.style_evaluation import distance_interval, public_interval_summary
+
+    summary = public_interval_summary(
+        distance_interval((0.60, 0.61, 0.62)), floor=0.162
+    )
+
+    assert summary["separated_from_floor"] is True
+    assert summary["runs"] == 3
+
+
+def test_an_empty_run_list_is_refused() -> None:
+    from companion.style_evaluation import distance_interval
+
+    with pytest.raises(ValueError, match="no run distances"):
+        distance_interval(())
