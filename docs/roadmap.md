@@ -32,12 +32,13 @@ Epic: [#66](https://github.com/WK-Hanelso/winter-ai/issues/66)
 | 8a | [말투 profile 적용](https://github.com/WK-Hanelso/winter-ai/issues/92) | Reference 근거 VerbalStyle profile ([문서](verbal-style-profiles.md)) | held-out 평가 전 baseline 확보 |
 | 8b | [grounding 정책](https://github.com/WK-Hanelso/winter-ai/issues/94) | 겪지 않은 경험·없는 기억 진술 억제 ([문서](grounding-policy.md)) | 프롬프트 제약은 보장이 아님을 전제 |
 | 8c | [말투 held-out 평가](https://github.com/WK-Hanelso/winter-ai/issues/96) | 스타일 거리와 바닥값 ([문서](style-holdout-evaluation.md)) | Order 10 학습 결정의 근거 |
+| 8d | [측정 신뢰구간·내용 평가](https://github.com/WK-Hanelso/winter-ai/issues/106) | 반복·신뢰구간과 대화 내용 평가 ([문서](content-holdout-evaluation.md)) | 말투는 바닥값 도달, 내용은 우연 수준 |
 | 6 | 행동·분위기 annotation | held-out 가능한 behavior labels | inter-annotation/수동 검토 기록 |
 | 6a | [화자 분리](https://github.com/WK-Hanelso/winter-ai/issues/98) | Sortformer + 화자 판정 + 단어 정렬로 쌍 데이터 생성 ([문서](diarization.md)) | 5분당 11쌍. 확장 규모 추정 가능 |
 | 7 | Reference Voice baseline | 원본 대비 동일 script 합성 | voice reproduction gap 분리 |
 | 8 | CLI behavior baseline | prompt/few-shot Reference 응답 | held-out behavior score 기록 |
 | 9 | Voice joint baseline | shared text + Reference delivery | text/voice/joint gap 분리 |
-| 10 | [학습 방식 결정](https://github.com/WK-Hanelso/winter-ai/issues/103) | [ADR-0004](adr/0004-training-decision.md) | **지금 학습에 착수하는 component 없음.** D1·D2 선행 |
+| 10 | [학습 방식 결정](https://github.com/WK-Hanelso/winter-ai/issues/103) | [ADR-0004](adr/0004-training-decision.md) | **D1 성공(말투 학습 불필요). D2는 측정 개선 후 재판정** |
 | 11 | 수직 단면 검증 | 재현 명령·결과·한계 | Milestone 완료 보고 |
 
 각 작은 Issue가 끝날 때 무엇 때문에 무엇을 했고, 그 결과 이제 무엇이 가능한지 사용자에게

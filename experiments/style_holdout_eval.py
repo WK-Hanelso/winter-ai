@@ -31,7 +31,12 @@ from companion.reference_speech_style import (
     public_style_summary,
 )
 from companion.reference_subtitle_probe import SubtitleCue, parse_webvtt
-from companion.style_evaluation import public_distance_summary, style_distance
+from companion.style_evaluation import (
+    distance_interval,
+    public_distance_summary,
+    public_interval_summary,
+    style_distance,
+)
 from companion.verbal_style import ALLOWED_PROFILES, VerbalStylePlanner, load_verbal_style
 
 # Everyday prompts a companion would actually get. Deliberately mundane: the
@@ -123,6 +128,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-url", default="http://llm:8080")
     parser.add_argument("--report-path", type=Path)
     parser.add_argument(
+        "--repeats",
+        type=int,
+        default=5,
+        help="generation rounds; one round cannot be compared with the floor",
+    )
+    parser.add_argument(
         "--skip-generation",
         action="store_true",
         help="run only the contamination check, without contacting a model",
@@ -164,16 +175,37 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     if not arguments.skip_generation:
+        if arguments.repeats < 1:
+            raise ValueError("repeats must be at least 1")
+        floor = style_distance(train, holdout).total_distance
         evaluations = {}
         for profile_name in ALLOWED_PROFILES:
-            responses = generate_responses(
-                profile_name, PROBE_QUESTIONS, model_url=arguments.model_url
-            )
-            generated = profile_responses(f"generated-{profile_name}", responses)
+            per_run: list[float] = []
+            pooled: list[str] = []
+            for _ in range(arguments.repeats):
+                responses = generate_responses(
+                    profile_name, PROBE_QUESTIONS, model_url=arguments.model_url
+                )
+                pooled.extend(responses)
+                per_run.append(
+                    style_distance(
+                        profile_responses(f"generated-{profile_name}", responses),
+                        holdout,
+                    ).total_distance
+                )
+            # Rate traits are counts over a small sample, so one round's filler
+            # rate swings wildly. Pooling every round's answers gives the rate a
+            # sample large enough to mean something; the per-run spread is kept
+            # separately to say how uncertain that is.
+            pooled_profile = profile_responses(f"pooled-{profile_name}", pooled)
             evaluations[profile_name] = {
-                "generated_style": public_style_summary(generated),
-                "distance_to_holdout": public_distance_summary(
-                    style_distance(generated, holdout)
+                "pooled_style": public_style_summary(pooled_profile),
+                "pooled_distance": public_distance_summary(
+                    style_distance(pooled_profile, holdout)
+                ),
+                "per_run_distances": [round(value, 4) for value in per_run],
+                "interval": public_interval_summary(
+                    distance_interval(tuple(per_run)), floor=floor
                 ),
             }
         payload["evaluations"] = evaluations
