@@ -1,0 +1,113 @@
+# Korean zero-shot voice cloning, second attempt with a different model.
+#
+# GPT-SoVITS produced Korean that was intelligible but plainly not a person
+# speaking — question intonation fell where it should rise. Its Korean is a
+# side language on a Chinese model. CosyVoice 3 lists Korean among the nine it
+# was built for, so this asks whether the awkwardness was that model or is
+# simply where we are.
+#
+# CPU-only, like the other one, so the comparison is fair and the 6 GiB GPU
+# stays free for the local LLM.
+
+FROM python:3.10-slim-bookworm
+
+ARG COSYVOICE_REF=074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y \
+        build-essential git curl ffmpeg libsndfile1 sox libsox-dev unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# The image's own pip cannot read the PyTorch index's package metadata and
+# refuses the download. Fixed upstream, so this is a floor rather than taste.
+RUN pip install --no-cache-dir --upgrade pip==25.2
+
+# Torch first and explicitly from the CPU index. The repository's requirements
+# point at a CUDA index, which would pull ~2.5 GiB of GPU runtime this image
+# never uses. The version matches what the repository pins.
+RUN pip install --no-cache-dir \
+        torch==2.3.1+cpu torchaudio==2.3.1+cpu \
+        --index-url https://download.pytorch.org/whl/cpu
+
+# --recursive: Matcha-TTS is a submodule and the runner puts it on sys.path.
+RUN git clone --recursive https://github.com/QwenAudio/CosyVoice.git /opt/cosyvoice \
+    && git -C /opt/cosyvoice fetch --depth 1 origin "$COSYVOICE_REF" \
+    && git -C /opt/cosyvoice checkout "$COSYVOICE_REF" \
+    && git -C /opt/cosyvoice submodule update --init --recursive \
+    && test "$(git -C /opt/cosyvoice rev-parse HEAD)" = "$COSYVOICE_REF"
+
+# Weights before dependencies, and with their own small pinned client, so that
+# editing anything below does not re-fetch gigabytes. The GPT-SoVITS image was
+# rebuilt six times; every one of those re-downloaded its model because the
+# expensive layer sat under the volatile one.
+RUN pip install --no-cache-dir huggingface_hub==0.26.5
+
+COPY experiments/cosyvoice_fetch_models.py /opt/probe/cosyvoice_fetch_models.py
+RUN python /opt/probe/cosyvoice_fetch_models.py \
+        --destination /opt/cosyvoice/pretrained_models/CosyVoice3-0.5B
+
+# The repository pins every version, so there is no resolution to constrain —
+# the only edits are removals. deepspeed compiles CUDA kernels, tensorrt is a
+# GPU runtime, and onnxruntime-gpu needs a driver: all three are for training
+# and accelerated serving, neither of which happens here. The extra index URLs
+# go too, so nothing can quietly arrive as a CUDA build.
+#
+# gradio, fastapi, uvicorn and grpcio go for a second reason. Their pins
+# disagree with each other over typer, and pip walked release by release trying
+# to satisfy them all. They serve the web UI and the gRPC runtime; this image
+# synthesizes one file and exits, so removing them settles the conflict rather
+# than working around it. The load check below fails if any turn out to be
+# reached from the inference path.
+#
+# PIP_CONSTRAINT reaches into the isolated environments pip builds sdists in.
+# openai-whisper's setup.py imports pkg_resources, which current setuptools no
+# longer ships, so the wheel cannot even report its requirements without an
+# older one. Constraining the build environment is narrower than pinning
+# setuptools for the whole image.
+RUN printf 'setuptools<81\n' > /tmp/build-constraints.txt \
+    && grep -vE '^(deepspeed|tensorrt-cu12|onnxruntime-gpu|torch==|torchaudio==|--extra-index-url|gradio|fastapi|uvicorn|grpcio)' \
+        /opt/cosyvoice/requirements.txt > /tmp/requirements-cpu.txt \
+    && echo 'onnxruntime==1.18.0' >> /tmp/requirements-cpu.txt \
+    && PIP_CONSTRAINT=/tmp/build-constraints.txt \
+       pip install --no-cache-dir -r /tmp/requirements-cpu.txt
+
+# Every cache the stack writes to, pointed somewhere a non-root user can write.
+# Forgetting one is not a warning: numba refuses to start and the traceback
+# blames librosa, which reads as a synthesis bug. Both earlier images failed
+# this way.
+#
+# Offline is asserted rather than hoped for: the weights are baked in, so a
+# lookup reaching the network means something is missing locally and should say
+# so. The import check below runs under these too.
+ENV HOME=/tmp \
+    NUMBA_CACHE_DIR=/tmp/numba \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    PYTHONPATH=/opt/cosyvoice:/opt/cosyvoice/third_party/Matcha-TTS
+
+# The model loads here rather than at first synthesis. A mismatched dependency
+# or a missing checkpoint is 2 GiB too late to discover at run time.
+#
+# No load_jit here: CosyVoice3 drops the argument its parent takes, and passing
+# it raises before a single weight is read.
+RUN cd /opt/cosyvoice && python -c "\
+from cosyvoice.cli.cosyvoice import CosyVoice3;\
+CosyVoice3('/opt/cosyvoice/pretrained_models/CosyVoice3-0.5B', load_trt=False, load_vllm=False, fp16=False);\
+print('cosyvoice load OK')"
+
+# The loader writes alongside the checkpoints, and the working tree belongs to
+# root while the container runs as the Host user so its output is not root-owned.
+RUN chmod -R a+w /opt/cosyvoice/pretrained_models/CosyVoice3-0.5B \
+    && chmod 777 /opt/cosyvoice \
+    # The load check above ran as root and created these on the way, so they
+    # belong to root while the container runs as the Host user. Setting
+    # NUMBA_CACHE_DIR is not enough if the directory it names cannot be written:
+    # numba reports "no locator available" and blames librosa.
+    && mkdir -p /tmp/numba /tmp/matplotlib \
+    && chmod -R 777 /tmp/numba /tmp/matplotlib
+
+COPY experiments/cosyvoice_runner.py /opt/probe/cosyvoice_runner.py
+
+WORKDIR /opt/cosyvoice
+ENTRYPOINT ["python", "/opt/probe/cosyvoice_runner.py"]

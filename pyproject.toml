@@ -63,7 +63,7 @@ ignore_missing_imports = true
 # soundfile and the GPT-SoVITS package live only in Dockerfile.gpt-sovits. The
 # runner that imports them never executes in the dev image.
 [[tool.mypy.overrides]]
-module = ["soundfile.*", "GPT_SoVITS.*", "huggingface_hub.*"]
+module = ["soundfile.*", "GPT_SoVITS.*", "huggingface_hub.*", "cosyvoice.*", "torchaudio.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
