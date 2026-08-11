@@ -13,7 +13,10 @@ dependencies = []
 winter = "companion.user_cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.9", "mypy>=1.14"]
+# numpy is the exception to keeping the dev image thin. torch and speechbrain
+# are gigabytes and stay in their own images; numpy is tens of megabytes, and
+# without it the audio-alignment experiments cannot be tested offline at all.
+dev = ["pytest>=8.0", "ruff>=0.9", "mypy>=1.14", "numpy>=1.26,<3"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -57,6 +60,12 @@ ignore_missing_imports = true
 
 # torch, torchaudio and speechbrain live only in Dockerfile.speaker-embedding.
 # Installing them in the dev image would add gigabytes to every offline test run.
+# soundfile and the GPT-SoVITS package live only in Dockerfile.gpt-sovits. The
+# runner that imports them never executes in the dev image.
+[[tool.mypy.overrides]]
+module = ["soundfile.*", "GPT_SoVITS.*"]
+ignore_missing_imports = true
+
 [[tool.mypy.overrides]]
 module = ["torch.*", "torchaudio.*", "speechbrain.*", "nemo.*"]
 ignore_missing_imports = true

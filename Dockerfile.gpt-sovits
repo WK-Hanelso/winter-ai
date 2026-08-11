@@ -1,0 +1,78 @@
+# Few-shot Korean voice cloning, pinned.
+#
+# MeloTTS gives one fixed Korean speaker and cannot clone. This image is the
+# first thing in the project that can say a sentence in a *chosen* voice, from a
+# few seconds of reference audio and no training at all.
+#
+# CPU-only on purpose. The development host's GPU is a 6 GiB RTX 2060 that the
+# local LLM already occupies, and this stage only has to answer one question —
+# does the voice resemble the Reference — which a slow synthesis answers just as
+# well as a fast one. Training (S3) is where the GPU becomes worth the fight.
+
+FROM python:3.10-slim-bookworm
+
+ARG GPT_SOVITS_REF=d523079fc05d9a8028d6085bffe4a2757c32abb6
+# v2 rather than v3/v4: it is the generation whose released weights cover
+# Korean, and its checkpoints are the ones the repository documents for
+# multilingual zero-shot.
+ARG WEIGHTS_DIR=gsv-v2final-pretrained
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y \
+        build-essential git curl ffmpeg libsndfile1 cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+# Torch first and explicitly, so the transitive requirements below cannot pull a
+# CUDA build. A matching torch/torchaudio pair is a hard requirement; the
+# diarization image was broken twice by letting them resolve independently.
+RUN pip install --no-cache-dir \
+        torch==2.4.1+cpu torchaudio==2.4.1+cpu \
+        --index-url https://download.pytorch.org/whl/cpu
+
+RUN git clone --depth 1 --branch main https://github.com/RVC-Boss/GPT-SoVITS.git /opt/gpt-sovits \
+    && git -C /opt/gpt-sovits fetch --depth 1 origin "$GPT_SOVITS_REF" \
+    && git -C /opt/gpt-sovits checkout "$GPT_SOVITS_REF" \
+    && test "$(git -C /opt/gpt-sovits rev-parse HEAD)" = "$GPT_SOVITS_REF"
+
+COPY requirements/gpt-sovits.lock /tmp/gpt-sovits.lock
+RUN pip install --no-cache-dir -r /opt/gpt-sovits/requirements.txt \
+    && pip install --no-cache-dir -r /tmp/gpt-sovits.lock
+
+# Weights are baked in rather than mounted: the probe must run with no network,
+# and a mounted cache made the MeloTTS image fail in ways that looked like
+# synthesis bugs. ~2 GiB.
+RUN python - <<'PYTHON'
+import os
+from huggingface_hub import hf_hub_download
+
+root = "/opt/gpt-sovits/GPT_SoVITS/pretrained_models"
+weights = os.environ.get("WEIGHTS_DIR", "gsv-v2final-pretrained")
+for name in (
+    "chinese-hubert-base/config.json",
+    "chinese-hubert-base/preprocessor_config.json",
+    "chinese-hubert-base/pytorch_model.bin",
+    "chinese-roberta-wwm-ext-large/config.json",
+    "chinese-roberta-wwm-ext-large/pytorch_model.bin",
+    "chinese-roberta-wwm-ext-large/tokenizer.json",
+    f"{weights}/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt",
+    f"{weights}/s2G2333k.pth",
+):
+    hf_hub_download("lj1995/GPT-SoVITS", name, local_dir=root)
+PYTHON
+
+# The Korean grapheme-to-phoneme path downloads a dictionary on first use.
+# Doing it at build time keeps the run offline.
+RUN python -c "import g2pk2; g2pk2.G2p()" || true
+
+# Fail the build rather than a run: importing the inference module is where a
+# mismatched dependency shows up, and it is 2 GiB of weights too late to notice
+# at synthesis time.
+RUN cd /opt/gpt-sovits && python -c "\
+import sys; sys.path.append('GPT_SoVITS');\
+from GPT_SoVITS.inference_webui import get_tts_wav, change_gpt_weights, change_sovits_weights;\
+print('inference import OK')"
+
+COPY experiments/gpt_sovits_runner.py /opt/probe/gpt_sovits_runner.py
+
+WORKDIR /opt/gpt-sovits
+ENTRYPOINT ["python", "/opt/probe/gpt_sovits_runner.py"]

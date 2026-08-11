@@ -1,0 +1,17 @@
+# Compatibility pins for GPT-SoVITS commit d523079, applied after the
+# repository's own requirements.txt.
+#
+# Each of these is here because the unpinned resolution breaks the build or the
+# import check, not as a precaution:
+#
+# numpy — the repository asks for <2.0 but several transitive dependencies
+#   happily install 2.x, which breaks the compiled extensions built against 1.x.
+# transformers — the repository's range is wide; the upper end changes the
+#   HuBERT/RoBERTa loading path this version calls.
+# huggingface_hub — hf_hub_download's local_dir semantics changed; the build
+#   step above places weights by path and needs the older behaviour.
+# gradio — imported at module scope by inference_webui even when no UI runs.
+numpy==1.26.4
+transformers==4.43.4
+huggingface_hub==0.26.5
+gradio==4.44.1
