@@ -68,6 +68,8 @@ module = [
     "huggingface_hub.*",
     "cosyvoice.*",
     "df.*",
+    "bitsandbytes.*",
+    "hyperpyyaml.*",
 ]
 ignore_missing_imports = true
 

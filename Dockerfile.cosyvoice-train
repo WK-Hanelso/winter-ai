@@ -1,0 +1,93 @@
+# CosyVoice fine-tuning, on the one GPU this project has.
+#
+# Separate from Dockerfile.cosyvoice because that one is deliberately CPU-only:
+# synthesis runs fine on a CPU and the 6 GiB card is wanted for the local LLM.
+# Training is the opposite — it cannot happen on a CPU at this size — so this
+# image carries the CUDA runtime and nothing else changes.
+#
+# Whether it fits is an open question, written here so the arithmetic is not
+# rediscovered later. flow.pt is 1.33 GiB, so around 330 M parameters:
+#
+#   weights (fp32)      1.33 GiB
+#   gradients           1.33 GiB
+#   Adam moments (x2)   2.66 GiB
+#   ------------------  --------
+#   before activations  5.32 GiB   on a 6 GiB card
+#
+# So the default recipe will not fit, and the run script reaches for a smaller
+# optimizer state and a batch of one before it reaches for anything clever. If
+# it still does not fit, that is a hardware answer rather than a tuning answer.
+#
+# cu121 matches the host's driver (535.230.02, CUDA 12.2). Torch is pinned to
+# the version the repository pins, in its CUDA build rather than its CPU one.
+
+FROM python:3.10-slim-bookworm
+
+ARG COSYVOICE_REF=074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y \
+        build-essential git curl ffmpeg libsndfile1 sox libsox-dev unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir --upgrade pip==25.2
+
+RUN pip install --no-cache-dir \
+        torch==2.3.1 torchaudio==2.3.1 \
+        --index-url https://download.pytorch.org/whl/cu121
+
+RUN git clone --recursive https://github.com/QwenAudio/CosyVoice.git /opt/cosyvoice \
+    && git -C /opt/cosyvoice fetch --depth 1 origin "$COSYVOICE_REF" \
+    && git -C /opt/cosyvoice checkout "$COSYVOICE_REF" \
+    && git -C /opt/cosyvoice submodule update --init --recursive \
+    && test "$(git -C /opt/cosyvoice rev-parse HEAD)" = "$COSYVOICE_REF"
+
+# Weights above the dependency layer, so editing anything below does not refetch
+# gigabytes.
+RUN pip install --no-cache-dir huggingface_hub==0.26.5
+COPY experiments/cosyvoice_fetch_models.py /opt/probe/cosyvoice_fetch_models.py
+RUN python /opt/probe/cosyvoice_fetch_models.py \
+        --destination /opt/cosyvoice/pretrained_models/CosyVoice3-0.5B
+
+# Fewer removals than the CPU image. deepspeed stays: train.py imports it at
+# module scope whether or not it is the chosen engine, so stripping it makes the
+# script unimportable. tensorrt is a serving runtime and the web stack's pins
+# disagree with each other over typer, so those still go.
+#
+# bitsandbytes is added for its 8-bit optimizer — the difference between 2.66
+# GiB of Adam state and about 0.66 GiB, which is what a 6 GiB card turns on.
+# pandas is needed by the parquet step and is not in the repository's list.
+RUN printf 'setuptools<81\n' > /tmp/build-constraints.txt \
+    && grep -vE '^(tensorrt-cu12|torch==|torchaudio==|--extra-index-url|gradio|fastapi|uvicorn|grpcio)' \
+        /opt/cosyvoice/requirements.txt > /tmp/requirements-train.txt \
+    && PIP_CONSTRAINT=/tmp/build-constraints.txt \
+       pip install --no-cache-dir -r /tmp/requirements-train.txt \
+    && pip install --no-cache-dir bitsandbytes==0.44.1 "pandas<3" \
+    # deepspeed probes for a CUDA compiler while it imports — not while it
+    # builds anything, while it imports — and raises without one. The torch
+    # wheels carry a CUDA runtime but no nvcc, so this adds one purely to be
+    # found. Nothing here compiles a kernel.
+    && pip install --no-cache-dir nvidia-cuda-nvcc-cu12==12.1.105
+
+ENV HOME=/tmp \
+    NUMBA_CACHE_DIR=/tmp/numba \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    TRITON_CACHE_DIR=/tmp/triton \
+    CUDA_HOME=/usr/local/lib/python3.10/site-packages/nvidia/cuda_nvcc \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    PYTHONPATH=/opt/cosyvoice:/opt/cosyvoice/third_party/Matcha-TTS
+
+# Imports only, not a model load: this image runs where a GPU is attached, and
+# a build host may not have one.
+RUN cd /opt/cosyvoice && python -c "\
+import torch, bitsandbytes;\
+from cosyvoice.bin.train import main;\
+print('train import OK, torch', torch.__version__)"
+
+RUN mkdir -p /tmp/numba /tmp/matplotlib /tmp/triton \
+    && chmod -R 777 /tmp/numba /tmp/matplotlib /tmp/triton \
+    && chmod -R a+w /opt/cosyvoice/pretrained_models/CosyVoice3-0.5B \
+    && chmod 777 /opt/cosyvoice
+
+WORKDIR /opt/cosyvoice
