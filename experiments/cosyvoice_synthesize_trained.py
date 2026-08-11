@@ -32,8 +32,11 @@ INSTRUCT_PREFIX = "You are a helpful assistant.<|endofprompt|>"
 def load_trained_flow(model: CosyVoice3, checkpoint: Path) -> None:
     """Replace the flow weights in place, and say how much actually changed."""
     state = torch.load(str(checkpoint), map_location="cpu")
-    # Checkpoints saved during training carry more than the weights.
-    weights = state.get("model", state)
+    # Weights sit at the top level here, alongside `epoch` and `step`, rather
+    # than under a "model" key. Non-tensors are dropped rather than passed to
+    # load_state_dict, which has no use for them.
+    state = state.get("model", state)
+    weights = {name: value for name, value in state.items() if torch.is_tensor(value)}
     before = {name: tensor.clone() for name, tensor in model.model.flow.state_dict().items()}
     missing, unexpected = model.model.flow.load_state_dict(weights, strict=False)
     after = model.model.flow.state_dict()
