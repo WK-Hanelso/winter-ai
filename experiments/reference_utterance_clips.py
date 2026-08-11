@@ -1,4 +1,4 @@
-"""Cut Reference speech into whole utterances, for voice cloning material.
+"""Cut Reference speech into whole sentences, for voice cloning material.
 
 The first cut took the pieces diarization produced and used them as they were.
 That was right for building (prompt, response) pairs — diarization answers "who
@@ -8,22 +8,52 @@ teaching a voice.
 Of the 42 clips it made, 7 survived an audit: 17 stopped mid-sentence, 12 carry
 a speaker change in their subtitles, and 24 fall outside the 3-10 s a cloning
 reference wants. Roughly forty usable seconds out of three and a half minutes.
-A clip cut mid-word cannot have a correct transcript no matter what is written
-down, and a wrong transcript degrades a cloned voice with no error anywhere.
 
-So this cuts on a different boundary. Inside stretches where only the Reference
-speaks, it splits where she finishes a sentence — a word ending in a
-sentence-final form, followed by a pause. Word timings and the speaker timeline
-both already exist; nothing is re-derived.
+Sentences come from the transcriber, not from here
+--------------------------------------------------
+Two attempts to find sentence boundaries in the word-level transcript failed,
+and both failures were the same shape: the data had no boundaries in it. Those
+cues carry one word each, sit flush against one another, and have no
+punctuation, so a rule looking for "a sentence ending followed by a pause"
+found one 296-second sentence. Splitting inside speaker spans instead made
+every clip start wherever the span did, which is mid-sentence.
 
-Each clip is then transcribed from its own audio rather than inherited from the
-chunk, because the boundary is exactly where the chunk-level text was wrong.
+So the chunks were transcribed again normally. Whisper's ordinary output is
+already sentences, with punctuation and its own start and end times, and it
+finds 49 per chunk where the rule found between 1 and 15.
+
+That also fixes the transcript problem for free. The clip boundary and the text
+boundary now come from the same decision, so a clip cannot disagree with its own
+transcript — which is exactly what degraded the first cloning attempt.
+
+Speaker attribution is by share, not by exclusion
+-------------------------------------------------
+A sentence is kept when the Reference holds most of it and nobody else holds
+much. Requiring no overlap at all removed everything: this is an interview and
+the host's agreement noises land on top of her constantly, so subtracting every
+overlapping span left two chunks with no Reference stretch whatsoever.
+
+Solo recordings skip all of that
+--------------------------------
+``--solo`` reads one transcript for a whole recording and keeps every sentence,
+because there is nobody else in it. A broadcast where the Reference talks alone
+needs no diarization, no per-chunk identification of which numbered speaker she
+is, and no removal of an interviewer.
+
+Which matters, because the numbered speakers are not comparable across chunks.
+Diarization labels are stable inside a processing window and not between them:
+speaker 0 is the host in one chunk of the interview and the Reference in
+another. Two of six chunks had ever been checked against the enrolment
+centroid, and applying either answer to all six is simply wrong.
+
+The interview was the material at hand because it was the material that made
+conversational pairs. Voice cloning does not want a conversation.
 """
 
 from __future__ import annotations
 
 import argparse
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -34,21 +64,21 @@ import wave
 
 import numpy as np
 
-# Korean sentence-final endings. Speech stopping here has finished a thought;
-# stopping on a connective ("...하고", "...근데") has been interrupted.
-FINAL_ENDINGS = ("요", "다", "죠", "네", "까", "야", "어", "지", "군", "래", "봐", "죵")
 CUE = re.compile(r"(\d+):(\d+):(\d+\.\d+) --> (\d+):(\d+):(\d+\.\d+)")
-STT_RATE = 16_000
 TARGET_RATE = 48_000
-# A pause this long after a sentence ending is a boundary rather than a breath.
-# Shorter than this and the speaker is still going.
-SENTENCE_PAUSE = 0.35
 # The window a cloning reference wants. Both candidate models agree on it.
 MINIMUM_SECONDS = 3.0
 MAXIMUM_SECONDS = 10.0
-# Diarization boundaries are only accurate to a couple of frames, and a late
-# end is how another speaker's first syllable gets in. Give both ends room.
-SPEAKER_MARGIN = 0.20
+# The Reference has to hold most of the sentence, and the others almost none of
+# it. Two thresholds rather than "no overlap at all": this is an interview, the
+# host agrees over her constantly, and demanding a clean stretch left two chunks
+# with nothing. A short "네" on top of her speech does not spoil the clip; the
+# host saying a whole clause does.
+MINIMUM_REFERENCE_SHARE = 0.80
+MAXIMUM_OTHER_SHARE = 0.15
+# Silence long enough to mean she stopped, not that she took a breath. Used only
+# when joining a solo transcript's cues back into utterances.
+JOIN_GAP = 0.6
 
 
 @dataclass(frozen=True)
@@ -83,8 +113,9 @@ class Utterance:
         return f"{self.source}-{int(self.chunk_offset)}-utt-{int(self.start * 100):06d}"
 
 
-def read_words(path: Path) -> list[Word]:
-    words: list[Word] = []
+def read_cues(path: Path) -> list[Word]:
+    """Read a WebVTT. Each cue is one sentence, as the transcriber divided it."""
+    cues: list[Word] = []
     lines = path.read_text(encoding="utf-8").splitlines()
     for index, line in enumerate(lines):
         matched = CUE.match(line.strip())
@@ -95,8 +126,8 @@ def read_words(path: Path) -> list[Word]:
         end = int(groups[3]) * 3600 + int(groups[4]) * 60 + float(groups[5])
         text = lines[index + 1].strip() if index + 1 < len(lines) else ""
         if text and end > start:
-            words.append(Word(start, end, text))
-    return words
+            cues.append(Word(start, end, text))
+    return cues
 
 
 def merge(spans: Sequence[tuple[float, float]]) -> list[tuple[float, float]]:
@@ -110,96 +141,84 @@ def merge(spans: Sequence[tuple[float, float]]) -> list[tuple[float, float]]:
     return merged
 
 
-def reference_spans(path: Path, speaker: int) -> list[tuple[float, float]]:
-    """Stretches where the Reference speaks and nobody else does.
+def covered(spans: Sequence[tuple[float, float]], start: float, end: float) -> float:
+    """How much of [start, end] the given spans occupy, in seconds."""
+    return sum(
+        max(0.0, min(end, span_end) - max(start, span_start)) for span_start, span_end in spans
+    )
 
-    Merged before subtracting. The saved timeline lists many short overlapping
-    spans, and removing each other-speaker span from each Reference span one at
-    a time shredded the timeline into pieces too small to hold a sentence.
 
-    Both sides are unions first, then one subtraction, then one margin. The
-    margin is because diarization boundaries are only good to a couple of
-    frames, and a late boundary is how the next speaker's first syllable gets in.
-    """
+Spans = list[tuple[float, float]]
+
+
+def speaker_spans(path: Path, speaker: int) -> tuple[Spans, Spans]:
+    """The Reference's stretches and everyone else's, each merged."""
     raw = json.loads(path.read_text(encoding="utf-8"))["spans"]
-    mine = merge([(start, end) for start, end, who in raw if who == speaker])
-    others = merge([(start, end) for start, end, who in raw if who != speaker])
-
-    kept: list[tuple[float, float]] = []
-    for start, end in mine:
-        pieces = [(start, end)]
-        for other_start, other_end in others:
-            remaining: list[tuple[float, float]] = []
-            for piece_start, piece_end in pieces:
-                if other_end <= piece_start or other_start >= piece_end:
-                    remaining.append((piece_start, piece_end))
-                    continue
-                if piece_start < other_start:
-                    remaining.append((piece_start, other_start))
-                if other_end < piece_end:
-                    remaining.append((other_end, piece_end))
-            pieces = remaining
-        for piece_start, piece_end in pieces:
-            shrunk = (piece_start + SPEAKER_MARGIN, piece_end - SPEAKER_MARGIN)
-            if shrunk[1] - shrunk[0] >= MINIMUM_SECONDS:
-                kept.append(shrunk)
-    return sorted(kept)
+    return (
+        merge([(start, end) for start, end, who in raw if who == speaker]),
+        merge([(start, end) for start, end, who in raw if who != speaker]),
+    )
 
 
-def ends_sentence(text: str) -> bool:
-    stripped = re.sub(r"[^\w]", "", text)
-    return bool(stripped) and stripped.endswith(FINAL_ENDINGS)
+def join_cues(cues: Sequence[Word]) -> list[Word]:
+    """Join neighbouring cues into utterances of a usable length.
 
+    The solo transcript is cut far finer than a cloning reference wants — 394 of
+    its 453 cues are under three seconds, and only 43 land in the 3-10 s window
+    on their own. In a recording with one speaker, consecutive cues are the same
+    person continuing, so joining them is safe in a way it would not be in the
+    interview.
 
-def split_into_utterances(words: Sequence[Word]) -> Iterator[list[Word]]:
-    """Break the whole transcript wherever a finished sentence meets a pause.
-
-    Run over every word first, not over the words inside a speaker span. Cutting
-    to the span first makes the *start* of each group land wherever the span
-    began, which is usually mid-sentence: the first attempt produced "들릴 수
-    있지만 노래보다는..." because only the ending was ever checked.
+    A join stops at ``JOIN_GAP`` of silence, because that is where she stopped
+    rather than paused, and never crosses ``MAXIMUM_SECONDS``.
     """
+    joined: list[Word] = []
     current: list[Word] = []
-    for index, word in enumerate(words):
-        current.append(word)
-        following = words[index + 1] if index + 1 < len(words) else None
-        pause = (following.start - word.end) if following is not None else float("inf")
-        if ends_sentence(word.text) and pause >= SENTENCE_PAUSE:
-            yield current
-            current = []
+    for cue in cues:
+        if current:
+            gap = cue.start - current[-1].end
+            span = cue.end - current[0].start
+            if gap > JOIN_GAP or span > MAXIMUM_SECONDS:
+                joined.append(
+                    Word(current[0].start, current[-1].end, " ".join(c.text for c in current))
+                )
+                current = []
+        current.append(cue)
     if current:
-        yield current
+        joined.append(Word(current[0].start, current[-1].end, " ".join(c.text for c in current)))
+    return joined
 
 
-def utterances(words: Sequence[Word], spans: Sequence[tuple[float, float]],
-               source: str, offset: float) -> list[Utterance]:
-    """Sentences that sit entirely inside one Reference-only stretch.
-
-    Both boundaries are therefore sentence boundaries, and the whole sentence
-    belongs to one speaker. A sentence that straddles a speaker change is
-    dropped rather than trimmed — trimming is what produced fragments.
-    """
+def utterances(
+    cues: Sequence[Word],
+    mine: Sequence[tuple[float, float]],
+    others: Sequence[tuple[float, float]],
+    source: str,
+    offset: float,
+) -> list[Utterance]:
+    """Sentences the Reference says, and that nobody else says much of."""
     found: list[Utterance] = []
-    for group in split_into_utterances(words):
-        if not group:
+    for cue in cues:
+        seconds = cue.end - cue.start
+        if not MINIMUM_SECONDS <= seconds <= MAXIMUM_SECONDS:
             continue
-        text = " ".join(word.text for word in group)
-        # Whisper emits bracketed notes for non-speech ("[이 영상은 ...]").
-        # They are not the Reference talking and their timings mean nothing.
-        if "[" in text or "]" in text:
+        # Whisper writes bracketed notes for non-speech ("[음악]", "[이 영상은
+        # ...]"). Those are not the Reference talking.
+        if "[" in cue.text or "]" in cue.text:
             continue
-        start, end = group[0].start, group[-1].end
-        if not any(span_start <= start and end <= span_end for span_start, span_end in spans):
+        if covered(mine, cue.start, cue.end) / seconds < MINIMUM_REFERENCE_SHARE:
             continue
-        candidate = Utterance(
-            source=source,
-            chunk_offset=offset,
-            start=start,
-            end=end,
-            words=tuple(word.text for word in group),
+        if covered(others, cue.start, cue.end) / seconds > MAXIMUM_OTHER_SHARE:
+            continue
+        found.append(
+            Utterance(
+                source=source,
+                chunk_offset=offset,
+                start=cue.start,
+                end=cue.end,
+                words=tuple(cue.text.split()),
+            )
         )
-        if MINIMUM_SECONDS <= candidate.seconds <= MAXIMUM_SECONDS:
-            found.append(candidate)
     return found
 
 
@@ -235,8 +254,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--speaker",
         type=int,
-        default=1,
-        help="화자 번호. source-003에서는 1이 Reference로 확인되었습니다.",
+        help="화자 번호. chunk마다 달라질 수 있으므로 확인된 값만 쓰세요.",
+    )
+    parser.add_argument(
+        "--solo",
+        action="store_true",
+        help="혼자 말하는 녹음. 화자 판정을 건너뛰고 전체를 하나로 다룹니다.",
+    )
+    parser.add_argument(
+        "--transcript",
+        type=Path,
+        help="문장 VTT 경로. 생략하면 source 이름에서 찾습니다.",
     )
     parser.add_argument("--report", type=Path)
     return parser
@@ -248,28 +276,37 @@ def main(argv: Sequence[str] | None = None) -> int:
     pilot = root / "derived" / "audio" / "stt-pilot"
     reports = root / "reports"
     source_audio = root / "raw" / "audio" / "candidate-001" / f"{arguments.source}.webm"
-    output_dir = root / "derived" / "audio" / "utterances"
+    output_dir = root / "derived" / "audio" / "utterances" / arguments.source
 
     if not source_audio.exists():
         print(f"원본 오디오가 없습니다: {source_audio}", file=sys.stderr)
         return 1
+    if not arguments.solo and arguments.speaker is None:
+        print("--speaker 또는 --solo 중 하나가 필요합니다.", file=sys.stderr)
+        return 1
 
     found: list[Utterance] = []
-    for spans_path in sorted(reports.glob(f"spans-{arguments.source}-*.json")):
-        chunk = spans_path.stem[len("spans-") :]
-        offset = float(chunk.rsplit("-", 2)[-2])
-        vtt = pilot / f"{chunk}-words.vtt"
+    if arguments.solo:
+        # One transcript for the whole recording, and every sentence kept: with
+        # nobody else present there is no attribution to make.
+        vtt = arguments.transcript or (pilot / f"{arguments.source}-sentences.vtt")
         if not vtt.exists():
-            print(f"  건너뜀 (word VTT 없음): {chunk}", file=sys.stderr)
-            continue
-        found.extend(
-            utterances(
-                read_words(vtt),
-                reference_spans(spans_path, arguments.speaker),
-                arguments.source,
-                offset,
-            )
-        )
+            print(f"문장 VTT가 없습니다: {vtt}", file=sys.stderr)
+            return 1
+        everything = [(0.0, float("inf"))]
+        cues = join_cues(read_cues(vtt))
+        print(f"cue {len(read_cues(vtt))}개 → 이어붙여 {len(cues)}개")
+        found = utterances(cues, everything, [], arguments.source, 0.0)
+    else:
+        for spans_path in sorted(reports.glob(f"spans-{arguments.source}-*.json")):
+            chunk = spans_path.stem[len("spans-") :]
+            offset = float(chunk.rsplit("-", 2)[-2])
+            vtt = pilot / f"{chunk}-sentences.vtt"
+            if not vtt.exists():
+                print(f"  건너뜀 (문장 VTT 없음): {chunk}", file=sys.stderr)
+                continue
+            mine, others = speaker_spans(spans_path, arguments.speaker)
+            found.extend(utterances(read_cues(vtt), mine, others, arguments.source, offset))
 
     if not found:
         print("조건에 맞는 발화가 없습니다.", file=sys.stderr)

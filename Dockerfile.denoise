@@ -1,0 +1,54 @@
+# Speech enhancement for the Reference clips.
+#
+# The solo broadcast was recorded outdoors in the rain — she says so on air —
+# and the noise sits under the voice the whole time, not only between words. A
+# measurement of the gaps put the quietest clips at 19 dB and 천우 still heard
+# the street in them, which is what a floor-only measure misses.
+#
+# Picking quieter clips was the cheap answer and it failed, so this removes the
+# noise instead. That also means the whole 12.9 minutes stays usable rather than
+# the handful of quiet moments near the end of the stream.
+#
+# DeepFilterNet runs at 48 kHz, which is the rate the clips were cut at, so
+# nothing is resampled on the way through.
+
+FROM python:3.10-slim-bookworm
+
+ARG DEEPFILTERNET_VERSION=0.5.6
+
+# git is not for cloning anything here: the library shells out to it while
+# working out where it is installed from, and dies without it.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y libsndfile1 git \
+    && rm -rf /var/lib/apt/lists/*
+
+# The image's own pip cannot read the PyTorch index's package metadata.
+RUN pip install --no-cache-dir --upgrade pip==25.2
+
+# CPU torch, pinned, before anything can pull a CUDA build.
+RUN pip install --no-cache-dir \
+        torch==2.7.1+cpu torchaudio==2.7.1+cpu \
+        --index-url https://download.pytorch.org/whl/cpu
+
+RUN pip install --no-cache-dir \
+        "deepfilternet==${DEEPFILTERNET_VERSION}" \
+        "numpy<2.0" \
+        "soundfile>=0.12,<0.13"
+
+# The model is fetched on first use into the user cache. Baked here so a run
+# needs no network, and under a HOME that any user can read and write — the
+# other images in this project each failed once because a cache directory
+# belonged to root while the container ran as the Host user.
+ENV HOME=/opt/denoise-home \
+    NUMBA_CACHE_DIR=/tmp/numba \
+    MPLCONFIGDIR=/tmp/matplotlib
+RUN mkdir -p "$HOME" /tmp/numba /tmp/matplotlib \
+    && python -c "from df.enhance import init_df; init_df()" \
+    && chmod -R 777 "$HOME" /tmp/numba /tmp/matplotlib
+
+# Prove the model is present and runs, rather than trusting that the download
+# call above did anything. A step that cannot fail is worse than one that does.
+COPY experiments/denoise_runner.py /opt/probe/denoise_runner.py
+RUN python /opt/probe/denoise_runner.py --self-test
+
+ENTRYPOINT ["python", "/opt/probe/denoise_runner.py"]

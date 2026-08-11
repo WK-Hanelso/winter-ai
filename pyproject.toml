@@ -58,14 +58,21 @@ no_implicit_optional = true
 module = "melo.*"
 ignore_missing_imports = true
 
-# torch, torchaudio and speechbrain live only in Dockerfile.speaker-embedding.
-# Installing them in the dev image would add gigabytes to every offline test run.
-# soundfile and the GPT-SoVITS package live only in Dockerfile.gpt-sovits. The
-# runner that imports them never executes in the dev image.
+# Each of these lives only in the probe image that needs it: GPT_SoVITS and
+# cosyvoice in the two cloning images, df in the denoising one. The runners that
+# import them never execute in the dev image.
 [[tool.mypy.overrides]]
-module = ["soundfile.*", "GPT_SoVITS.*", "huggingface_hub.*", "cosyvoice.*", "torchaudio.*"]
+module = [
+    "soundfile.*",
+    "GPT_SoVITS.*",
+    "huggingface_hub.*",
+    "cosyvoice.*",
+    "df.*",
+]
 ignore_missing_imports = true
 
+# torch, torchaudio and speechbrain live only in their own images. Installing
+# them in the dev image would add gigabytes to every offline test run.
 [[tool.mypy.overrides]]
 module = ["torch.*", "torchaudio.*", "speechbrain.*", "nemo.*"]
 ignore_missing_imports = true
