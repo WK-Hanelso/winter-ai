@@ -63,17 +63,42 @@ RUN printf 'setuptools<81\n' > /tmp/build-constraints.txt \
     && PIP_CONSTRAINT=/tmp/build-constraints.txt \
        pip install --no-cache-dir -r /tmp/requirements-train.txt \
     && pip install --no-cache-dir bitsandbytes==0.44.1 "pandas<3" \
-    # deepspeed probes for a CUDA compiler while it imports — not while it
-    # builds anything, while it imports — and raises without one. The torch
-    # wheels carry a CUDA runtime but no nvcc, so this adds one purely to be
-    # found. Nothing here compiles a kernel.
-    && pip install --no-cache-dir nvidia-cuda-nvcc-cu12==12.1.105
+    && true
+
+# CosyVoice's training script imports deepspeed unconditionally, and deepspeed
+# runs `$CUDA_HOME/bin/nvcc -V` while it *imports* — not while it builds
+# anything — to read a version number. Without one, nothing loads at all.
+#
+# Nothing in this image compiles a CUDA kernel: training runs on plain torch,
+# and the pip CUDA packages ship ptxas without nvcc while Debian's toolkit is
+# 2 GiB from a repository this image does not enable. So the version answer is
+# given directly, from the CUDA that torch was actually built against.
+#
+# Any other invocation fails loudly. A stub that pretended to compile would
+# produce a broken object and a confusing error somewhere far away.
+RUN mkdir -p /opt/cuda-stub/bin \
+    && printf '%s\n' \
+        '#!/bin/sh' \
+        '# Reports the CUDA version torch was built with. Compiles nothing.' \
+        'case "$1" in' \
+        '  -V|--version)' \
+        '    CUDA_VERSION=$(python -c "import torch; print(torch.version.cuda)")' \
+        '    echo "nvcc: NVIDIA (R) Cuda compiler driver"' \
+        '    echo "Cuda compilation tools, release ${CUDA_VERSION}, V${CUDA_VERSION}.0"' \
+        '    ;;' \
+        '  *)' \
+        '    echo "nvcc stub: this image does not compile CUDA. Called with: $*" >&2' \
+        '    exit 127' \
+        '    ;;' \
+        'esac' \
+        > /opt/cuda-stub/bin/nvcc \
+    && chmod 755 /opt/cuda-stub/bin/nvcc
 
 ENV HOME=/tmp \
     NUMBA_CACHE_DIR=/tmp/numba \
     MPLCONFIGDIR=/tmp/matplotlib \
     TRITON_CACHE_DIR=/tmp/triton \
-    CUDA_HOME=/usr/local/lib/python3.10/site-packages/nvidia/cuda_nvcc \
+    CUDA_HOME=/opt/cuda-stub \
     HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 \
     PYTHONPATH=/opt/cosyvoice:/opt/cosyvoice/third_party/Matcha-TTS
