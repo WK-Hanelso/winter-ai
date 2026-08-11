@@ -8,6 +8,9 @@ if [[ -f .env ]]; then set -a; source .env; set +a; fi
 export LOCAL_UID="${LOCAL_UID:-$(id -u)}"
 export LOCAL_GID="${LOCAL_GID:-$(id -g)}"
 COMPOSE=(docker compose -f compose.yaml -f compose.llm.yaml -f compose.gpu.yaml)
+# The voice path additionally publishes the model server on Host loopback,
+# because its CLI runs on the Host rather than in the dev container.
+VOICE_COMPOSE=("${COMPOSE[@]}" -f compose.llm-host.yaml)
 
 require_model_config() {
   for name in LLAMA_RUNTIME_DIR LLM_MODEL_DIR LLM_MODEL_FILE; do
@@ -36,6 +39,19 @@ case "${1:-start}" in
     wait_for_llm
     exec "${COMPOSE[@]}" run --rm dev python -m companion.user_cli
     ;;
+  voice)
+    require_model_config
+    shift
+    "${VOICE_COMPOSE[@]}" up -d llm
+    # Polled from the Host, not through `run --rm dev`: this is the address the
+    # voice CLI will actually use, so probing anything else can pass while the
+    # real path is still broken.
+    for _ in $(seq 1 30); do
+      if python3 -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:8080/health', timeout=2)" >/dev/null 2>&1; then break; fi
+      sleep 2
+    done
+    exec env PYTHONPATH="$ROOT_DIR/src" python3 -m companion.voice_cli "$@"
+    ;;
   status)
     require_model_config
     "${COMPOSE[@]}" ps
@@ -44,7 +60,7 @@ case "${1:-start}" in
     "${COMPOSE[@]}" stop llm
     ;;
   *)
-    echo "Usage: ./winter {start|chat|status|stop}" >&2
+    echo "Usage: ./winter {start|chat|voice|status|stop}" >&2
     exit 2
     ;;
 esac

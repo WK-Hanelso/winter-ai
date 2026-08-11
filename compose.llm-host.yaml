@@ -1,0 +1,13 @@
+services:
+  llm:
+    # Opt-in overlay for the voice path only.
+    #
+    # The voice CLI runs on the Host, because synthesis needs `docker run` and
+    # playback needs the Host sound device, and the dev container has neither.
+    # So it cannot use the Compose-internal `http://llm:8080` the text CLI uses,
+    # and the model server has to be reachable from the Host.
+    #
+    # Bound to loopback rather than 0.0.0.0: local-first means the model answers
+    # this machine and nothing else on the network.
+    ports:
+      - "127.0.0.1:8080:8080"

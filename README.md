@@ -59,6 +59,20 @@ docker compose run --rm dev python -m companion.user_cli --backend fake
 이미 실행 중인 겨울이에 다시 연결하려면 `./winter chat`, 상태 확인은
 `./winter status`, 모델 서버를 멈추려면 `./winter stop`을 사용합니다.
 
+겨울이의 대답을 소리로 들으려면 `./winter voice`를 사용합니다. 타자로 묻고
+음성으로 듣는 경로이며, 마이크 입력은 아직 없습니다.
+
+```bash
+./winter voice                      # 대화
+./winter voice --say "안녕" --no-play  # 한 문장만, 재생 없이 wav로
+```
+
+`voice`만은 다른 명령과 달리 dev container가 아닌 **Host에서** 실행됩니다.
+합성이 `docker run`을, 재생이 Host 사운드 장치를 필요로 하기 때문입니다. 그래서
+`voice`는 모델 서버를 Host loopback(`127.0.0.1:8080`)에도 공개하며, 이는
+`compose.llm-host.yaml` overlay로 분리해 두어 다른 명령에는 영향이 없습니다.
+자세한 구조와 시행착오는 [음성 출력 경로](docs/voice-path.md)에 있습니다.
+
 첫 Local LLM probe도 성공했습니다. Docker 안의 llama.cpp Vulkan runtime으로
 Qwen3-4B-Instruct-2507 Q4_K_M을 RTX 2060 6 GiB에서 실행했고, 37/37 레이어가
 GPU에 올라간 상태로 한국어 응답을 생성했습니다. 정확한 모델 출처·해시·성능은
