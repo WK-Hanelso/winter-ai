@@ -20,6 +20,7 @@ import sys
 sys.path.append("/opt/gpt-sovits")
 sys.path.append("/opt/gpt-sovits/GPT_SoVITS")
 
+from GPT_SoVITS import inference_webui  # noqa: E402
 from GPT_SoVITS.inference_webui import (  # noqa: E402
     change_gpt_weights,
     change_sovits_weights,
@@ -30,8 +31,28 @@ import soundfile  # noqa: E402
 PRETRAINED = Path("/opt/gpt-sovits/GPT_SoVITS/pretrained_models/gsv-v2final-pretrained")
 GPT_WEIGHTS = PRETRAINED / "s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt"
 SOVITS_WEIGHTS = PRETRAINED / "s2G2333k.pth"
-# The label the engine's internationalisation table uses for Korean.
-KOREAN = "한문"
+# The engine's own code for "read all of this as Korean".
+KOREAN_CODE = "all_ko"
+
+
+def korean_label() -> str:
+    """The language name ``get_tts_wav`` expects, found rather than guessed.
+
+    Its argument is a *display* name which it looks up in a table, and those
+    names are translated: the Korean entry is written ``i18n("韩文")``, so what
+    the table actually contains depends on the locale the container runs under.
+    Guessing a spelling would fail only after both checkpoints are loaded.
+
+    The table is also rebuilt when the SoVITS weights load, because v1 and v2
+    support different languages. So this must be read afterwards, not at import.
+    """
+    table: dict[str, str] = inference_webui.dict_language
+    for label, code in table.items():
+        if code == KOREAN_CODE:
+            return label
+    raise RuntimeError(
+        f"이 checkpoint는 한국어를 지원하지 않습니다. 가능한 언어: {sorted(table.values())}"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -44,7 +65,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--text", required=True, help="말하게 할 문장.")
     parser.add_argument("--output-path", type=Path, required=True)
-    parser.add_argument("--language", default=KOREAN)
     return parser
 
 
@@ -52,6 +72,7 @@ def main() -> int:
     arguments = build_parser().parse_args()
     change_gpt_weights(str(GPT_WEIGHTS))
     change_sovits_weights(str(SOVITS_WEIGHTS))
+    language = korean_label()
 
     # get_tts_wav yields (sample rate, samples) chunks rather than returning a
     # file, so the pieces are joined here.
@@ -59,9 +80,9 @@ def main() -> int:
         get_tts_wav(
             ref_wav_path=str(arguments.reference_audio),
             prompt_text=arguments.reference_text,
-            prompt_language=arguments.language,
+            prompt_language=language,
             text=arguments.text,
-            text_language=arguments.language,
+            text_language=language,
         )
     )
     if not pieces:

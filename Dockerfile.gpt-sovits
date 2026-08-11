@@ -22,11 +22,21 @@ RUN apt-get update \
         build-essential git curl ffmpeg libsndfile1 cmake \
     && rm -rf /var/lib/apt/lists/*
 
+# The image's own pip rejects the PyTorch index: it reads the name in
+# typing_extensions' metadata as different from the one it asked for and gives
+# up. Normalisation was fixed upstream, so this is a version floor, not taste.
+RUN pip install --no-cache-dir --upgrade pip==25.2
+
 # Torch first and explicitly, so the transitive requirements below cannot pull a
 # CUDA build. A matching torch/torchaudio pair is a hard requirement; the
 # diarization image was broken twice by letting them resolve independently.
+#
+# 2.7.1 rather than something older: x_transformers now pulls
+# torch-einops-utils, which requires torch>=2.5. Pinning 2.4.1 sent pip
+# backtracking through x_transformers releases one download at a time and the
+# build never finished. Well inside the range the repository tests (2.2.2-2.8).
 RUN pip install --no-cache-dir \
-        torch==2.4.1+cpu torchaudio==2.4.1+cpu \
+        torch==2.7.1+cpu torchaudio==2.7.1+cpu \
         --index-url https://download.pytorch.org/whl/cpu
 
 RUN git clone --depth 1 --branch main https://github.com/RVC-Boss/GPT-SoVITS.git /opt/gpt-sovits \
@@ -34,35 +44,47 @@ RUN git clone --depth 1 --branch main https://github.com/RVC-Boss/GPT-SoVITS.git
     && git -C /opt/gpt-sovits checkout "$GPT_SOVITS_REF" \
     && test "$(git -C /opt/gpt-sovits rev-parse HEAD)" = "$GPT_SOVITS_REF"
 
-COPY requirements/gpt-sovits.lock /tmp/gpt-sovits.lock
-RUN pip install --no-cache-dir -r /opt/gpt-sovits/requirements.txt \
-    && pip install --no-cache-dir -r /tmp/gpt-sovits.lock
-
 # Weights are baked in rather than mounted: the probe must run with no network,
 # and a mounted cache made the MeloTTS image fail in ways that looked like
 # synthesis bugs. ~2 GiB.
-RUN python - <<'PYTHON'
-import os
-from huggingface_hub import hf_hub_download
+#
+# Downloaded *before* the dependency install, and with its own small pinned
+# client, so that editing the lock does not re-fetch 2 GiB. The lock changed
+# five times while this image was being brought up; putting the expensive stable
+# layer above the volatile one turns each of those retries from minutes into
+# seconds.
+RUN pip install --no-cache-dir huggingface_hub==0.26.5
 
-root = "/opt/gpt-sovits/GPT_SoVITS/pretrained_models"
-weights = os.environ.get("WEIGHTS_DIR", "gsv-v2final-pretrained")
-for name in (
-    "chinese-hubert-base/config.json",
-    "chinese-hubert-base/preprocessor_config.json",
-    "chinese-hubert-base/pytorch_model.bin",
-    "chinese-roberta-wwm-ext-large/config.json",
-    "chinese-roberta-wwm-ext-large/pytorch_model.bin",
-    "chinese-roberta-wwm-ext-large/tokenizer.json",
-    f"{weights}/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt",
-    f"{weights}/s2G2333k.pth",
-):
-    hf_hub_download("lj1995/GPT-SoVITS", name, local_dir=root)
-PYTHON
+COPY experiments/gpt_sovits_fetch_models.py /opt/probe/gpt_sovits_fetch_models.py
+RUN python /opt/probe/gpt_sovits_fetch_models.py \
+        --destination /opt/gpt-sovits/GPT_SoVITS/pretrained_models \
+        --weights-dir "$WEIGHTS_DIR"
+
+# The lock is a constraint on this resolution, not a second install pass. Applied
+# afterwards it arrives too late to stop pip exploring versions the pins would
+# have excluded, which is how the first build stalled.
+COPY requirements/gpt-sovits.lock /tmp/gpt-sovits.lock
+RUN pip install --no-cache-dir -c /tmp/gpt-sovits.lock -r /opt/gpt-sovits/requirements.txt \
+    && pip install --no-cache-dir -r /tmp/gpt-sovits.lock
 
 # The Korean grapheme-to-phoneme path downloads a dictionary on first use.
 # Doing it at build time keeps the run offline.
 RUN python -c "import g2pk2; g2pk2.G2p()" || true
+
+# Every cache the stack writes to, sent somewhere a non-root user can write.
+# Set on the image rather than on each `docker run` because forgetting one is
+# not a missing-cache warning — numba refuses to start and the traceback points
+# at librosa, which reads as a synthesis bug. The MeloTTS image failed the same
+# way; the fix belongs next to the software that needs it.
+#
+# Offline is asserted, not assumed: the weights are baked in, so a lookup
+# reaching for the network means something is missing locally and should fail
+# loudly. The import check below runs under these too, so it tests that.
+ENV HOME=/tmp \
+    NUMBA_CACHE_DIR=/tmp/numba \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1
 
 # Fail the build rather than a run: importing the inference module is where a
 # mismatched dependency shows up, and it is 2 GiB of weights too late to notice
@@ -71,6 +93,17 @@ RUN cd /opt/gpt-sovits && python -c "\
 import sys; sys.path.append('GPT_SoVITS');\
 from GPT_SoVITS.inference_webui import get_tts_wav, change_gpt_weights, change_sovits_weights;\
 print('inference import OK')"
+
+# The module records the loaded checkpoint to ./weight.json as it imports, and
+# the working directory belongs to root. Running as the Host user — so output
+# files are not root-owned — then fails before any synthesis starts.
+#
+# The working directory cannot simply move somewhere writable: the module finds
+# its own checkpoints through relative paths, so it has to run from here.
+RUN touch /opt/gpt-sovits/weight.json \
+    && chmod 666 /opt/gpt-sovits/weight.json \
+    && mkdir -p /opt/gpt-sovits/TEMP \
+    && chmod 777 /opt/gpt-sovits /opt/gpt-sovits/TEMP
 
 COPY experiments/gpt_sovits_runner.py /opt/probe/gpt_sovits_runner.py
 

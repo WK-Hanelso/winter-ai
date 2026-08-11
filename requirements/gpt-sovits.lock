@@ -6,12 +6,30 @@
 #
 # numpy — the repository asks for <2.0 but several transitive dependencies
 #   happily install 2.x, which breaks the compiled extensions built against 1.x.
-# transformers — the repository's range is wide; the upper end changes the
-#   HuBERT/RoBERTa loading path this version calls.
+# transformers/peft — peft imports HybridCache from transformers, which does not
+#   exist before 4.44. 4.50.0 is the top of the range the repository allows.
+#   (An earlier 4.43.4 pin here was a guess, not a measurement, and it broke the
+#   import check.)
 # huggingface_hub — hf_hub_download's local_dir semantics changed; the build
 #   step above places weights by path and needs the older behaviour.
 # gradio — imported at module scope by inference_webui even when no UI runs.
+# x_transformers — its recent releases pull torch-einops-utils, which requires
+#   torch>=2.5. Left free, pip explores releases one download at a time whenever
+#   the installed torch disagrees, and the build does not finish. Pinned so the
+#   resolution is decided here rather than discovered.
 numpy==1.26.4
-transformers==4.43.4
+transformers==4.50.0
+peft==0.15.2
 huggingface_hub==0.26.5
 gradio==4.44.1
+x_transformers==2.25.5
+# fastapi/uvicorn/pydantic — the repository asks for fastapi[standard] and caps
+#   pydantic at 2.10.6. Recent FastAPI needs a newer pydantic than that cap
+#   allows, so pip walks back through FastAPI and then through every
+#   uvicorn[standard] release looking for a fit. This trio agrees: 0.115.6 is
+#   the last FastAPI line that works under the cap. The API server these belong
+#   to is never started here — they are installed only because the repository's
+#   requirements list them.
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.6
