@@ -1,0 +1,87 @@
+# Voice conversion: keep someone else's delivery, take 겨울이's timbre.
+#
+# 천우's observation, and it is the right one. Voice cloning demos sound human
+# because a human performed them and only the timbre was replaced. Asking one
+# model to invent the performance *and* the timbre is the harder problem, and
+# fighting its side effects is what the CosyVoice work has been: reference
+# speech leaking into the opening, phrasing landing in the wrong places, a
+# text/audio ratio learned for other languages.
+#
+# Conversion has none of those. It takes no text, so nothing can leak from a
+# prompt; the phrasing comes from whatever spoke first. Reported numbers put
+# seed-vc at 0.868 speaker similarity, above CosyVoice, while staying real-time
+# capable.
+#
+# The other half — a text-to-speech model that sounds natural in Korean — is a
+# separate choice, and MeloTTS is already here to test the conversion half with.
+#
+# cu121 matches the host driver (535.230.02). The repository's requirements list
+# a nightly cu126 index *and* pinned 2.4.0 releases; the pins are what it
+# actually wants, so torch is installed explicitly and those lines are dropped.
+
+FROM python:3.10-slim-bookworm
+
+ARG SEEDVC_REF=51383efd921027683c89e5348211d93ff12ac2a8
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y \
+        build-essential git curl ffmpeg libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# The image's own pip cannot read the PyTorch index's package metadata.
+RUN pip install --no-cache-dir --upgrade pip==25.2
+
+RUN pip install --no-cache-dir \
+        torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 \
+        --index-url https://download.pytorch.org/whl/cu121
+
+RUN git clone https://github.com/Plachtaa/seed-vc.git /opt/seed-vc \
+    && git -C /opt/seed-vc checkout "$SEEDVC_REF" \
+    && test "$(git -C /opt/seed-vc rev-parse HEAD)" = "$SEEDVC_REF"
+
+# Set before anything downloads, not after. The first attempt put these below
+# the fetch, so the build wrote into root's home and the run — with HOME
+# elsewhere — could not find what had been baked, and reached for the network
+# instead. A fixed path avoids depending on whose home it is.
+ENV HF_HOME=/opt/hf-cache \
+    HOME=/tmp \
+    NUMBA_CACHE_DIR=/tmp/numba \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    PYTHONPATH=/opt/seed-vc
+
+# Checkpoints above the dependency layer, so editing anything below does not
+# refetch them.
+RUN pip install --no-cache-dir huggingface_hub==0.26.5
+COPY experiments/seedvc_fetch_models.py /opt/probe/seedvc_fetch_models.py
+RUN python /opt/probe/seedvc_fetch_models.py --destination /opt/seed-vc/checkpoints
+
+# gradio and the desktop GUI toolkit are for apps this image does not run, and
+# their pins are the kind that argue with each other. sounddevice wants a host
+# audio device that a container has no reason to hold.
+RUN grep -vE '^(torch|torchvision|torchaudio|gradio|FreeSimpleGUI|sounddevice|--pre|--index-url)' \
+        /opt/seed-vc/requirements.txt > /tmp/requirements-vc.txt \
+    && pip install --no-cache-dir -r /tmp/requirements-vc.txt
+
+# Offline is not asserted here, unlike the other images, and that is a
+# concession rather than a choice. Every checkpoint is baked in — 1 GiB of
+# seed-vc weights plus the content encoder and vocoder — so a run does not need
+# the network. But the vocoder loader reaches the Hub through a path that could
+# not be satisfied from cache: the identical call succeeds standalone and fails
+# inside inference.py, and its local-directory branch is unreachable because
+# from_pretrained rejects a path before it gets there.
+#
+# So the guarantee here is weaker: the files are present, and nothing has been
+# observed to fetch. It is not enforced.
+
+RUN mkdir -p /tmp/numba /tmp/matplotlib \
+    && chmod -R 777 /tmp/numba /tmp/matplotlib \
+    && chmod -R a+w /opt/seed-vc/checkpoints /opt/hf-cache \
+    && chmod 777 /opt/seed-vc
+
+# Imports only: a build host may have no GPU, and the model load needs one.
+RUN cd /opt/seed-vc && python -c "\
+import torch, hf_utils;\
+from modules.campplus.DTDNN import CAMPPlus;\
+print('seed-vc import OK, torch', torch.__version__)"
+
+WORKDIR /opt/seed-vc

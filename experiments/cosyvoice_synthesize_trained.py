@@ -80,7 +80,12 @@ def average_embedding(model: CosyVoice3, clips: Sequence[Path]) -> torch.Tensor:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--flow-checkpoint", type=Path, required=True)
+    parser.add_argument("--flow-checkpoint", type=Path)
+    parser.add_argument(
+        "--pretrained-flow",
+        action="store_true",
+        help="학습 전 flow를 그대로 씁니다. 딱딱함이 학습에서 온 것인지 가르는 용도입니다.",
+    )
     parser.add_argument("--clips", type=Path)
     parser.add_argument("--prompt-audio", type=Path)
     parser.add_argument("--prompt-text")
@@ -124,7 +129,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
     model = CosyVoice3(MODEL_DIR, load_trt=False, load_vllm=False, fp16=False)
-    load_trained_flow(model, arguments.flow_checkpoint)
+    if arguments.pretrained_flow:
+        print("flow: 학습 전 가중치 그대로")
+    elif arguments.flow_checkpoint is not None:
+        load_trained_flow(model, arguments.flow_checkpoint)
+    else:
+        print("--flow-checkpoint 또는 --pretrained-flow 가 필요합니다.", file=sys.stderr)
+        return 1
 
     if arguments.load_speaker is not None:
         entry = torch.load(str(arguments.load_speaker), map_location="cpu")

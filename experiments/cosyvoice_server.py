@@ -10,6 +10,16 @@ no batching, no streaming. Streaming is the obvious next thing and is not here
 yet, because it only helps once generation reliably outruns playback — otherwise
 the audio catches up with the generator and stutters.
 
+Sentences are split here rather than by the model's text frontend. That frontend
+does two jobs at once — it normalises and it splits — and its normaliser breaks
+Korean words apart ("지금은" became "지 금은"), so it is off. With it off nothing
+splits either, and a long answer comes out as one unbroken generation whose
+pauses land in the wrong places. Splitting on sentence endings restores the
+phrasing without restoring the normaliser.
+
+Each piece is trimmed, because the leaked reference opening happens once per
+generation and there is now more than one generation per answer.
+
 Standard library only. This project stripped FastAPI and its stack out of the
 image because their pins fought each other, and a single-caller local server
 does not need them back.
@@ -23,6 +33,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 from pathlib import Path
+import re
 import sys
 import threading
 import time
@@ -30,13 +41,24 @@ import wave
 
 sys.path.append("/opt/cosyvoice")
 sys.path.append("/opt/cosyvoice/third_party/Matcha-TTS")
+sys.path.append(str(Path(__file__).resolve().parent))
 
 from cosyvoice.cli.cosyvoice import CosyVoice3  # noqa: E402
 import torch  # noqa: E402
 
+from trim_leaked_opening import find_cut, frame_levels  # noqa: E402
+
 MODEL_DIR = "/opt/cosyvoice/pretrained_models/CosyVoice3-0.5B"
-END_OF_PROMPT = "<|endofprompt|>"
 SPEAKER_ID = "winter"
+# Korean sentence endings, kept with the sentence they end.
+SENTENCE_END = re.compile(r"(?<=[.!?。])\s+")
+# Long enough to hear as a boundary, short enough not to sound like hesitation.
+PAUSE_SECONDS = 0.18
+
+
+def split_sentences(text: str) -> list[str]:
+    pieces = [piece.strip() for piece in SENTENCE_END.split(text.strip()) if piece.strip()]
+    return pieces or [text.strip()]
 
 
 class Voice:
@@ -52,6 +74,7 @@ class Voice:
         self._load_flow(flow_checkpoint)
         self._model.frontend.spk2info[SPEAKER_ID] = torch.load(str(speaker), map_location="cpu")
         self._speed = speed
+        self._rate = self._model.sample_rate
         self._lock = threading.Lock()
         device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"목소리 준비됨 ({device}, {time.perf_counter() - started:.1f}초)", flush=True)
@@ -74,24 +97,48 @@ class Voice:
             raise SystemExit("학습된 flow를 불러왔지만 가중치가 하나도 바뀌지 않았습니다.")
         print(f"flow: {changed}/{len(after)} 텐서가 바뀜", flush=True)
 
+    def _synthesize(self, sentence: str) -> torch.Tensor:
+        pieces = [
+            result["tts_speech"]
+            for result in self._model.inference_zero_shot(
+                # The sentence alone. The separator belongs in the stored
+                # speaker's prompt text, and adding it here too put a boundary
+                # marker in the middle of what she was asked to say — which came
+                # out as noise and Chinese.
+                sentence,
+                "",
+                "",
+                zero_shot_spk_id=SPEAKER_ID,
+                stream=False,
+                speed=self._speed,
+                text_frontend=False,
+            )
+        ]
+        if not pieces:
+            raise ValueError(f"합성 결과가 비었습니다: {sentence}")
+        return torch.cat(pieces, dim=1)
+
+    def _trim(self, audio: torch.Tensor) -> torch.Tensor:
+        """Drop the reference speech the model prepends, if it prepended any."""
+        samples = (audio.squeeze(0).clamp(-1, 1) * 32767).to(torch.int16).cpu().tolist()
+        levels, frame = frame_levels(samples, self._rate)
+        cut = find_cut(levels, frame / self._rate)
+        if cut is None:
+            return audio
+        return audio[:, int(cut * self._rate) :]
+
     def speak(self, text: str) -> tuple[bytes, float]:
         started = time.perf_counter()
+        sentences = split_sentences(text)
+        gap = torch.zeros((1, int(PAUSE_SECONDS * self._rate)))
+        spoken: list[torch.Tensor] = []
         with self._lock:
-            pieces = [
-                result["tts_speech"]
-                for result in self._model.inference_zero_shot(
-                    f"{END_OF_PROMPT}{text}",
-                    "",
-                    "",
-                    zero_shot_spk_id=SPEAKER_ID,
-                    stream=False,
-                    speed=self._speed,
-                    text_frontend=False,
-                )
-            ]
-        if not pieces:
-            raise ValueError("합성 결과가 비었습니다")
-        audio = torch.cat(pieces, dim=1)
+            for index, sentence in enumerate(sentences):
+                piece = self._trim(self._synthesize(sentence))
+                if index:
+                    spoken.append(gap)
+                spoken.append(piece.cpu())
+        audio = torch.cat(spoken, dim=1)
         samples = (audio.squeeze(0).clamp(-1, 1) * 32767).to(torch.int16).cpu().numpy()
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as handle:
@@ -101,8 +148,11 @@ class Voice:
             handle.writeframes(samples.tobytes())
         seconds = len(samples) / self._model.sample_rate
         elapsed = time.perf_counter() - started
-        print(f"  {seconds:.1f}초 생성, {elapsed:.1f}초 걸림 (rtf {elapsed / seconds:.2f})",
-              flush=True)
+        print(
+            f"  문장 {len(sentences)}개 | {seconds:.1f}초 생성, {elapsed:.1f}초 걸림 "
+            f"(rtf {elapsed / seconds:.2f})",
+            flush=True,
+        )
         return buffer.getvalue(), seconds
 
 

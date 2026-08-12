@@ -68,6 +68,7 @@ module = [
     "huggingface_hub.*",
     "cosyvoice.*",
     "df.*",
+    "trim_leaked_opening",
     "bitsandbytes.*",
     "hyperpyyaml.*",
 ]
