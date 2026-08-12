@@ -66,7 +66,14 @@ import numpy as np
 
 CUE = re.compile(r"(\d+):(\d+):(\d+\.\d+) --> (\d+):(\d+):(\d+\.\d+)")
 TARGET_RATE = 48_000
-# The window a cloning reference wants. Both candidate models agree on it.
+# The window a cloning reference wants. Both candidate models agree on it, and
+# it is the default because a clip cut here is usable as either.
+#
+# It is not what training wants. seed-vc's fine-tuning loader accepts 1 to 30
+# seconds (data/ft_dataset.py) and skips anything outside that, so cutting a
+# training set at 3-10 s throws away every long sentence and every short one for
+# a constraint that belongs to inference. --min-seconds and --max-seconds move
+# the window without pretending one number serves both jobs.
 MINIMUM_SECONDS = 3.0
 MAXIMUM_SECONDS = 10.0
 # The Reference has to hold most of the sentence, and the others almost none of
@@ -160,7 +167,30 @@ def speaker_spans(path: Path, speaker: int) -> tuple[Spans, Spans]:
     )
 
 
-def join_cues(cues: Sequence[Word]) -> list[Word]:
+def chunk_speaker(reports: Path, chunk: str, fallback: int | None) -> int | None:
+    """Which numbered speaker is the Reference in this chunk.
+
+    Diarization numbers are stable inside a chunk and meaningless between them:
+    in source-003 the Reference is speaker 2, then 1, then 1, then 0, then 1.
+    One ``--speaker`` applied to every chunk therefore cuts the wrong person's
+    speech in most of them, which is how a 28-minute interview yielded three
+    minutes.
+
+    So the per-chunk identification report decides, and a chunk it could not
+    judge is skipped rather than guessed at. ``--speaker`` remains as a fallback
+    for chunks with no report, because that is the older behaviour and some
+    material was cut before this existed.
+    """
+    report = reports / f"who-is-reference-{chunk}.json"
+    if not report.exists():
+        return fallback
+    identified = json.loads(report.read_text(encoding="utf-8"))["identified_speaker"]
+    if not identified.get("is_confident"):
+        return None
+    return identified["reference_speaker"]
+
+
+def join_cues(cues: Sequence[Word], maximum_seconds: float = MAXIMUM_SECONDS) -> list[Word]:
     """Join neighbouring cues into utterances of a usable length.
 
     The solo transcript is cut far finer than a cloning reference wants — 394 of
@@ -178,7 +208,7 @@ def join_cues(cues: Sequence[Word]) -> list[Word]:
         if current:
             gap = cue.start - current[-1].end
             span = cue.end - current[0].start
-            if gap > JOIN_GAP or span > MAXIMUM_SECONDS:
+            if gap > JOIN_GAP or span > maximum_seconds:
                 joined.append(
                     Word(current[0].start, current[-1].end, " ".join(c.text for c in current))
                 )
@@ -195,12 +225,14 @@ def utterances(
     others: Sequence[tuple[float, float]],
     source: str,
     offset: float,
+    minimum_seconds: float = MINIMUM_SECONDS,
+    maximum_seconds: float = MAXIMUM_SECONDS,
 ) -> list[Utterance]:
     """Sentences the Reference says, and that nobody else says much of."""
     found: list[Utterance] = []
     for cue in cues:
         seconds = cue.end - cue.start
-        if not MINIMUM_SECONDS <= seconds <= MAXIMUM_SECONDS:
+        if not minimum_seconds <= seconds <= maximum_seconds:
             continue
         # Whisper writes bracketed notes for non-speech ("[음악]", "[이 영상은
         # ...]"). Those are not the Reference talking.
@@ -266,6 +298,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="문장 VTT 경로. 생략하면 source 이름에서 찾습니다.",
     )
+    parser.add_argument(
+        "--min-seconds",
+        type=float,
+        default=MINIMUM_SECONDS,
+        help="기본값은 참조 음성 기준. 학습용은 더 넓게 (seed-vc는 1~30초).",
+    )
+    parser.add_argument("--max-seconds", type=float, default=MAXIMUM_SECONDS)
     parser.add_argument("--report", type=Path)
     return parser
 
@@ -281,8 +320,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not source_audio.exists():
         print(f"원본 오디오가 없습니다: {source_audio}", file=sys.stderr)
         return 1
-    if not arguments.solo and arguments.speaker is None:
-        print("--speaker 또는 --solo 중 하나가 필요합니다.", file=sys.stderr)
+    # Per-chunk identification reports answer the speaker question on their own,
+    # so --speaker is only needed for material cut before those existed.
+    identified = any(reports.glob(f"who-is-reference-{arguments.source}-*.json"))
+    if not arguments.solo and arguments.speaker is None and not identified:
+        print("--speaker, --solo, 또는 화자 판정 리포트가 필요합니다.", file=sys.stderr)
         return 1
 
     found: list[Utterance] = []
@@ -294,9 +336,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"문장 VTT가 없습니다: {vtt}", file=sys.stderr)
             return 1
         everything = [(0.0, float("inf"))]
-        cues = join_cues(read_cues(vtt))
+        cues = join_cues(read_cues(vtt), arguments.max_seconds)
         print(f"cue {len(read_cues(vtt))}개 → 이어붙여 {len(cues)}개")
-        found = utterances(cues, everything, [], arguments.source, 0.0)
+        found = utterances(
+            cues, everything, [], arguments.source, 0.0,
+            arguments.min_seconds, arguments.max_seconds,
+        )
     else:
         for spans_path in sorted(reports.glob(f"spans-{arguments.source}-*.json")):
             chunk = spans_path.stem[len("spans-") :]
@@ -305,8 +350,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             if not vtt.exists():
                 print(f"  건너뜀 (문장 VTT 없음): {chunk}", file=sys.stderr)
                 continue
-            mine, others = speaker_spans(spans_path, arguments.speaker)
-            found.extend(utterances(read_cues(vtt), mine, others, arguments.source, offset))
+            speaker = chunk_speaker(reports, chunk, arguments.speaker)
+            if speaker is None:
+                print(f"  건너뜀 (화자 판정 없음): {chunk}", file=sys.stderr)
+                continue
+            mine, others = speaker_spans(spans_path, speaker)
+            found.extend(
+                utterances(
+                    read_cues(vtt), mine, others, arguments.source, offset,
+                    arguments.min_seconds, arguments.max_seconds,
+                )
+            )
 
     if not found:
         print("조건에 맞는 발화가 없습니다.", file=sys.stderr)
