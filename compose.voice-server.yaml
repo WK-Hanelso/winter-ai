@@ -19,6 +19,9 @@ services:
       # no reason to write to it.
       - ${REFERENCE_STORAGE_ROOT:?Set REFERENCE_STORAGE_ROOT}:${REFERENCE_STORAGE_ROOT}:ro
       - ./experiments:/probe:ro
+      # The sentence-splitting rule is shared with the CLI: two copies would
+      # eventually disagree, and the disagreement would be audible.
+      - ./src:/src:ro
     ports:
       # Host loopback only. The voice CLI runs on the Host, and local-first
       # means this answers this machine and nothing else on the network.

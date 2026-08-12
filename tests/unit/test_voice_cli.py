@@ -1,4 +1,6 @@
+import io
 from pathlib import Path
+import wave
 
 import pytest
 
@@ -14,13 +16,28 @@ IDENTITY = (
 )
 
 
+def one_wav(seconds: float = 0.05, rate: int = 22050) -> bytes:
+    """A real, tiny wav.
+
+    Placeholder bytes used to be enough. They are not any more: the CLI joins
+    the pieces of an answer into one file, which means reading their format.
+    """
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(b"\x00" * (int(seconds * rate) * 2))
+    return buffer.getvalue()
+
+
 class RecordingTts:
     def __init__(self) -> None:
         self.requests: list[SpeechRequest] = []
 
     def synthesize(self, request: SpeechRequest) -> AudioOutput:
         self.requests.append(request)
-        return AudioOutput(data=b"RIFFfake", media_type="audio/wav")
+        return AudioOutput(data=one_wav(), media_type="audio/wav")
 
 
 def core() -> CompanionCore:
@@ -48,8 +65,9 @@ def test_speak_writes_a_wav_and_passes_the_planned_prosody(tmp_path: Path) -> No
     )
 
     assert path is not None
-    assert path.read_bytes() == b"RIFFfake"
     assert path.suffix == ".wav"
+    with wave.open(str(path)) as saved:
+        assert saved.getnframes() > 0
     assert tts.requests[0].pace == 1.3
 
 
@@ -120,3 +138,38 @@ def test_a_missing_voice_stops_before_answering(tmp_path: Path) -> None:
         "--flow-checkpoint", str(tmp_path / "absent.pt"),
         "--speaker", str(tmp_path / "absent-speaker.pt"),
     ]) == 1
+
+
+def test_each_sentence_is_synthesized_and_converted_separately(tmp_path: Path) -> None:
+    # The whole point of the pipeline: sentence two is being said while sentence
+    # one is being converted, which is only possible if they are separate calls.
+    class TwoSentenceModel:
+        def generate(self, request):  # type: ignore[no-untyped-def]
+            from companion.contracts import ChatResult
+
+            return ChatResult(text="응, 그랬구나. 근데 괜찮아?")
+
+    tts = RecordingTts()
+    converted: list[bytes] = []
+
+    class RecordingConverter:
+        def convert(self, audio: AudioOutput) -> AudioOutput:
+            converted.append(audio.data)
+            return AudioOutput(data=one_wav(0.03), media_type="audio/wav")
+
+    path = voice_cli.speak(
+        CompanionCore(TwoSentenceModel(), InMemoryConversationRepository()),  # type: ignore[arg-type]
+        tts,  # type: ignore[arg-type]
+        "오늘 발표 망쳤어",
+        output_dir=tmp_path,
+        pace=1.0,
+        should_play=False,
+        converter=RecordingConverter(),  # type: ignore[arg-type]
+    )
+
+    assert [request.text for request in tts.requests] == ["응, 그랬구나.", "근데 괜찮아?"]
+    assert len(converted) == 2
+    assert path is not None
+    with wave.open(str(path)) as saved:
+        # Both pieces plus the pause between them, rather than only the last.
+        assert saved.getnframes() > int(0.03 * 2 * saved.getframerate())

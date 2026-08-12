@@ -33,32 +33,24 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 from pathlib import Path
-import re
 import sys
 import threading
 import time
 import wave
 
 sys.path.append("/opt/cosyvoice")
+sys.path.append("/src")
 sys.path.append("/opt/cosyvoice/third_party/Matcha-TTS")
 sys.path.append(str(Path(__file__).resolve().parent))
 
 from cosyvoice.cli.cosyvoice import CosyVoice3  # noqa: E402
 import torch  # noqa: E402
 
+from companion.speech_segments import PAUSE_SECONDS, split_sentences  # noqa: E402
 from trim_leaked_opening import find_cut, frame_levels  # noqa: E402
 
 MODEL_DIR = "/opt/cosyvoice/pretrained_models/CosyVoice3-0.5B"
 SPEAKER_ID = "winter"
-# Korean sentence endings, kept with the sentence they end.
-SENTENCE_END = re.compile(r"(?<=[.!?。])\s+")
-# Long enough to hear as a boundary, short enough not to sound like hesitation.
-PAUSE_SECONDS = 0.18
-
-
-def split_sentences(text: str) -> list[str]:
-    pieces = [piece.strip() for piece in SENTENCE_END.split(text.strip()) if piece.strip()]
-    return pieces or [text.strip()]
 
 
 class Voice:

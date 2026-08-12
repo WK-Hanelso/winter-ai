@@ -1,0 +1,30 @@
+services:
+  vc:
+    # Stage 2: whatever stage 1 said, in her voice. Separate service and image
+    # from `voice` on purpose — the two stages are judged and replaced
+    # separately, and a better Korean TTS should be swappable without touching
+    # this one.
+    image: winter-ai:seedvc
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    gpus: all
+    working_dir: /opt/seed-vc
+    entrypoint: ["python", "/probe/seedvc_server.py"]
+    command:
+      - --checkpoint
+      - ${VC_CHECKPOINT:?Set VC_CHECKPOINT to the trained seed-vc checkpoint}
+      - --config
+      - ${VC_CONFIG:?Set VC_CONFIG to the checkpoint's config}
+      - --reference
+      - ${VC_REFERENCE:?Set VC_REFERENCE to the Reference audio}
+    volumes:
+      - ${REFERENCE_STORAGE_ROOT:?Set REFERENCE_STORAGE_ROOT}:${REFERENCE_STORAGE_ROOT}:ro
+      - ./experiments:/probe:ro
+    ports:
+      # Host loopback only, like the synthesis server: the voice CLI runs on the
+      # Host, and local-first means this answers this machine and nothing else.
+      - "127.0.0.1:8091:8091"
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"

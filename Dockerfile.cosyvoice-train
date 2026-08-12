@@ -94,6 +94,12 @@ RUN mkdir -p /opt/cuda-stub/bin \
         > /opt/cuda-stub/bin/nvcc \
     && chmod 755 /opt/cuda-stub/bin/nvcc
 
+# The wetext frontend is fetched from ModelScope on first use, and HOME is /tmp,
+# so every fresh container downloaded it again — 292 seconds before the server
+# would answer. Baked into the image and pointed at from a path that survives
+# the container instead.
+ENV MODELSCOPE_CACHE=/opt/modelscope
+
 ENV HOME=/tmp \
     NUMBA_CACHE_DIR=/tmp/numba \
     MPLCONFIGDIR=/tmp/matplotlib \
@@ -109,6 +115,18 @@ RUN cd /opt/cosyvoice && python -c "\
 import torch, bitsandbytes;\
 from cosyvoice.bin.train import main;\
 print('train import OK, torch', torch.__version__)"
+
+# Verified rather than assumed: a download step that quietly does nothing looks
+# exactly like one that worked, and this project has already lost five builds
+# that way.
+# revision='master' on purpose: without it ModelScope resolves the revision
+# first, and that call wants a token this build does not have. It is also the
+# path the runtime takes, so this bakes what would otherwise be downloaded.
+RUN python -c "\
+from modelscope import snapshot_download;\
+print(snapshot_download('pengzhendong/wetext', revision='master'))" \
+    && test -d /opt/modelscope/hub/pengzhendong/wetext \
+    && chmod -R a+rX /opt/modelscope
 
 RUN mkdir -p /tmp/numba /tmp/matplotlib /tmp/triton \
     && chmod -R 777 /tmp/numba /tmp/matplotlib /tmp/triton \

@@ -26,11 +26,14 @@ import argparse
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from functools import partial
+import io
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
+import wave
 
 from companion.adapters.cosyvoice import (
     DEFAULT_SERVER_URL,
@@ -39,11 +42,15 @@ from companion.adapters.cosyvoice import (
 )
 from companion.adapters.fake import AdapterUnavailableError, InMemoryConversationRepository
 from companion.adapters.llama_cpp import LlamaCppHttpChatModel
+from companion.adapters.seedvc import DEFAULT_SERVER_URL as DEFAULT_VC_URL
+from companion.adapters.seedvc import SeedVcVoiceConverter
 from companion.context import ConversationContextBuilder
-from companion.contracts import SpeechRequest
+from companion.contracts import AudioOutput, SpeechRequest
 from companion.core import CompanionCore
 from companion.identity import IdentityRepositoryError, JsonIdentityRepository
+from companion.speech_segments import PAUSE_SECONDS, split_sentences
 from companion.verbal_style import ALLOWED_PROFILES, VerbalStylePlanner, load_verbal_style
+from companion.voice_pipeline import stream
 
 DEFAULT_MODEL_URL = "http://127.0.0.1:8080"
 DEFAULT_OUTPUT = Path("generated_audio") / "voice"
@@ -72,6 +79,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--flow-checkpoint", type=Path)
     parser.add_argument("--speaker", type=Path)
     parser.add_argument("--voice-url", default=DEFAULT_SERVER_URL)
+    parser.add_argument("--vc-url", default=DEFAULT_VC_URL)
+    parser.add_argument(
+        "--no-voice-conversion",
+        action="store_true",
+        help="1단계 목소리 그대로 둡니다. 두 단계를 따로 들어볼 때 씁니다.",
+    )
     parser.add_argument(
         "--own-container",
         action="store_true",
@@ -111,6 +124,43 @@ def play(path: Path) -> None:
     subprocess.run([*command, str(path)], env=environment, check=False)
 
 
+def join_wavs(pieces: Sequence[bytes], path: Path) -> None:
+    """Write the pieces as one file, with her pause between them.
+
+    The saved file is what 천우 keeps and re-listens to, so it has to be one
+    utterance rather than a directory of fragments. The gap is inserted here for
+    the same reason the server inserts it between sentences it says in one go:
+    without it the sentences run together.
+    """
+    if not pieces:
+        raise ValueError("빈 소리는 저장할 수 없습니다")
+    with wave.open(str(path), "wb") as output:
+        for index, piece in enumerate(pieces):
+            with wave.open(io.BytesIO(piece)) as source:
+                if index == 0:
+                    output.setnchannels(source.getnchannels())
+                    output.setsampwidth(source.getsampwidth())
+                    output.setframerate(source.getframerate())
+                    rate = source.getframerate()
+                    width = source.getsampwidth() * source.getnchannels()
+                else:
+                    output.writeframes(b"\x00" * int(PAUSE_SECONDS * rate) * width)
+                output.writeframes(source.readframes(source.getnframes()))
+    path.chmod(0o600)
+
+
+def play_bytes(wav: bytes) -> None:
+    """Play one piece without leaving it on disk."""
+    command = player()
+    if command is None:
+        return
+    environment = dict(os.environ)
+    socket = environment.get("PULSE_SOCKET_PATH")
+    if socket and "PULSE_SERVER" not in environment:
+        environment["PULSE_SERVER"] = f"unix:{socket}"
+    subprocess.run(command, input=wav, env=environment, check=False)
+
+
 def speak(
     core: CompanionCore,
     tts: CosyVoiceServerSpeechModel | CosyVoiceSpeechModel,
@@ -119,26 +169,46 @@ def speak(
     output_dir: Path,
     pace: float,
     should_play: bool,
+    converter: SeedVcVoiceConverter | None = None,
 ) -> Path | None:
-    """One turn: answer, synthesize, write, optionally play."""
+    """One turn: answer, say it, put it in her voice, write, optionally play.
+
+    The conversion is a second step rather than part of synthesis because the
+    two stages answer different questions and get replaced separately.
+    """
     response = core.respond_to_text(text)
     print(f"겨울이> {response.text}")
-    audio = tts.synthesize(
-        SpeechRequest(
-            text=response.text,
-            emotion=response.prosody.emotion,
-            pace=pace,
-            energy=response.prosody.energy,
-            pitch_offset=response.prosody.pitch_offset,
+
+    def say(sentence: str) -> AudioOutput:
+        return tts.synthesize(
+            SpeechRequest(
+                text=sentence,
+                emotion=response.prosody.emotion,
+                pace=pace,
+                energy=response.prosody.energy,
+                pitch_offset=response.prosody.pitch_offset,
+            )
         )
-    )
+
     output_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = output_dir / f"winter-{stamp}.wav"
-    path.write_bytes(audio.data)
+    # Played as each piece arrives rather than at the end: the point of the
+    # pipeline is that the first sound does not wait for the last sentence.
+    pieces: list[bytes] = []
+    started = time.perf_counter()
+    for piece in stream(
+        split_sentences(response.text),
+        say,
+        (lambda audio: audio) if converter is None else converter.convert,
+    ):
+        if not pieces:
+            print(f"  첫 소리까지 {time.perf_counter() - started:.1f}초")
+        pieces.append(piece.data)
+        if should_play:
+            play_bytes(piece.data)
+    join_wavs(pieces, path)
     print(f"  {path}")
-    if should_play:
-        play(path)
     return path
 
 
@@ -189,6 +259,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir=arguments.output_dir,
         pace=arguments.pace,
         should_play=not arguments.no_play,
+        converter=(
+            None
+            if arguments.no_voice_conversion
+            else SeedVcVoiceConverter(base_url=arguments.vc_url)
+        ),
     )
     if arguments.say:
         try:

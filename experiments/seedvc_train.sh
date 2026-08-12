@@ -25,6 +25,36 @@ if [ ! -d "$CLIPS" ]; then
 fi
 mkdir -p "$RUNS"
 
+# Refuse to start behind someone else's memory. A resident voice server left
+# running cost a 20-minute run: training got most of the way in and then died in
+# the DiT feed-forward, which reads as a batch-size problem rather than as
+# another process holding 3.5 GiB.
+FREE_MIB="$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -1)"
+NEEDED_MIB="${SEEDVC_NEEDED_MIB:-5200}"
+if [ "$FREE_MIB" -lt "$NEEDED_MIB" ]; then
+  echo "GPU에 여유가 없습니다: ${FREE_MIB} MiB 남음, ${NEEDED_MIB} MiB 필요" >&2
+  nvidia-smi --query-compute-apps=pid,used_memory,process_name --format=csv >&2
+  exit 1
+fi
+
+# Keep every checkpoint. train.py deletes all but the last two as it goes
+# (train.py:377), so the run that was asked for a save every 250 steps ended up
+# with 1500 and 1750 — and choosing where to stop needs the early ones. Hard
+# links cost nothing and survive the delete: it removes a name, not the data.
+ARCHIVE="$RUNS/archive"
+mkdir -p "$ARCHIVE"
+keep_checkpoints() {
+  while sleep 20; do
+    for found in "$RUNS"/run_*/"${SEEDVC_RUN_NAME:-winter}"/DiT_epoch_*.pth; do
+      [ -e "$found" ] || continue
+      ln -f "$found" "$ARCHIVE/$(basename "$found")" 2>/dev/null || true
+    done
+  done
+}
+keep_checkpoints &
+KEEPER=$!
+trap 'kill "$KEEPER" 2>/dev/null || true' EXIT
+
 # batch-size 2 is what fits the 6 GiB card. num-workers 0 because the dataset is
 # ~10 minutes: a loader process costs more than it saves.
 docker run --rm --name winter-seedvc-train --gpus all \
@@ -47,3 +77,4 @@ if [ ! -f "$FINAL" ]; then
   exit 1
 fi
 echo "checkpoint: $FINAL"
+echo "보관된 중간 체크포인트: $(ls "$ARCHIVE" | wc -l)개 ($ARCHIVE)"
