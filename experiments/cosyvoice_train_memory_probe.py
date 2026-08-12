@@ -51,6 +51,15 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("adam", "adam8bit"),
         default="adam",
     )
+    parser.add_argument(
+        "--trainable-tail",
+        type=float,
+        default=1.0,
+        help=(
+            "뒤쪽 몇 할만 학습 대상으로 둘지. 1.0이면 전부. 앞쪽을 얼리면 "
+            "기울기와 optimizer 상태가 줄고, 그 구간의 활성값도 저장되지 않습니다."
+        ),
+    )
     return parser
 
 
@@ -74,9 +83,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     torch.cuda.reset_peak_memory_stats()
+    # Frozen parameters still live on the GPU — only their gradients and
+    # optimizer state disappear, which is most of the cost.
+    split = int(len(tensors) * (1.0 - arguments.trainable_tail))
+    frozen = [torch.empty_like(tensor, device="cuda") for tensor in tensors[:split]]
     parameters = [
-        torch.nn.Parameter(torch.empty_like(tensor, device="cuda")) for tensor in tensors
+        torch.nn.Parameter(torch.empty_like(tensor, device="cuda")) for tensor in tensors[split:]
     ]
+    trainable = sum(p.numel() for p in parameters)
+    print(
+        f"  얼림 {sum(t.numel() for t in frozen) / 1e6:.1f}M | "
+        f"학습 {trainable / 1e6:.1f}M"
+    )
     report("가중치")
 
     if arguments.optimizer == "adam8bit":
