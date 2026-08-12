@@ -39,6 +39,12 @@ FRAME_SECONDS = 0.02
 MINIMUM_GAP_SECONDS = 0.25
 # A leak lives at the very start. A silence found later is ordinary phrasing.
 MAXIMUM_LEAD_SECONDS = 2.5
+# ...and it is a prefix, not the clip. Once answers were split into sentences,
+# each generation became short enough that 2.5 seconds could be most of it, and
+# the pause inside "그래, 그래." read as the boundary: 1.56 seconds of speech
+# came back as 0.8, with the first word gone. A leak longer than this share of
+# what was generated is not a leak.
+MAXIMUM_LEAD_SHARE = 0.35
 # Frames this far below the clip's speech level count as silence. The gap in a
 # real example sat 60 dB down, so this is not a delicate threshold.
 SILENCE_BELOW_SPEECH_DB = 35.0
@@ -67,7 +73,10 @@ def find_cut(levels: Sequence[float], frame_seconds: float) -> float | None:
     speech = sorted(levels)[int(len(levels) * 0.9)]
     threshold = speech - SILENCE_BELOW_SPEECH_DB
     minimum_frames = max(1, int(MINIMUM_GAP_SECONDS / frame_seconds))
-    limit = int(MAXIMUM_LEAD_SECONDS / frame_seconds)
+    limit = min(
+        int(MAXIMUM_LEAD_SECONDS / frame_seconds),
+        int(len(levels) * MAXIMUM_LEAD_SHARE),
+    )
 
     if levels[0] <= threshold:
         # Opens quiet: nothing was prepended.

@@ -36,11 +36,10 @@ import time
 import wave
 
 from companion.adapters.cosyvoice import (
-    DEFAULT_SERVER_URL,
-    CosyVoiceServerSpeechModel,
     CosyVoiceSpeechModel,
 )
 from companion.adapters.fake import AdapterUnavailableError, InMemoryConversationRepository
+from companion.adapters.http_speech import STAGE_ONE_URLS, HttpSpeechModel
 from companion.adapters.llama_cpp import LlamaCppHttpChatModel
 from companion.adapters.seedvc import DEFAULT_SERVER_URL as DEFAULT_VC_URL
 from companion.adapters.seedvc import SeedVcVoiceConverter
@@ -78,7 +77,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--flow-checkpoint", type=Path)
     parser.add_argument("--speaker", type=Path)
-    parser.add_argument("--voice-url", default=DEFAULT_SERVER_URL)
+    parser.add_argument(
+        "--stage-one",
+        choices=sorted(STAGE_ONE_URLS),
+        default="cosyvoice",
+        help=(
+            "말을 하는 모델. 목소리는 2단계가 정하므로, 여기서는 한국어를 "
+            "또렷하게 읽는지만 봅니다."
+        ),
+    )
+    parser.add_argument("--voice-url", help="1단계 서버 주소. 생략하면 --stage-one의 기본값.")
     parser.add_argument("--vc-url", default=DEFAULT_VC_URL)
     parser.add_argument(
         "--no-voice-conversion",
@@ -163,7 +171,7 @@ def play_bytes(wav: bytes) -> None:
 
 def speak(
     core: CompanionCore,
-    tts: CosyVoiceServerSpeechModel | CosyVoiceSpeechModel,
+    tts: HttpSpeechModel | CosyVoiceSpeechModel,
     text: str,
     *,
     output_dir: Path,
@@ -228,7 +236,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         identity=identity,
         verbal_style_planner=VerbalStylePlanner(load_verbal_style(arguments.style)),
     )
-    tts: CosyVoiceServerSpeechModel | CosyVoiceSpeechModel
+    tts: HttpSpeechModel | CosyVoiceSpeechModel
     if arguments.own_container:
         flow = arguments.flow_checkpoint or arguments.storage_root / DEFAULT_FLOW
         speaker = arguments.speaker or arguments.storage_root / DEFAULT_SPEAKER
@@ -249,7 +257,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             pace=arguments.pace,
         )
     else:
-        tts = CosyVoiceServerSpeechModel(base_url=arguments.voice_url)
+        tts = HttpSpeechModel(
+            base_url=arguments.voice_url or STAGE_ONE_URLS[arguments.stage_one]
+        )
     # Bound once rather than splatted from a dict: a dict of mixed value types
     # erases them, and the type checker stops seeing a wrong argument.
     turn = partial(

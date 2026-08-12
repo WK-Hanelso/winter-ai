@@ -76,12 +76,16 @@ class Voice:
         state = state.get("model", state)
         weights = {name: value for name, value in state.items() if torch.is_tensor(value)}
         current = self._model.model.flow.state_dict()
-        before = {name: tensor.clone() for name, tensor in current.items()}
+        # Copied to host memory, not cloned on the card. The check is worth
+        # keeping — it caught a checkpoint that loaded and changed nothing — but
+        # holding a second copy of the flow in VRAM while the conversion server
+        # is also resident is what pushed the load over the 6 GiB card.
+        before = {name: tensor.detach().to("cpu", copy=True) for name, tensor in current.items()}
         self._model.model.flow.load_state_dict(weights, strict=False)
         after = self._model.model.flow.state_dict()
         changed = sum(
             1 for name, tensor in after.items()
-            if name in before and not torch.equal(before[name], tensor)
+            if name in before and not torch.equal(before[name], tensor.detach().cpu())
         )
         if changed == 0:
             # Loading a checkpoint that changes nothing is the failure that

@@ -1,0 +1,31 @@
+services:
+  tts:
+    # Stage 1: says the words. Not her voice — stage 2 does that, and asking one
+    # model for both is what made the previous stage 1 prepend reference speech
+    # to every answer.
+    image: winter-ai:melotts-probe
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    # No GPU on purpose. It runs on the CPU at usable speed, which leaves the
+    # whole card to the conversion stage.
+    entrypoint: ["python", "/probe/melotts_server.py"]
+    command: ["--speed", "${TTS_SPEED:-1.0}"]
+    environment:
+      # The image bakes its caches under /root, which a --user run cannot even
+      # traverse; every one of them is pointed at the writable mount instead.
+      HOME: /cache
+      HF_HOME: /cache/huggingface
+      NUMBA_CACHE_DIR: /cache/numba
+      MPLCONFIGDIR: /cache/matplotlib
+    volumes:
+      - ./experiments:/probe:ro
+      # A host path rather than a named volume: a named volume is created
+      # root-owned, and this container runs as the caller, so numba could not
+      # create its cache directory and died with "no locator available".
+      - ${MELOTTS_CACHE:-${HOME}/.cache/winter-ai/melotts}:/cache
+    ports:
+      - "127.0.0.1:8092:8092"
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
