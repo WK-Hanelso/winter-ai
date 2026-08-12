@@ -1,0 +1,36 @@
+# Stage 1 candidate: Chatterbox Multilingual V3 (Resemble AI, MIT).
+#
+# Korean is on the README's official language list, which is the only kind of
+# claim this project trusts — two candidates were dropped after blog posts said
+# they supported Korean and their own README did not.
+#
+# It synthesizes without a reference prompt, so nothing of a reference clip can
+# leak into the output. That leak, in the current stage 1, is what every
+# workaround in the voice path has been paying for.
+FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# build-essential because one dependency (pkuseg, a Chinese segmenter pulled in
+# whether or not Chinese is used) ships no wheel and cythonizes at install time.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ffmpeg libsndfile1 build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir chatterbox-tts==0.1.7
+
+# Every cache the stack writes to, pointed at one writable mount. The images in
+# this project bake caches under /root, which a `--user` run cannot traverse,
+# and the failure surfaces as numba's "no locator available" rather than as a
+# permission error.
+ENV HOME=/cache \
+    HF_HOME=/cache/huggingface \
+    NUMBA_CACHE_DIR=/cache/numba \
+    MPLCONFIGDIR=/cache/matplotlib \
+    TORCH_HOME=/cache/torch
+
+RUN python -c "from chatterbox.mtl_tts import ChatterboxMultilingualTTS; print('import OK')"
+
+WORKDIR /opt/chatterbox

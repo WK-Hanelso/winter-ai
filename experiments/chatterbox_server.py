@@ -1,17 +1,16 @@
-"""Keep the Korean voice loaded, and answer synthesis requests over HTTP.
+"""Stage 1 candidate: Chatterbox Multilingual V3, loaded once, over HTTP.
 
-Stage 1 is not supposed to sound like 겨울이. It is supposed to say Korean
-clearly; stage 2 makes it her. Reading that the right way around removes most of
-what made the voice path fragile — the previous stage 1 was asked to do both
-jobs at once, and its zero-shot prompting is what prepended reference speech to
-every answer and forced a trim that eventually ate real words.
+Same contract as the other two stage-1 servers — POST a sentence, receive a wav
+— so choosing a stage 1 stays a matter of choosing a URL.
 
-MeloTTS takes text and returns speech. There is no prompt, so nothing leaks;
-there is nothing to trim; whole answers can be synthesized in one call. It also
-runs on the CPU, which hands the whole 6 GiB card to the conversion stage.
+Korean is on Chatterbox's official language list and it synthesizes without a
+reference prompt. That second part is what makes it worth trying: the prompt is
+where CosyVoice's leaked opening comes from, and the trim that removes the leak
+is what silently ate a sentence today.
 
-One container per request cost 54.8 seconds, nearly all of it loading. Same
-shape as the other two servers: load once, answer over HTTP, one at a time.
+The language is fixed at startup rather than sent per request. A caller that
+could pass a language could change what 겨울이 speaks by accident, and the model
+takes the same text either way.
 """
 
 from __future__ import annotations
@@ -19,39 +18,47 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import io
 import json
-from pathlib import Path
-import tempfile
 import threading
 import time
+import wave
 
-from melo.api import TTS
+from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+import torch
 
-DEFAULT_PORT = 8092
-LANGUAGE = "KR"
+DEFAULT_PORT = 8093
+LANGUAGE = "ko"
 
 
 class Voice:
-    def __init__(self, speed: float) -> None:
+    def __init__(self, device: str) -> None:
         started = time.perf_counter()
-        self._model = TTS(language=LANGUAGE, device="cpu")
-        self._speaker = self._model.hps.data.spk2id[LANGUAGE]
-        self._speed = speed
+        # The released package takes the device and nothing else. The README on
+        # master shows a `t3_model="v3"` argument that 0.1.7 does not have, so
+        # this is whatever multilingual checkpoint the release ships.
+        self._model = ChatterboxMultilingualTTS.from_pretrained(device=device)
         self._lock = threading.Lock()
-        print(f"목소리 준비됨 (cpu, {time.perf_counter() - started:.1f}초)", flush=True)
+        print(f"목소리 준비됨 ({device}, {time.perf_counter() - started:.1f}초)", flush=True)
 
     def speak(self, text: str) -> bytes:
         started = time.perf_counter()
-        with tempfile.TemporaryDirectory(prefix="winter-melo-") as staging:
-            path = Path(staging) / "speech.wav"
-            with self._lock:
-                # Writes through a file because that is the only output this API
-                # offers; the directory is private per request so two callers
-                # cannot collide.
-                self._model.tts_to_file(text, self._speaker, str(path), speed=self._speed)
-            audio = path.read_bytes()
-        print(f"  합성 {time.perf_counter() - started:.1f}초", flush=True)
-        return audio
+        with self._lock:
+            wav = self._model.generate(text, language_id=LANGUAGE)
+        samples = (wav.squeeze(0).clamp(-1, 1) * 32767).to(torch.int16).cpu().numpy()
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(self._model.sr)
+            handle.writeframes(samples.tobytes())
+        seconds = len(samples) / self._model.sr
+        elapsed = time.perf_counter() - started
+        print(
+            f"  {seconds:.1f}초 생성, {elapsed:.1f}초 걸림 (rtf {elapsed / seconds:.2f})",
+            flush=True,
+        )
+        return buffer.getvalue()
 
 
 def make_handler(voice: Voice) -> type[BaseHTTPRequestHandler]:
@@ -98,14 +105,14 @@ def make_handler(voice: Voice) -> type[BaseHTTPRequestHandler]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--speed", type=float, default=1.0)
+    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
-    voice = Voice(arguments.speed)
+    voice = Voice(arguments.device)
     server = ThreadingHTTPServer(("0.0.0.0", arguments.port), make_handler(voice))
     print(f"대기 중: http://0.0.0.0:{arguments.port}/speak", flush=True)
     server.serve_forever()

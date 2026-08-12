@@ -22,21 +22,29 @@ from companion.adapters.fake import AdapterUnavailableError
 from companion.contracts import AudioOutput, SpeechRequest
 
 MEDIA_TYPE = "audio/wav"
-# CosyVoice is stage 1 because it is the one that sounds like a person. MeloTTS
-# is cleaner by every measure that can be counted — no prompt, so nothing of the
-# reference leaks into the output and nothing has to be trimmed back off; on the
-# CPU, so the card is free; no mispronunciations in the transcript check — and
-# 천우 listened to a whole turn of it and said it sounds like a machine. It stays
-# reachable because stage 1 is meant to be swapped, and because the next
-# candidate will be judged against both.
+# Chatterbox is stage 1. 천우 heard it against CosyVoice and said the voice comes
+# out as the Reference where CosyVoice only leans that way — and it needs no
+# reference prompt, so the leaked opening that every workaround in this path was
+# paying for does not happen at all. Its one fault is pace, and stage 2 fixes
+# that.
+#
+# The other two stay reachable. MeloTTS wins every countable measure — nothing
+# leaks, nothing is trimmed, it runs on the CPU, no mispronunciations — and he
+# listened to a full turn and said it sounds like a machine. CosyVoice is the
+# fallback that got us this far.
+CHATTERBOX_URL = "http://127.0.0.1:8093"
 COSYVOICE_URL = "http://127.0.0.1:8090"
 MELOTTS_URL = "http://127.0.0.1:8092"
-STAGE_ONE_URLS = {"cosyvoice": COSYVOICE_URL, "melotts": MELOTTS_URL}
+STAGE_ONE_URLS = {
+    "chatterbox": CHATTERBOX_URL,
+    "cosyvoice": COSYVOICE_URL,
+    "melotts": MELOTTS_URL,
+}
 
 
 @dataclass(frozen=True)
 class HttpSpeechModel:
-    base_url: str = COSYVOICE_URL
+    base_url: str = CHATTERBOX_URL
     timeout_seconds: float = 120.0
 
     def synthesize(self, request: SpeechRequest) -> AudioOutput:

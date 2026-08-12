@@ -80,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--stage-one",
         choices=sorted(STAGE_ONE_URLS),
-        default="cosyvoice",
+        default="chatterbox",
         help=(
             "말을 하는 모델. 목소리는 2단계가 정하므로, 여기서는 한국어를 "
             "또렷하게 읽는지만 봅니다."

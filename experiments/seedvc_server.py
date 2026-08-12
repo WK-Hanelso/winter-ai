@@ -37,13 +37,20 @@ import inference  # noqa: E402
 
 DEFAULT_PORT = 8091
 DIFFUSION_STEPS = 30
-# Upstream's defaults, named here so the server's behaviour is visible without
-# reading argparse in another file.
-LENGTH_ADJUST = 1.0
 INFERENCE_CFG_RATE = 0.7
+# Stage 2 sets the pace, because stage 1 would not. The Reference speaks at 2.80
+# syllables a second, measured over 214 of her own clips; Chatterbox at its
+# defaults speaks at 6.45, which 천우 heard immediately as "목소리는 완전
+# reference인데 속도가 다르다". Upstream documents cfg_weight as the pacing
+# control and it moved the rate by less than a tenth, so the stretch happens
+# here. 1.3 is his choice by ear from a sweep — not the value that matches her
+# average, which is 2.2 and sounds stretched.
+DEFAULT_LENGTH_ADJUST = 1.3
 
 
-def conversion_arguments(checkpoint: Path, config: Path) -> types.SimpleNamespace:
+def conversion_arguments(
+    checkpoint: Path, config: Path, length_adjust: float
+) -> types.SimpleNamespace:
     return types.SimpleNamespace(
         checkpoint=str(checkpoint),
         config=str(config),
@@ -51,7 +58,7 @@ def conversion_arguments(checkpoint: Path, config: Path) -> types.SimpleNamespac
         auto_f0_adjust=False,
         semi_tone_shift=0,
         diffusion_steps=DIFFUSION_STEPS,
-        length_adjust=LENGTH_ADJUST,
+        length_adjust=length_adjust,
         inference_cfg_rate=INFERENCE_CFG_RATE,
         fp16=True,
         source="",
@@ -63,9 +70,11 @@ def conversion_arguments(checkpoint: Path, config: Path) -> types.SimpleNamespac
 class Converter:
     """The model, loaded once, converting one request at a time."""
 
-    def __init__(self, checkpoint: Path, config: Path, reference: Path) -> None:
+    def __init__(
+        self, checkpoint: Path, config: Path, reference: Path, length_adjust: float
+    ) -> None:
         started = time.perf_counter()
-        self._arguments = conversion_arguments(checkpoint, config)
+        self._arguments = conversion_arguments(checkpoint, config, length_adjust)
         loaded = inference.load_models(self._arguments)
         # The one line this server exists for: upstream reloads the models on
         # every call, and this makes the second call reuse the first's.
@@ -138,6 +147,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
+    parser.add_argument("--length-adjust", type=float, default=DEFAULT_LENGTH_ADJUST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     return parser
 
@@ -148,7 +158,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not path.exists():
             print(f"찾지 못했습니다: {path}", file=sys.stderr)
             return 1
-    converter = Converter(arguments.checkpoint, arguments.config, arguments.reference)
+    converter = Converter(
+        arguments.checkpoint, arguments.config, arguments.reference, arguments.length_adjust
+    )
     server = ThreadingHTTPServer(("0.0.0.0", arguments.port), make_handler(converter))
     print(f"대기 중: http://0.0.0.0:{arguments.port}/convert", flush=True)
     server.serve_forever()
