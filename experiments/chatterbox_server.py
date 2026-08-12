@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
+import sys
 import threading
 import time
 import wave
@@ -29,15 +30,35 @@ import torch
 
 DEFAULT_PORT = 8093
 LANGUAGE = "ko"
+# 800M parameters in float32 is 3.2 GiB, and the card is 6. Qwen needs 2.4 of it
+# to answer on the GPU instead of the CPU, which is worth seven seconds a turn —
+# more than anything else in the path. Halving is how that room is found.
+#
+# Split because the two halves fail differently: t3 is a Llama backbone and
+# takes half precision the way any transformer does, while s3gen ends in a
+# vocoder, where fp16 is likelier to show up as noise. Each can be turned off.
+HALF_PRECISION_PARTS = ("t3", "s3gen")
 
 
 class Voice:
-    def __init__(self, device: str) -> None:
+    def __init__(self, device: str, half: Sequence[str] = ()) -> None:
         started = time.perf_counter()
         # The released package takes the device and nothing else. The README on
         # master shows a `t3_model="v3"` argument that 0.1.7 does not have, so
         # this is whatever multilingual checkpoint the release ships.
         self._model = ChatterboxMultilingualTTS.from_pretrained(device=device)
+        for name in half:
+            part = getattr(self._model, name, None)
+            if part is None or not hasattr(part, "half"):
+                raise SystemExit(f"반정밀도로 바꿀 수 없는 부분입니다: {name}")
+            part.half()
+            print(f"  {name}: float16", flush=True)
+        if half and torch.cuda.is_available():
+            # The float32 weights were already on the card when they were
+            # halved, and the caching allocator holds what they freed. Without
+            # this the memory shows as still used and the point of halving —
+            # making room for the language model — is lost.
+            torch.cuda.empty_cache()
         self._lock = threading.Lock()
         print(f"목소리 준비됨 ({device}, {time.perf_counter() - started:.1f}초)", flush=True)
 
@@ -106,13 +127,23 @@ def make_handler(voice: Voice) -> type[BaseHTTPRequestHandler]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument(
+        "--half",
+        default=" ".join(HALF_PRECISION_PARTS),
+        help="반정밀도로 둘 부분을 공백으로 구분. 빈 문자열이면 전부 float32.",
+    )
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
-    voice = Voice(arguments.device)
+    parts = arguments.half.split()
+    unknown = [name for name in parts if name not in HALF_PRECISION_PARTS]
+    if unknown:
+        print(f"모르는 부분입니다: {', '.join(unknown)}", file=sys.stderr)
+        return 1
+    voice = Voice(arguments.device, parts)
     server = ThreadingHTTPServer(("0.0.0.0", arguments.port), make_handler(voice))
     print(f"대기 중: http://0.0.0.0:{arguments.port}/speak", flush=True)
     server.serve_forever()

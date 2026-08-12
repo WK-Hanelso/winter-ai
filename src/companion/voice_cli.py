@@ -23,15 +23,17 @@ being brief never turns into refusing to answer.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime
 from functools import partial
 import io
 import os
 from pathlib import Path
+import queue
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import wave
 
@@ -46,10 +48,13 @@ from companion.adapters.seedvc import SeedVcVoiceConverter
 from companion.context import ConversationContextBuilder
 from companion.contracts import AudioOutput, SpeechRequest
 from companion.core import CompanionCore
+from companion.dialogue_act import classify as classify_dialogue_act
 from companion.identity import IdentityRepositoryError, JsonIdentityRepository
-from companion.speech_segments import PAUSE_SECONDS, split_sentences
+from companion.response import CompanionResponse
+from companion.speech_segments import PAUSE_SECONDS
 from companion.verbal_style import ALLOWED_PROFILES, VerbalStylePlanner, load_verbal_style
 from companion.voice_pipeline import stream
+from companion.voice_profile import ProsodyPlanner
 
 DEFAULT_MODEL_URL = "http://127.0.0.1:8080"
 DEFAULT_OUTPUT = Path("generated_audio") / "voice"
@@ -184,17 +189,48 @@ def speak(
     The conversion is a second step rather than part of synthesis because the
     two stages answer different questions and get replaced separately.
     """
-    response = core.respond_to_text(text)
-    print(f"겨울이> {response.text}")
+    # The answer is streamed into the pipeline: stage 1 starts on the first
+    # sentence while the model is still writing the second, which takes most of
+    # its two-and-a-half to four seconds off the wait before anything is said.
+    sentences: queue.Queue[str | None] = queue.Queue()
+    answer: list[CompanionResponse] = []
+    # A failure on the thinking thread would otherwise show up here as an answer
+    # with no sentences in it, and the caller would be told the audio was empty
+    # rather than that the model could not be reached.
+    failure: list[BaseException] = []
+
+    def think() -> None:
+        try:
+            answer.append(core.respond_to_text_streaming(text, sentences.put))
+        except BaseException as error:  # noqa: BLE001 - re-raised on the caller
+            failure.append(error)
+        finally:
+            sentences.put(None)
+
+    thinking = threading.Thread(target=think, daemon=True)
+    thinking.start()
+
+    def written() -> Iterator[str]:
+        while True:
+            sentence = sentences.get()
+            if sentence is None:
+                return
+            print(f"겨울이> {sentence}")
+            yield sentence
+
+    # Planned before the answer exists, because synthesis of the first sentence
+    # starts before the last one is written. The plan depends on the kind of
+    # turn, which is decided from what 천우 said, not from the reply.
+    prosody = ProsodyPlanner().plan(classify_dialogue_act(text))
 
     def say(sentence: str) -> AudioOutput:
         return tts.synthesize(
             SpeechRequest(
                 text=sentence,
-                emotion=response.prosody.emotion,
+                emotion=prosody.emotion,
                 pace=pace,
-                energy=response.prosody.energy,
-                pitch_offset=response.prosody.pitch_offset,
+                energy=prosody.energy,
+                pitch_offset=prosody.pitch_offset,
             )
         )
 
@@ -206,7 +242,7 @@ def speak(
     pieces: list[bytes] = []
     started = time.perf_counter()
     for piece in stream(
-        split_sentences(response.text),
+        written(),
         say,
         (lambda audio: audio) if converter is None else converter.convert,
     ):
@@ -215,6 +251,9 @@ def speak(
         pieces.append(piece.data)
         if should_play:
             play_bytes(piece.data)
+    thinking.join()
+    if failure:
+        raise failure[0]
     join_wavs(pieces, path)
     print(f"  {path}")
     return path

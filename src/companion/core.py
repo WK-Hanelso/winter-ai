@@ -1,3 +1,6 @@
+from collections.abc import Callable
+from dataclasses import dataclass
+
 from companion.context import ConversationContextBuilder
 from companion.contracts import ChatRequest, ConversationMessage
 from companion.dialogue_act import classify as classify_dialogue_act
@@ -5,11 +8,27 @@ from companion.grounding import GroundingPolicy
 from companion.identity import CompanionIdentity
 from companion.memory import ActiveMemoryRetriever, extract_explicit_memory_content, memory_context
 from companion.ports import ChatModel, ConversationRepository, MemoryCandidateRepository
-from companion.response import CompanionResponse
+from companion.response import CompanionResponse, VerbalStylePlan
+from companion.speech_segments import split_sentences
 from companion.verbal_style import VerbalStylePlanner
 from companion.voice_profile import ProsodyPlanner
 
 _MEMORY_CANDIDATE_NOTICE = "기억 후보로 저장했어. 검토 후 활성화할 수 있어."
+
+
+@dataclass(frozen=True)
+class _Turn:
+    """Everything decided before the model is asked, kept for after it answers.
+
+    Streaming split one method into two, and these are what the second half
+    needs: deciding them twice would let a turn be planned one way and reported
+    another.
+    """
+
+    request: ChatRequest
+    dialogue_act: str
+    candidate_ids: tuple[str, ...]
+    style: VerbalStylePlan
 
 
 class CompanionCore:
@@ -38,6 +57,48 @@ class CompanionCore:
         self._grounding_policy = grounding_policy or GroundingPolicy()
 
     def respond_to_text(self, text: str) -> CompanionResponse:
+        turn = self._prepare(text)
+        result = self._chat_model.generate(turn.request)
+        return self._finish(turn, result.text)
+
+    def respond_to_text_streaming(
+        self, text: str, on_sentence: Callable[[str], None]
+    ) -> CompanionResponse:
+        """Answer, handing each finished sentence over as it is written.
+
+        The voice path cannot start on a sentence that does not exist yet, and
+        waiting for the whole answer costs two and a half to four seconds before
+        anything is said. ``on_sentence`` is called with each completed
+        sentence; the response returned at the end is the same one the
+        non-streaming path returns.
+
+        A model without a streaming path is not an error — it answers all at
+        once and every sentence is handed over then.
+        """
+        turn = self._prepare(text)
+        stream = getattr(self._chat_model, "generate_stream", None)
+        if stream is None:
+            answer = self._chat_model.generate(turn.request).text
+            for sentence in split_sentences(answer):
+                on_sentence(sentence)
+            return self._finish(turn, answer)
+        written: list[str] = []
+        handed = 0
+        for piece in stream(turn.request):
+            written.append(piece)
+            # Only sentences that are certainly finished are handed over: the
+            # last piece of a partial answer usually is not one, and saying half
+            # a sentence cannot be taken back.
+            sentences = split_sentences("".join(written))
+            while len(sentences) - 1 > handed:
+                on_sentence(sentences[handed])
+                handed += 1
+        answer = "".join(written)
+        for sentence in split_sentences(answer)[handed:]:
+            on_sentence(sentence)
+        return self._finish(turn, answer)
+
+    def _prepare(self, text: str) -> _Turn:
         self._conversation_repository.append(ConversationMessage(role="user", content=text))
         candidate_ids: tuple[str, ...] = ()
         candidate_content = extract_explicit_memory_content(text)
@@ -80,17 +141,24 @@ class CompanionCore:
         if grounding_instruction is not None:
             system_messages.append(ConversationMessage("system", grounding_instruction))
         messages = tuple(system_messages) + messages
-        result = self._chat_model.generate(ChatRequest(prompt=text, messages=messages))
-        response_text = result.text
-        if candidate_ids:
+        return _Turn(
+            request=ChatRequest(prompt=text, messages=messages),
+            dialogue_act=dialogue_act,
+            candidate_ids=candidate_ids,
+            style=turn_style.plan,
+        )
+
+    def _finish(self, turn: _Turn, answer: str) -> CompanionResponse:
+        response_text = answer
+        if turn.candidate_ids:
             response_text = f"{response_text}\n{_MEMORY_CANDIDATE_NOTICE}"
         self._conversation_repository.append(
             ConversationMessage(role="assistant", content=response_text)
         )
         return CompanionResponse(
             text=response_text,
-            dialogue_act=dialogue_act,
-            prosody=self._prosody_planner.plan(dialogue_act),
-            memory_candidate_ids=candidate_ids,
-            verbal_style=turn_style.plan,
+            dialogue_act=turn.dialogue_act,
+            prosody=self._prosody_planner.plan(turn.dialogue_act),
+            memory_candidate_ids=turn.candidate_ids,
+            verbal_style=turn.style,
         )

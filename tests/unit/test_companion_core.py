@@ -210,3 +210,31 @@ def test_asking_for_an_explanation_widens_the_length_the_model_is_given() -> Non
     ]
     assert any("2문장 이내" in text for text in instructions)
     assert any("4문장 이내" in text for text in instructions)
+
+
+def test_streaming_hands_over_each_sentence_as_it_is_written() -> None:
+    # The point of streaming: stage 1 starts on the first sentence while the
+    # model is still writing the second.
+    class StreamingChatModel:
+        def generate(self, request: ChatRequest) -> ChatResult:
+            raise AssertionError("streaming path should not fall back")
+
+        def generate_stream(self, request: ChatRequest):  # type: ignore[no-untyped-def]
+            yield from ("응, ", "그랬구나. ", "근데 ", "괜찮아?")
+
+    handed: list[str] = []
+    core = CompanionCore(StreamingChatModel(), InMemoryConversationRepository())  # type: ignore[arg-type]
+
+    response = core.respond_to_text_streaming("발표 망쳤어", handed.append)
+
+    assert handed == ["응, 그랬구나.", "근데 괜찮아?"]
+    assert response.text == "응, 그랬구나. 근데 괜찮아?"
+
+
+def test_streaming_falls_back_when_the_model_cannot_stream() -> None:
+    handed: list[str] = []
+    core = CompanionCore(FakeChatModel(), InMemoryConversationRepository())
+
+    response = core.respond_to_text_streaming("안녕", handed.append)
+
+    assert handed == [response.text]

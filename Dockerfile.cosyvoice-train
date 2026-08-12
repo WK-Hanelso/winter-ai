@@ -96,8 +96,9 @@ RUN mkdir -p /opt/cuda-stub/bin \
 
 # The wetext frontend is fetched from ModelScope on first use, and HOME is /tmp,
 # so every fresh container downloaded it again — 292 seconds before the server
-# would answer. Baked into the image and pointed at from a path that survives
-# the container instead.
+# would answer. It is baked in here, and the compose file also keeps a volume on
+# this path: ModelScope answered 403 partway through one build, so if a rebuild
+# ever loses the download the volume still holds it.
 ENV MODELSCOPE_CACHE=/opt/modelscope
 
 ENV HOME=/tmp \

@@ -28,7 +28,7 @@ watching, where they would appear as a queue that simply stops.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator
 import queue
 import threading
 from typing import TypeVar
@@ -73,7 +73,7 @@ def _drain(source: queue.Queue[object], _kind: type[Mid]) -> Iterator[Mid]:
 
 
 def stream(
-    sentences: Sequence[str],
+    sentences: Iterable[str],
     synthesize: Callable[[str], Mid],
     convert: Callable[[Mid], Out],
 ) -> Iterator[Out]:
@@ -85,9 +85,9 @@ def stream(
     spoken: queue.Queue[object] = queue.Queue(maxsize=QUEUE_DEPTH)
     converted: queue.Queue[object] = queue.Queue(maxsize=QUEUE_DEPTH)
 
-    speaking = threading.Thread(
-        target=_pump, args=(list(sentences), synthesize, spoken), daemon=True
-    )
+    # Not materialised: the sentences arrive as the model writes them, and
+    # taking a list here would wait for the last one before saying the first.
+    speaking = threading.Thread(target=_pump, args=(sentences, synthesize, spoken), daemon=True)
     converting = threading.Thread(
         target=_pump, args=(_drain(spoken, object), convert, converted), daemon=True
     )

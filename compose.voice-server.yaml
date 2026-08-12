@@ -22,6 +22,10 @@ services:
       # The sentence-splitting rule is shared with the CLI: two copies would
       # eventually disagree, and the disagreement would be audible.
       - ./src:/src:ro
+      # Fetched once and kept. Without this the wetext frontend is downloaded
+      # from ModelScope on every fresh container: 292 seconds of a server that
+      # is up and not answering.
+      - modelscope-cache:/opt/modelscope
     ports:
       # Host loopback only. The voice CLI runs on the Host, and local-first
       # means this answers this machine and nothing else on the network.
@@ -31,3 +35,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  modelscope-cache:

@@ -4,6 +4,15 @@ services:
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     gpus: all
     entrypoint: ["python", "/probe/chatterbox_server.py"]
+    # Float32, because the released package does not run in half precision:
+    # halving either part gives "mat1 and mat2 must have the same dtype" on the
+    # first request, since its own inputs stay float32. Kept as a switch because
+    # the 1.6 GiB it would free is the room the language model needs to answer
+    # on the GPU, and a future release may cast its inputs.
+    #
+    # `-` rather than `:-` on purpose: an explicitly empty value has to mean
+    # float32 rather than fall back to the default.
+    command: ["--half", "${CHATTERBOX_HALF-}"]
     volumes:
       - ./experiments:/probe:ro
       # A host path rather than a named volume: named volumes are created
