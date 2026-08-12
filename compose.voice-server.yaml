@@ -1,0 +1,30 @@
+services:
+  voice:
+    # The CUDA image, because synthesis on a CPU runs several times slower than
+    # real time and on this GPU it runs at about 1.1x.
+    image: winter-ai:cosyvoice-train
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    gpus: all
+    working_dir: /opt/cosyvoice
+    entrypoint: ["python", "/probe/cosyvoice_server.py"]
+    command:
+      - --flow-checkpoint
+      - ${VOICE_FLOW_CHECKPOINT:?Set VOICE_FLOW_CHECKPOINT to the trained flow checkpoint}
+      - --speaker
+      - ${VOICE_SPEAKER:?Set VOICE_SPEAKER to the saved speaker profile}
+      - --speed
+      - "${VOICE_SPEED:-1.12}"
+    volumes:
+      # Read-only: the voice is Reference-derived material and this service has
+      # no reason to write to it.
+      - ${REFERENCE_STORAGE_ROOT:?Set REFERENCE_STORAGE_ROOT}:${REFERENCE_STORAGE_ROOT}:ro
+      - ./experiments:/probe:ro
+    ports:
+      # Host loopback only. The voice CLI runs on the Host, and local-first
+      # means this answers this machine and nothing else on the network.
+      - "127.0.0.1:8090:8090"
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"

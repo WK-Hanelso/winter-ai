@@ -28,7 +28,11 @@ import shutil
 import subprocess
 import sys
 
-from companion.adapters.cosyvoice import CosyVoiceSpeechModel
+from companion.adapters.cosyvoice import (
+    DEFAULT_SERVER_URL,
+    CosyVoiceServerSpeechModel,
+    CosyVoiceSpeechModel,
+)
 from companion.adapters.fake import AdapterUnavailableError, InMemoryConversationRepository
 from companion.adapters.llama_cpp import LlamaCppHttpChatModel
 from companion.context import ConversationContextBuilder
@@ -63,6 +67,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--flow-checkpoint", type=Path)
     parser.add_argument("--speaker", type=Path)
+    parser.add_argument("--voice-url", default=DEFAULT_SERVER_URL)
+    parser.add_argument(
+        "--own-container",
+        action="store_true",
+        help=(
+            "목소리 서버 대신 발화마다 컨테이너를 띄웁니다. 서버가 없어도 되지만 "
+            "한 문장에 50초쯤 걸립니다."
+        ),
+    )
     parser.add_argument("--pace", type=float, default=1.12)
     parser.add_argument("--say", help="한 문장만 말하게 하고 끝냅니다.")
     parser.add_argument(
@@ -96,7 +109,7 @@ def play(path: Path) -> None:
 
 def speak(
     core: CompanionCore,
-    tts: CosyVoiceSpeechModel,
+    tts: CosyVoiceServerSpeechModel | CosyVoiceSpeechModel,
     text: str,
     *,
     output_dir: Path,
@@ -141,24 +154,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         identity=identity,
         verbal_style_planner=VerbalStylePlanner(load_verbal_style(arguments.style)),
     )
-    flow = arguments.flow_checkpoint or arguments.storage_root / DEFAULT_FLOW
-    speaker = arguments.speaker or arguments.storage_root / DEFAULT_SPEAKER
-    if not flow.exists() or not speaker.exists():
-        # Named rather than left to fail inside a container: without these the
-        # voice is not 겨울이's, and that is worth stopping for.
-        print(
-            "겨울이 목소리를 찾지 못했습니다. REFERENCE_STORAGE_ROOT를 확인하세요.\n"
-            f"  flow: {flow}\n  화자: {speaker}",
-            file=sys.stderr,
+    tts: CosyVoiceServerSpeechModel | CosyVoiceSpeechModel
+    if arguments.own_container:
+        flow = arguments.flow_checkpoint or arguments.storage_root / DEFAULT_FLOW
+        speaker = arguments.speaker or arguments.storage_root / DEFAULT_SPEAKER
+        if not flow.exists() or not speaker.exists():
+            # Named rather than left to fail inside a container: without these
+            # the voice is not 겨울이's, and that is worth stopping for.
+            print(
+                "겨울이 목소리를 찾지 못했습니다. REFERENCE_STORAGE_ROOT를 확인하세요.\n"
+                f"  flow: {flow}\n  화자: {speaker}",
+                file=sys.stderr,
+            )
+            return 1
+        tts = CosyVoiceSpeechModel(
+            flow_checkpoint=flow,
+            speaker=speaker,
+            runner_dir=Path(__file__).resolve().parents[2] / "experiments",
+            user=f"{os.getuid()}:{os.getgid()}",
+            pace=arguments.pace,
         )
-        return 1
-    tts = CosyVoiceSpeechModel(
-        flow_checkpoint=flow,
-        speaker=speaker,
-        runner_dir=Path(__file__).resolve().parents[2] / "experiments",
-        user=f"{os.getuid()}:{os.getgid()}",
-        pace=arguments.pace,
-    )
+    else:
+        tts = CosyVoiceServerSpeechModel(base_url=arguments.voice_url)
     # Bound once rather than splatted from a dict: a dict of mixed value types
     # erases them, and the type checker stops seeing a wrong argument.
     turn = partial(
