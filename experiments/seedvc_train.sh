@@ -37,7 +37,7 @@ docker run --rm --name winter-seedvc-train --gpus all \
   --pretrained-ckpt "$CHECKPOINTS/DiT_seed_v2_uvit_whisper_small_wavenet_bigvgan_pruned.pth" \
   --dataset-dir /data --run-name "${SEEDVC_RUN_NAME:-winter}" \
   --batch-size 2 --max-steps "${SEEDVC_MAX_STEPS:-1000}" --max-epochs 1000 \
-  --save-every 500 --num-workers 0
+  --save-every "${SEEDVC_SAVE_EVERY:-500}" --num-workers 0
 
 # Verifying rather than trusting the log line: the failure this script exists to
 # prevent printed a success message and produced no file.
