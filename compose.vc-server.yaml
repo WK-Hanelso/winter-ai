@@ -19,6 +19,8 @@ services:
       # Her pace, chosen by ear. See the server for why it is set here.
       - --length-adjust
       - "${VC_LENGTH_ADJUST:-1.3}"
+      - --diffusion-steps
+      - "${VC_DIFFUSION_STEPS:-30}"
     volumes:
       - ${REFERENCE_STORAGE_ROOT:?Set REFERENCE_STORAGE_ROOT}:${REFERENCE_STORAGE_ROOT}:ro
       - ./experiments:/probe:ro

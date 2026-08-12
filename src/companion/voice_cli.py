@@ -211,12 +211,29 @@ def speak(
     thinking.start()
 
     def written() -> Iterator[str]:
+        """The first sentence alone, then the rest of the answer together.
+
+        Stage 1 reads better with more text in front of it — sentence by
+        sentence, "보며 지내는" came back from the transcript check as "보냬
+        지내는" — but waiting for the whole answer is the delay streaming exists
+        to remove. The first sentence is what 천우 waits on, so it goes alone
+        and everything after it keeps its context.
+        """
+        rest: list[str] = []
+        first = True
         while True:
             sentence = sentences.get()
+            if sentence is not None:
+                print(f"겨울이> {sentence}")
             if sentence is None:
+                if rest:
+                    yield " ".join(rest)
                 return
-            print(f"겨울이> {sentence}")
-            yield sentence
+            if first:
+                first = False
+                yield sentence
+            else:
+                rest.append(sentence)
 
     # Planned before the answer exists, because synthesis of the first sentence
     # starts before the last one is written. The plan depends on the kind of

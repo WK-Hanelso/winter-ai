@@ -38,10 +38,22 @@ LANGUAGE = "ko"
 # takes half precision the way any transformer does, while s3gen ends in a
 # vocoder, where fp16 is likelier to show up as noise. Each can be turned off.
 HALF_PRECISION_PARTS = ("t3", "s3gen")
+# What 천우 chose by ear lives here rather than in the request, and these are the
+# values the sample he approved was made with. The server had been running
+# upstream's defaults (0.5) while the sample came from 0.3, which is a way of
+# shipping something other than what was signed off.
+DEFAULT_CFG_WEIGHT = 0.3
+DEFAULT_EXAGGERATION = 0.5
 
 
 class Voice:
-    def __init__(self, device: str, half: Sequence[str] = ()) -> None:
+    def __init__(
+        self,
+        device: str,
+        half: Sequence[str] = (),
+        cfg_weight: float = DEFAULT_CFG_WEIGHT,
+        exaggeration: float = DEFAULT_EXAGGERATION,
+    ) -> None:
         started = time.perf_counter()
         # The released package takes the device and nothing else. The README on
         # master shows a `t3_model="v3"` argument that 0.1.7 does not have, so
@@ -59,13 +71,24 @@ class Voice:
             # this the memory shows as still used and the point of halving —
             # making room for the language model — is lost.
             torch.cuda.empty_cache()
+        self._cfg_weight = cfg_weight
+        self._exaggeration = exaggeration
         self._lock = threading.Lock()
-        print(f"목소리 준비됨 ({device}, {time.perf_counter() - started:.1f}초)", flush=True)
+        print(
+            f"목소리 준비됨 ({device}, {time.perf_counter() - started:.1f}초, "
+            f"cfg {cfg_weight:g}, exaggeration {exaggeration:g})",
+            flush=True,
+        )
 
     def speak(self, text: str) -> bytes:
         started = time.perf_counter()
         with self._lock:
-            wav = self._model.generate(text, language_id=LANGUAGE)
+            wav = self._model.generate(
+                text,
+                language_id=LANGUAGE,
+                cfg_weight=self._cfg_weight,
+                exaggeration=self._exaggeration,
+            )
         samples = (wav.squeeze(0).clamp(-1, 1) * 32767).to(torch.int16).cpu().numpy()
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as handle:
@@ -132,6 +155,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=" ".join(HALF_PRECISION_PARTS),
         help="반정밀도로 둘 부분을 공백으로 구분. 빈 문자열이면 전부 float32.",
     )
+    parser.add_argument("--cfg-weight", type=float, default=DEFAULT_CFG_WEIGHT)
+    parser.add_argument("--exaggeration", type=float, default=DEFAULT_EXAGGERATION)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     return parser
 
@@ -143,7 +168,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if unknown:
         print(f"모르는 부분입니다: {', '.join(unknown)}", file=sys.stderr)
         return 1
-    voice = Voice(arguments.device, parts)
+    voice = Voice(arguments.device, parts, arguments.cfg_weight, arguments.exaggeration)
     server = ThreadingHTTPServer(("0.0.0.0", arguments.port), make_handler(voice))
     print(f"대기 중: http://0.0.0.0:{arguments.port}/speak", flush=True)
     server.serve_forever()
