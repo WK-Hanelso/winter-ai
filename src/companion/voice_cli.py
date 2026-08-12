@@ -28,9 +28,9 @@ import shutil
 import subprocess
 import sys
 
+from companion.adapters.cosyvoice import CosyVoiceSpeechModel
 from companion.adapters.fake import AdapterUnavailableError, InMemoryConversationRepository
 from companion.adapters.llama_cpp import LlamaCppHttpChatModel
-from companion.adapters.melotts import MeloTtsSpeechModel
 from companion.context import ConversationContextBuilder
 from companion.contracts import SpeechRequest
 from companion.core import CompanionCore
@@ -38,8 +38,11 @@ from companion.identity import IdentityRepositoryError, JsonIdentityRepository
 from companion.verbal_style import ALLOWED_PROFILES, VerbalStylePlanner, load_verbal_style
 
 DEFAULT_MODEL_URL = "http://127.0.0.1:8080"
-DEFAULT_CACHE = Path.home() / ".cache" / "melotts-winter"
 DEFAULT_OUTPUT = Path("generated_audio") / "voice"
+# The voice lives in private storage, not in the repository. Both paths come
+# from .env because they are Host paths to Reference-derived material.
+DEFAULT_FLOW = "derived/training/source-004/exp/flow/epoch_29_whole.pt"
+DEFAULT_SPEAKER = "artifacts/voice/winter-speaker.pt"
 # Host path: this CLI runs outside the dev container, so the container's
 # /workspace/data does not exist here.
 DEFAULT_IDENTITY = Path("data") / "identity.json"
@@ -49,11 +52,18 @@ PROMPT = "천우> "
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="겨울이와 목소리로 대화합니다.")
     parser.add_argument("--model-url", default=DEFAULT_MODEL_URL)
-    parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--identity-path", type=Path, default=DEFAULT_IDENTITY)
     parser.add_argument("--style", choices=ALLOWED_PROFILES, default="base")
-    parser.add_argument("--pace", type=float, default=1.0)
+    parser.add_argument(
+        "--storage-root",
+        type=Path,
+        default=Path(os.environ.get("REFERENCE_STORAGE_ROOT", "")),
+        help="Reference 자료가 있는 외장 storage. 목소리와 화자 정보가 여기에 있습니다.",
+    )
+    parser.add_argument("--flow-checkpoint", type=Path)
+    parser.add_argument("--speaker", type=Path)
+    parser.add_argument("--pace", type=float, default=1.12)
     parser.add_argument("--say", help="한 문장만 말하게 하고 끝냅니다.")
     parser.add_argument(
         "--no-play",
@@ -86,7 +96,7 @@ def play(path: Path) -> None:
 
 def speak(
     core: CompanionCore,
-    tts: MeloTtsSpeechModel,
+    tts: CosyVoiceSpeechModel,
     text: str,
     *,
     output_dir: Path,
@@ -131,9 +141,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         identity=identity,
         verbal_style_planner=VerbalStylePlanner(load_verbal_style(arguments.style)),
     )
-    tts = MeloTtsSpeechModel(
-        cache_dir=arguments.cache_dir,
+    flow = arguments.flow_checkpoint or arguments.storage_root / DEFAULT_FLOW
+    speaker = arguments.speaker or arguments.storage_root / DEFAULT_SPEAKER
+    if not flow.exists() or not speaker.exists():
+        # Named rather than left to fail inside a container: without these the
+        # voice is not 겨울이's, and that is worth stopping for.
+        print(
+            "겨울이 목소리를 찾지 못했습니다. REFERENCE_STORAGE_ROOT를 확인하세요.\n"
+            f"  flow: {flow}\n  화자: {speaker}",
+            file=sys.stderr,
+        )
+        return 1
+    tts = CosyVoiceSpeechModel(
+        flow_checkpoint=flow,
+        speaker=speaker,
+        runner_dir=Path(__file__).resolve().parents[2] / "experiments",
         user=f"{os.getuid()}:{os.getgid()}",
+        pace=arguments.pace,
     )
     # Bound once rather than splatted from a dict: a dict of mixed value types
     # erases them, and the type checker stops seeing a wrong argument.

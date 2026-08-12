@@ -81,9 +81,14 @@ def average_embedding(model: CosyVoice3, clips: Sequence[Path]) -> torch.Tensor:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--flow-checkpoint", type=Path, required=True)
-    parser.add_argument("--clips", type=Path, required=True)
-    parser.add_argument("--prompt-audio", type=Path, required=True)
-    parser.add_argument("--prompt-text", required=True)
+    parser.add_argument("--clips", type=Path)
+    parser.add_argument("--prompt-audio", type=Path)
+    parser.add_argument("--prompt-text")
+    # Building the speaker means embedding every clip, which takes about a
+    # minute. Saved once and loaded thereafter, since it does not change
+    # between utterances.
+    parser.add_argument("--save-speaker", type=Path, help="만든 화자 정보를 저장합니다.")
+    parser.add_argument("--load-speaker", type=Path, help="저장된 화자 정보를 씁니다.")
     parser.add_argument("--sentences-file", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--output-prefix", default="trained")
@@ -121,21 +126,36 @@ def main(argv: Sequence[str] | None = None) -> int:
     model = CosyVoice3(MODEL_DIR, load_trt=False, load_vllm=False, fp16=False)
     load_trained_flow(model, arguments.flow_checkpoint)
 
-    clips = sorted(arguments.clips.glob("*.wav"))
-    if not clips:
-        print(f"클립이 없습니다: {arguments.clips}", file=sys.stderr)
-        return 1
-    averaged = average_embedding(model, clips)
+    if arguments.load_speaker is not None:
+        entry = torch.load(str(arguments.load_speaker), map_location="cpu")
+        model.frontend.spk2info[arguments.speaker_id] = entry
+        averaged = entry["llm_embedding"]
+        print(f"화자 정보를 불러왔습니다: {arguments.load_speaker.name}")
+    else:
+        if arguments.clips is None or arguments.prompt_audio is None or not arguments.prompt_text:
+            print("--load-speaker 가 없으면 --clips/--prompt-audio/--prompt-text 가 필요합니다.",
+                  file=sys.stderr)
+            return 1
+        clips = sorted(arguments.clips.glob("*.wav"))
+        if not clips:
+            print(f"클립이 없습니다: {arguments.clips}", file=sys.stderr)
+            return 1
+        averaged = average_embedding(model, clips)
 
-    import tempfile
+        import tempfile
 
-    staging = tempfile.mkdtemp(prefix="winter-prompt-")
-    prompt = prepare_prompt(arguments.prompt_audio, Path(staging) / "prompt16k.wav")
-    prompt_text = f"{arguments.instruction}{END_OF_PROMPT}{arguments.prompt_text}"
-    model.add_zero_shot_spk(prompt_text, str(prompt), arguments.speaker_id)
-    entry = model.frontend.spk2info[arguments.speaker_id]
-    for key in ("llm_embedding", "flow_embedding"):
-        entry[key] = averaged.to(entry[key].device).to(entry[key].dtype)
+        staging = tempfile.mkdtemp(prefix="winter-prompt-")
+        prompt = prepare_prompt(arguments.prompt_audio, Path(staging) / "prompt16k.wav")
+        prompt_text = f"{arguments.instruction}{END_OF_PROMPT}{arguments.prompt_text}"
+        model.add_zero_shot_spk(prompt_text, str(prompt), arguments.speaker_id)
+        entry = model.frontend.spk2info[arguments.speaker_id]
+        for key in ("llm_embedding", "flow_embedding"):
+            entry[key] = averaged.to(entry[key].device).to(entry[key].dtype)
+        if arguments.save_speaker is not None:
+            arguments.save_speaker.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(entry, str(arguments.save_speaker))
+            arguments.save_speaker.chmod(0o600)
+            print(f"화자 정보를 저장했습니다: {arguments.save_speaker}")
 
     sentences = [
         line.strip()

@@ -83,6 +83,15 @@ def test_player_reports_absence_rather_than_guessing(monkeypatch: pytest.MonkeyP
     assert voice_cli.player() is None
 
 
+def voice_arguments(tmp_path: Path) -> list[str]:
+    """The voice files live in private storage, so tests point at stand-ins."""
+    flow = tmp_path / "flow.pt"
+    speaker = tmp_path / "speaker.pt"
+    flow.write_bytes(b"")
+    speaker.write_bytes(b"")
+    return ["--flow-checkpoint", str(flow), "--speaker", str(speaker)]
+
+
 def test_identity_is_loaded_into_the_core(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     identity_path = tmp_path / "identity.json"
     identity_path.write_text(IDENTITY)
@@ -92,7 +101,22 @@ def test_identity_is_loaded_into_the_core(tmp_path: Path, monkeypatch: pytest.Mo
         captured.update(core=core, text=text, **keywords)
 
     monkeypatch.setattr(voice_cli, "speak", capture)
-    monkeypatch.setattr(voice_cli, "MeloTtsSpeechModel", lambda **keywords: RecordingTts())
+    monkeypatch.setattr(voice_cli, "CosyVoiceSpeechModel", lambda **keywords: RecordingTts())
 
-    assert voice_cli.main(["--identity-path", str(identity_path), "--say", "안녕"]) == 0
+    arguments = ["--identity-path", str(identity_path), "--say", "안녕", *voice_arguments(tmp_path)]
+    assert voice_cli.main(arguments) == 0
     assert "겨울이" in captured["core"]._identity.system_message()  # type: ignore[union-attr]
+
+
+def test_a_missing_voice_stops_before_answering(tmp_path: Path) -> None:
+    # Without these the voice is not 겨울이's. Better to say so than to speak
+    # in someone else's.
+    identity_path = tmp_path / "identity.json"
+    identity_path.write_text(IDENTITY)
+
+    assert voice_cli.main([
+        "--identity-path", str(identity_path),
+        "--say", "안녕",
+        "--flow-checkpoint", str(tmp_path / "absent.pt"),
+        "--speaker", str(tmp_path / "absent-speaker.pt"),
+    ]) == 1
