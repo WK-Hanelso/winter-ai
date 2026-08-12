@@ -203,3 +203,39 @@ def test_a_fixed_register_profile_never_varies() -> None:
     planner = VerbalStylePlanner(_profile(polite_ratio=None), rng=random.Random(3))
 
     assert {planner.plan_turn("answer").plan.register for _ in range(50)} == {"plain"}
+
+
+def test_an_act_may_widen_the_length_cap() -> None:
+    # Being asked to explain something and answering in two short sentences is
+    # a refusal wearing a style, so length belongs to the kind of turn.
+    planner = VerbalStylePlanner(
+        _profile(
+            acts={
+                "default": {
+                    "tone": "neutral",
+                    "directness": 0.7,
+                    "sentence_length": "short",
+                    "instruction": None,
+                },
+                "explain": {
+                    "tone": "neutral",
+                    "directness": 0.75,
+                    "sentence_length": "normal",
+                    "max_sentences": 4,
+                    "max_words_per_sentence": 16,
+                    "instruction": None,
+                },
+            }
+        )
+    )
+
+    assert "2문장 이내" in str(planner.instruction("answer"))
+    explain = str(planner.instruction("explain"))
+    assert "4문장 이내" in explain
+    assert "16단어" in explain
+
+
+def test_an_act_without_an_override_keeps_the_profile_cap() -> None:
+    planner = VerbalStylePlanner(_profile())
+
+    assert "2문장 이내" in str(planner.instruction("warning"))

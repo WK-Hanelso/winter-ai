@@ -27,12 +27,12 @@ def core() -> CompanionCore:
     return CompanionCore(FakeChatModel(), InMemoryConversationRepository())
 
 
-def test_default_style_is_base_not_the_reference_profile() -> None:
-    # The Reference profile caps an answer at one short sentence, which
-    # reproduces how the Reference speaks and answers questions badly. Getting
-    # the companion running comes first; flipping this default is a decision,
-    # not a detail.
-    assert voice_cli.build_parser().parse_args([]).style == "base"
+def test_default_style_is_the_conversation_profile() -> None:
+    # `base` gives no instruction on ordinary turns, so the model answers like a
+    # general assistant: paragraphs. `reference_broadcast` caps at one short
+    # sentence and drops the question. The conversation profile is the one that
+    # both answers and sounds like her, so the voice CLI defaults to it.
+    assert voice_cli.build_parser().parse_args([]).style == "reference_conversation"
 
 
 def test_speak_writes_a_wav_and_passes_the_planned_prosody(tmp_path: Path) -> None:

@@ -8,12 +8,16 @@ Runs on the Host, unlike `user_cli`. Synthesis needs `docker run` and playback
 needs the Host sound device, so this process drives the model server over HTTP
 and the synthesiser over Docker.
 
-The default style profile is `base`, not the measured Reference profile. The
-Reference profile caps an answer at one sentence of eight words, which is a
-faithful reproduction of how the Reference speaks and a poor way to answer a
-question: asked what to do about a missed presentation it replied "그래, 좀
-힘들어 보여" and dropped the question. Getting the companion running comes
-first; `--style` switches profiles once that is no longer the trade.
+The default style profile is `reference_conversation`. The two alternatives are
+each wrong in one direction: `base` gives no instruction on ordinary turns, so
+the model answers like a general assistant, in paragraphs; `reference_broadcast`
+reproduces the measured Reference exactly — one sentence of eight words — and
+answers questions badly, replying to a missed presentation with "그래, 좀 힘들어
+보여" and dropping the question. `--style` still selects either for comparison.
+
+Length is not fixed by the profile alone. `dialogue_act` decides what kind of
+turn this is, and an explicit request for an explanation raises the cap, so
+being brief never turns into refusing to answer.
 """
 
 from __future__ import annotations
@@ -58,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-url", default=DEFAULT_MODEL_URL)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--identity-path", type=Path, default=DEFAULT_IDENTITY)
-    parser.add_argument("--style", choices=ALLOWED_PROFILES, default="base")
+    parser.add_argument("--style", choices=ALLOWED_PROFILES, default="reference_conversation")
     parser.add_argument(
         "--storage-root",
         type=Path,

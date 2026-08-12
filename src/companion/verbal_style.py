@@ -19,7 +19,7 @@ from typing import Any
 from companion.response import VerbalStylePlan
 
 DEFAULT_PROFILE = "reference_broadcast"
-ALLOWED_PROFILES = ("base", "reference_broadcast")
+ALLOWED_PROFILES = ("base", "reference_broadcast", "reference_conversation")
 
 # Plain speech and polite speech are not interchangeable in Korean; picking the
 # wrong one is the most visible way to sound like someone else.
@@ -139,12 +139,18 @@ class VerbalStylePlanner:
         The register line is always first: it is the constraint the model is
         most likely to drop when later instructions compete for attention.
         """
+        act = self._act(dialogue_act)
         parts: list[str] = []
         if self._profile.shared_instruction:
             parts.append(REGISTER_INSTRUCTIONS[register])
-            length = f"한 번에 {self._profile.max_sentences}문장 이내로 말해."
-            if self._profile.max_words_per_sentence:
-                length += f" 한 문장은 {self._profile.max_words_per_sentence}단어를 넘기지 마."
+            # The act may widen the cap. Being asked to explain something and
+            # answering in two sentences is a refusal wearing a style, so the
+            # length belongs to the kind of turn rather than to the profile.
+            sentences = act.get("max_sentences", self._profile.max_sentences)
+            words = act.get("max_words_per_sentence", self._profile.max_words_per_sentence)
+            length = f"한 번에 {sentences}문장 이내로 말해."
+            if words:
+                length += f" 한 문장은 {words}단어를 넘기지 마."
             parts.append(length)
             if self._profile.discourse_markers:
                 markers = ", ".join(self._profile.discourse_markers)
@@ -154,7 +160,7 @@ class VerbalStylePlanner:
                 parts.append(
                     f"{markers} 같은 말은 아주 드물게만 써. 대부분의 문장에는 넣지 마."
                 )
-        act_instruction = self._act(dialogue_act).get("instruction")
+        act_instruction = act.get("instruction")
         if act_instruction:
             parts.append(act_instruction)
         return " ".join(parts) if parts else None

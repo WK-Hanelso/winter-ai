@@ -1,5 +1,6 @@
 from companion.context import ConversationContextBuilder
 from companion.contracts import ChatRequest, ConversationMessage
+from companion.dialogue_act import classify as classify_dialogue_act
 from companion.grounding import GroundingPolicy
 from companion.identity import CompanionIdentity
 from companion.memory import ActiveMemoryRetriever, extract_explicit_memory_content, memory_context
@@ -45,7 +46,9 @@ class CompanionCore:
                 kind="semantic", content=candidate_content
             )
             candidate_ids = (candidate.id,)
-        dialogue_act = "memory_candidate" if candidate_ids else "answer"
+        # What kind of turn this is decides how long the answer may be. Ordinary
+        # conversation stays short; being asked to explain something earns room.
+        dialogue_act = classify_dialogue_act(text, has_memory_candidate=bool(candidate_ids))
         messages: tuple[ConversationMessage, ...] = (
             ConversationMessage(role="user", content=text),
         )

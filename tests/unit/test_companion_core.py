@@ -182,3 +182,31 @@ def test_system_messages_are_ordered_identity_memory_style_grounding(tmp_path) -
     # whenever the polite draw came up. The length rule is in every style block.
     assert "문장 이내로" in system_messages[2].content
     assert "지어내지 마" in system_messages[3].content
+
+
+def test_asking_for_an_explanation_widens_the_length_the_model_is_given() -> None:
+    # The point of the whole thing: the cap 겨울이 is told about has to change
+    # with the request, not only the metadata we report afterwards.
+    from companion.verbal_style import VerbalStylePlanner, load_verbal_style
+
+    model = CapturingChatModel()
+    core = CompanionCore(
+        model,  # type: ignore[arg-type]
+        InMemoryConversationRepository(),
+        verbal_style_planner=VerbalStylePlanner(
+            load_verbal_style("reference_conversation")
+        ),
+    )
+
+    short = core.respond_to_text("오늘 날씨는 어때?")
+    long = core.respond_to_text("이거 좀 설명해줄래?")
+
+    assert (short.dialogue_act, long.dialogue_act) == ("answer", "explain")
+    instructions = [
+        message.content
+        for request in model.requests
+        for message in request.messages
+        if message.role == "system"
+    ]
+    assert any("2문장 이내" in text for text in instructions)
+    assert any("4문장 이내" in text for text in instructions)
