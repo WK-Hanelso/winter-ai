@@ -38,16 +38,49 @@ MODEL_VERSION = "v3"
 # to answer on the GPU instead of the CPU, which is worth seven seconds a turn —
 # more than anything else in the path. Halving is how that room is found.
 #
-# Split because the two halves fail differently: t3 is a Llama backbone and
-# takes half precision the way any transformer does, while s3gen ends in a
-# vocoder, where fp16 is likelier to show up as noise. Each can be turned off.
-HALF_PRECISION_PARTS = ("t3", "s3gen")
+# Split because the two halves fail differently, and measurement bore that out:
+# t3 takes half precision the way any transformer does, while s3gen does not
+# take it at all — its vocoder builds a sine source in float32 inside forward
+# (hifigan.py:279), so the mismatch is created below the module and cannot be
+# fixed from here. That is also the place fp16 would most likely be heard as
+# noise, so it is left alone rather than forced.
+#
+# And the gain is memory, not speed: 0.95 GiB saved, 1.10x faster. A thousand
+# sampling steps of this size are held up by launch overhead more than by how
+# many bytes each weight takes.
+HALF_PRECISION_PARTS = ("t3",)
 # What 천우 chose by ear lives here rather than in the request, and these are the
 # values the sample he approved was made with. The server had been running
 # upstream's defaults (0.5) while the sample came from 0.3, which is a way of
 # shipping something other than what was signed off.
 DEFAULT_CFG_WEIGHT = 0.3
 DEFAULT_EXAGGERATION = 0.5
+
+
+def _halve_conditioning(model: object) -> list[str]:
+    """Put the conditioning tensors in float16, and report which moved.
+
+    Only the floating ones: lengths and token ids are integers, and halving
+    those would be meaningless at best. Reported rather than silent because a
+    conditioning tensor that stays float32 does not fail here — it fails inside
+    generate, a long way from the cause.
+    """
+    changed: list[str] = []
+    conditioning = getattr(model, "conds", None)
+    if conditioning is None:
+        return changed
+    for holder_name in ("t3", "gen"):
+        holder = getattr(conditioning, holder_name, None)
+        if holder is None:
+            continue
+        for field in dir(holder):
+            if field.startswith("_"):
+                continue
+            value = getattr(holder, field, None)
+            if isinstance(value, torch.Tensor) and value.is_floating_point():
+                setattr(holder, field, value.half())
+                changed.append(f"{holder_name}.{field}")
+    return changed
 
 
 class Voice:
@@ -68,6 +101,15 @@ class Voice:
                 raise SystemExit(f"반정밀도로 바꿀 수 없는 부분입니다: {name}")
             part.half()
             print(f"  {name}: float16", flush=True)
+        if half:
+            # Halving the module alone is not enough and fails four calls later
+            # with "mat1 and mat2 must have the same dtype". The conditioning —
+            # the speaker embedding and the prompt features, which come from the
+            # checkpoint rather than from a module — stays float32, and a
+            # float32 input meeting a float16 weight is what raises. A weight
+            # and what it multiplies have to agree.
+            changed = _halve_conditioning(self._model)
+            print(f"  조건 텐서: {', '.join(changed)}", flush=True)
         if half and torch.cuda.is_available():
             # The float32 weights were already on the card when they were
             # halved, and the caching allocator holds what they freed. Without
