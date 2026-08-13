@@ -19,7 +19,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git ffmpeg libsndfile1 build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir chatterbox-tts==0.1.7
+# From git rather than PyPI: the released 0.1.7 has no V3 checkpoint, and V3 is
+# the version whose own notes claim reduced hallucination. That matters here —
+# the same sentence came back at 1.6, 3.3 and 4.3 seconds, the longer two with
+# invented speech at the end (resemble-ai/chatterbox#97, #271).
+RUN pip install --no-cache-dir "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@master"
 
 # Every cache the stack writes to, pointed at one writable mount. The images in
 # this project bake caches under /root, which a `--user` run cannot traverse,
