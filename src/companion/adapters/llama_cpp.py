@@ -12,6 +12,26 @@ from urllib.request import Request, urlopen
 from companion.adapters.fake import AdapterUnavailableError
 from companion.contracts import ChatRequest, ChatResult
 
+# Sending no sampling left llama.cpp's own defaults in charge — temperature 0.8,
+# top_p 0.95, top_k 40 — which are not the ones Qwen3 asks for. Its instruct card
+# gives 0.7 / 0.8 / 20, and says directly that a presence penalty above zero is
+# what to reach for when the model mixes languages. 겨울이 was ending Korean
+# sentences in Chinese, which is that symptom, so these are the card's numbers
+# rather than mine.
+#
+# This is the sampling a Qwen wants. A different model would want different
+# values, and this is where they would change.
+SAMPLING: dict[str, float] = {
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "top_k": 20,
+    "presence_penalty": 1.0,
+}
+# A ceiling, not the length control: how long an answer should be is decided by
+# the verbal style instruction, and two short sentences are nowhere near this.
+# It is here so a model that starts running away stops somewhere.
+MAX_TOKENS = 300
+
 
 @dataclass(frozen=True)
 class LlamaCppHttpChatModel:
@@ -32,6 +52,8 @@ class LlamaCppHttpChatModel:
                 ]
                 or [{"role": "user", "content": request.prompt}],
                 "stream": stream,
+                "max_tokens": MAX_TOKENS,
+                **SAMPLING,
             }
         ).encode("utf-8")
 

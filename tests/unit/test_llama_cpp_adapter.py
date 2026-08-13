@@ -22,6 +22,10 @@ class FakeHttpResponse:
     def read(self) -> bytes:
         return self._body.read()
 
+    def __iter__(self):
+        """Line by line, the way urlopen's response is read when streaming."""
+        return iter(self._body)
+
 
 def test_llama_adapter_posts_openai_compatible_request(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
@@ -43,6 +47,11 @@ def test_llama_adapter_posts_openai_compatible_request(monkeypatch: pytest.Monke
     assert json.loads(captured["body"]) == {
         "messages": [{"role": "user", "content": "안녕"}],
         "stream": False,
+        "max_tokens": 300,
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "top_k": 20,
+        "presence_penalty": 1.0,
     }
     assert captured["timeout"] == 120.0
 
@@ -81,3 +90,24 @@ def test_llama_adapter_explains_unavailable_server(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(AdapterUnavailableError, match="local llama.cpp server is unavailable"):
         LlamaCppHttpChatModel("http://llm:8080").generate(ChatRequest(prompt="안녕"))
+
+
+def test_llama_adapter_sends_sampling_on_the_streaming_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both paths, because the spoken turn only ever uses the streaming one."""
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(request: object, timeout: float) -> FakeHttpResponse:
+        captured["body"] = request.data  # type: ignore[attr-defined]
+        return FakeHttpResponse(b"data: [DONE]\n")
+
+    monkeypatch.setattr("companion.adapters.llama_cpp.urlopen", fake_urlopen)
+
+    list(LlamaCppHttpChatModel("http://llm:8080").generate_stream(ChatRequest(prompt="안녕")))
+
+    body = json.loads(captured["body"])
+    assert body["stream"] is True
+    assert body["temperature"] == 0.7
+    assert body["presence_penalty"] == 1.0
+    assert body["max_tokens"] == 300
