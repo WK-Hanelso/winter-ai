@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0f14">
+<title>겨울이</title>
+<style>
+  :root {
+    --bg: #0d0f14; --panel: #161a22; --line: #232936;
+    --text: #e8ecf4; --dim: #8a93a6; --her: #9fc6ff; --mine: #cfd6e4;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+          "Noto Sans KR", sans-serif;
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+             env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header {
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px; flex: none;
+  }
+  header b { font-weight: 600; letter-spacing: .01em; }
+  #state { color: var(--dim); font-size: 13px; margin-left: auto; }
+  #talk-log { flex: 1; overflow-y: auto; padding: 18px; }
+  .turn { margin-bottom: 16px; max-width: 90%; }
+  .turn.mine { margin-left: auto; text-align: right; }
+  .who { font-size: 12px; color: var(--dim); margin-bottom: 2px; }
+  .said { white-space: pre-wrap; word-break: break-word; }
+  .turn.her .said { color: var(--her); }
+  .turn.mine .said { color: var(--mine); }
+  footer { flex: none; padding: 14px 18px 22px; border-top: 1px solid var(--line); }
+  #hold {
+    width: 100%; padding: 22px; border-radius: 18px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); font-size: 17px; font-weight: 600;
+    touch-action: none; user-select: none;
+  }
+  #hold.recording { background: #7d2530; border-color: #a33; }
+  #hold:disabled { opacity: .45; }
+  form { display: flex; gap: 8px; margin-top: 10px; }
+  input {
+    flex: 1; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); font-size: 16px;
+  }
+  button.send {
+    padding: 12px 16px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); font-size: 15px;
+  }
+</style>
+</head>
+<body>
+<header><b>겨울이</b><span id="state">준비됨</span></header>
+<div id="talk-log"></div>
+<footer>
+  <button id="hold">누르고 말하기</button>
+  <form id="typed"><input id="line" placeholder="타이핑해도 돼" autocomplete="off"><button class="send">보내기</button></form>
+</footer>
+<script>
+const log = document.getElementById("talk-log");
+const state = document.getElementById("state");
+const hold = document.getElementById("hold");
+
+function say(who, text) {
+  const turn = document.createElement("div");
+  turn.className = "turn " + (who === "겨울이" ? "her" : "mine");
+  turn.innerHTML = '<div class="who"></div><div class="said"></div>';
+  turn.querySelector(".who").textContent = who;
+  turn.querySelector(".said").textContent = text;
+  log.appendChild(turn);
+  log.scrollTop = log.scrollHeight;
+  return turn.querySelector(".said");
+}
+
+// Her sentences arrive faster than they can be played, so they queue. Playing
+// the next one only when the last has ended is what keeps her from talking over
+// herself — the pipeline is deliberately a sentence ahead.
+const queue = [];
+let playing = false;
+function enqueue(wavBase64) {
+  queue.push("data:audio/wav;base64," + wavBase64);
+  if (!playing) playNext();
+}
+function playNext() {
+  const next = queue.shift();
+  if (!next) { playing = false; state.textContent = "준비됨"; return; }
+  playing = true;
+  state.textContent = "말하는 중";
+  const audio = new Audio(next);
+  audio.onended = audio.onerror = playNext;
+  audio.play().catch(() => playNext());
+}
+
+async function turn(text) {
+  say("천우", text);
+  state.textContent = "생각 중";
+  hold.disabled = true;
+  let her = null;
+  try {
+    const response = await fetch("/turn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    // Server-sent events, read by hand: EventSource cannot POST, and the turn
+    // has to carry what was said.
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut;
+      while ((cut = buffer.indexOf("\n\n")) !== -1) {
+        const block = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        const event = (block.match(/^event: (.*)$/m) || [])[1];
+        const data = JSON.parse((block.match(/^data: (.*)$/m) || [, "{}"])[1]);
+        if (event === "sentence") {
+          her = her || say("겨울이", "");
+          her.textContent += (her.textContent ? " " : "") + data.text;
+          log.scrollTop = log.scrollHeight;
+        } else if (event === "audio") {
+          enqueue(data.wav);
+        } else if (event === "error") {
+          say("시스템", data.message);
+        }
+      }
+    }
+  } catch (error) {
+    say("시스템", String(error));
+  } finally {
+    hold.disabled = false;
+    if (!playing) state.textContent = "준비됨";
+  }
+}
+
+document.getElementById("typed").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const line = document.getElementById("line");
+  const text = line.value.trim();
+  if (!text) return;
+  line.value = "";
+  turn(text);
+});
+
+// Hold to talk. No voice-activity detection on purpose: a button that stops
+// when released cannot cut him off mid-sentence, and that comes first.
+let recorder = null;
+let chunks = [];
+async function startRecording() {
+  if (recorder) return;
+  try {
+    const media = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recorder = new MediaRecorder(media);
+    chunks = [];
+    recorder.ondataavailable = (event) => chunks.push(event.data);
+    recorder.onstop = async () => {
+      media.getTracks().forEach((track) => track.stop());
+      const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+      recorder = null;
+      if (blob.size < 2000) { state.textContent = "준비됨"; return; }
+      state.textContent = "받아쓰는 중";
+      try {
+        const response = await fetch("/listen", { method: "POST", body: blob });
+        const heard = await response.json();
+        if (heard.text) { turn(heard.text); } else { say("시스템", heard.error || "못 알아들었어"); state.textContent = "준비됨"; }
+      } catch (error) {
+        say("시스템", String(error));
+        state.textContent = "준비됨";
+      }
+    };
+    recorder.start();
+    hold.classList.add("recording");
+    hold.textContent = "말하는 중… 떼면 보냄";
+    state.textContent = "듣는 중";
+  } catch (error) {
+    say("시스템", "마이크를 쓸 수 없어: " + error + " (HTTPS가 아니면 브라우저가 막아)");
+  }
+}
+function stopRecording() {
+  hold.classList.remove("recording");
+  hold.textContent = "누르고 말하기";
+  if (recorder && recorder.state !== "inactive") recorder.stop();
+}
+hold.addEventListener("pointerdown", (event) => { event.preventDefault(); startRecording(); });
+hold.addEventListener("pointerup", stopRecording);
+hold.addEventListener("pointercancel", stopRecording);
+hold.addEventListener("pointerleave", stopRecording);
+</script>
+</body>
+</html>

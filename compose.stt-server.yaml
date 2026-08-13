@@ -1,0 +1,30 @@
+services:
+  stt:
+    # 천우's own voice, turned into text. whisper.cpp ships a server binary, so
+    # this needs no image of ours — the model is mounted, not baked, because it
+    # is the same file the probes already use.
+    image: ghcr.io/ggml-org/whisper.cpp:main-vulkan
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    entrypoint: ["/app/build/bin/whisper-server"]
+    command:
+      - --model
+      - /models/${STT_MODEL:-ggml-small.bin}
+      - --language
+      - ko
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8094"
+      # CPU on purpose. The card is full with the two voice stages, and a phone
+      # utterance is a few seconds of audio — small enough that the wait is
+      # shorter than the round trip it would take to free the GPU.
+      - --no-gpu
+    volumes:
+      - ${STT_MODEL_DIR:?Set STT_MODEL_DIR to the directory containing the ggml model}:/models:ro
+    ports:
+      - "127.0.0.1:8094:8094"
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
