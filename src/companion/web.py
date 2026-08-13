@@ -219,7 +219,14 @@ def make_handler(companion: Companion) -> type[BaseHTTPRequestHandler]:
                 emit("error", {"message": str(error)})
 
         def log_message(self, format: str, *args: object) -> None:
-            return
+            """Every request, with who asked.
+
+            Silence here cost an evening: when the phone could not load the
+            page, there was no way to tell a request that never arrived from one
+            that arrived and failed, and the two need opposite fixes.
+            """
+            when = datetime.now(UTC).strftime("%H:%M:%S")
+            print(f"[{when}] {self.client_address[0]} {format % args}", flush=True)
 
     return Handler
 
