@@ -22,6 +22,16 @@ hold an entire answer's audio in memory for no benefit, and the useful lead is
 one piece: what matters is that the next stage never waits, not that the first
 runs to completion.
 
+The first piece is not overlapped
+--------------------------------
+Both stages share one card. Measured on the 2060, converting a sentence takes
+1.42s alone and 2.58s while the next sentence is being synthesised beside it —
+the overlap that helps every later sentence is taken out of the one sound 천우
+is actually waiting for. So stage 1 holds after the first sentence until that
+sentence has come out the far end, and overlaps freely from then on: by that
+point the first sound is already playing, and later sentences have its duration
+to be ready in.
+
 Failures travel with the work rather than being raised on a thread nobody is
 watching, where they would appear as a queue that simply stops.
 """
@@ -84,13 +94,33 @@ def stream(
     """
     spoken: queue.Queue[object] = queue.Queue(maxsize=QUEUE_DEPTH)
     converted: queue.Queue[object] = queue.Queue(maxsize=QUEUE_DEPTH)
+    first_is_out = threading.Event()
+
+    def one_at_a_time_until_first_sound(items: Iterable[In]) -> Iterator[In]:
+        for index, item in enumerate(items):
+            if index == 1:
+                first_is_out.wait()
+            yield item
 
     # Not materialised: the sentences arrive as the model writes them, and
     # taking a list here would wait for the last one before saying the first.
-    speaking = threading.Thread(target=_pump, args=(sentences, synthesize, spoken), daemon=True)
+    speaking = threading.Thread(
+        target=_pump,
+        args=(one_at_a_time_until_first_sound(sentences), synthesize, spoken),
+        daemon=True,
+    )
     converting = threading.Thread(
         target=_pump, args=(_drain(spoken, object), convert, converted), daemon=True
     )
     speaking.start()
     converting.start()
-    yield from _drain(converted, object)  # type: ignore[misc]
+    try:
+        for piece in _drain(converted, object):
+            # Before handing it over, not after: stage 1 can start on the next
+            # sentence while the caller is still writing this one out.
+            first_is_out.set()
+            yield piece  # type: ignore[misc]
+    finally:
+        # A failure or an abandoned stream must not leave stage 1 waiting for a
+        # first sound that is never coming.
+        first_is_out.set()
