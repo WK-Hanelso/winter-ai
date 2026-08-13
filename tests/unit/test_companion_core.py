@@ -91,7 +91,7 @@ def test_core_prefixes_identity_as_system_message() -> None:
     core.respond_to_text("안녕")
     # Identity leads: it frames every other system block.
     assert model.requests[0].messages[0].role == "system"
-    assert "You are Winter." in model.requests[0].messages[0].content
+    assert "너는 Winter야." in model.requests[0].messages[0].content
 
 
 def test_core_injects_selected_active_memory_as_distinct_system_message(tmp_path) -> None:
@@ -176,7 +176,7 @@ def test_system_messages_are_ordered_identity_memory_style_grounding(tmp_path) -
     assert len(system_messages) == 4
     # Identity frames everything; grounding sits closest to the generated turn
     # because it is the constraint that must not be dropped.
-    assert "You are Winter." in system_messages[0].content
+    assert "너는 Winter야." in system_messages[0].content
     assert memory.id in system_messages[1].content
     # Not "반말": the register is drawn per turn, so asserting on it would fail
     # whenever the polite draw came up. The length rule is in every style block.

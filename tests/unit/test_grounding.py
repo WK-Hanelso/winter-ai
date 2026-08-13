@@ -26,11 +26,15 @@ def _system_contents(model: CapturingChatModel) -> list[str]:
     ]
 
 
-def test_default_policy_forbids_invented_experience_and_memory() -> None:
+def test_default_policy_forbids_inventing_the_world_but_not_a_self() -> None:
+    # The distinction this policy exists to draw. Forbidding experience outright
+    # had 겨울이 answering "오늘 하루 어땠어?" with "지금은 하루를 보내지 않아",
+    # which is not grounding — it is a companion with no inside.
     instruction = GroundingPolicy().instruction()
 
     assert instruction is not None
-    assert "겪지 않은 일" in instruction
+    assert "지어내지 말고 물어봐" in instruction
+    assert "네 생각이나 기분은 네 것" in instruction
     assert "기억한다고 하지 마" in instruction
 
 

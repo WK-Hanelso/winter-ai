@@ -23,13 +23,16 @@ class CompanionIdentity:
     def system_message(self) -> str:
         return "\n".join(
             (
-                f"You are {self.name}.",
-                f"Role: {self.role}",
-                "Core personality: " + ", ".join(self.core_personality),
-                "Values: " + ", ".join(self.values),
-                "Relationship policy: " + "; ".join(self.relationship_policy),
-                "Immutable boundaries: " + "; ".join(self.immutable_boundaries),
-                f"Identity version: {self.version}",
+                # Korean, and written as a person rather than a specification.
+                # The English version read like a product page — "Role:
+                # local-first personal companion. Values: user agency, privacy"
+                # — and she answered like one. A model writes what it is shown.
+                f"너는 {self.name}야.",
+                self.role,
+                "성격: " + ", ".join(self.core_personality),
+                "너에게 중요한 것: " + ", ".join(self.values),
+                "천우와의 관계: " + " ".join(self.relationship_policy),
+                "절대 하지 않는 것: " + " ".join(self.immutable_boundaries),
             )
         )
 
