@@ -1,0 +1,67 @@
+# Stage 1 on the Orin, on JetPack 5.
+#
+# The base carries this board's torch (2.1.0a0+nv23.06, CUDA-capable) and a
+# torchaudio compiled against it -- see Dockerfile.torchaudio for why that had
+# to be built rather than installed.
+#
+# Two things about this board shape everything below.
+#
+# Python is 3.8 and chatterbox declares requires-python >=3.10. That declaration
+# is not a technical floor -- every file in the package compiles under 3.8 -- so
+# it is overridden. What does bite is dependencies: the newest transformers uses
+# types.UnionType, which arrived in 3.10, so it is pinned to its last
+# 3.8-supporting release. importlib_metadata is the backport numba needs on 3.8
+# and asks for by name; without it numba dies at import and librosa, which
+# chatterbox imports in eight places, cannot load either.
+#
+# And every install is --no-deps, because pip would otherwise pull the generic
+# aarch64 torch, which has no CUDA on this board, over the one that has.
+FROM winter-ai:jetson-torchaudio
+
+# torch 2.1's weight_norm, which this alpha predates. A .pth so that anything
+# run in this image has it before chatterbox is imported -- the image, not each
+# caller, is what owns the gap.
+COPY winter_weight_norm.py /usr/local/lib/python3.8/dist-packages/
+RUN echo "import winter_weight_norm" > /usr/local/lib/python3.8/dist-packages/winter_weight_norm.pth \
+ && python3 -c "from torch.nn.utils.parametrizations import weight_norm; \
+import torch.nn as nn; m = weight_norm(nn.Conv1d(4, 4, 3)); \
+keys = set(m.state_dict()); \
+assert 'parametrizations.weight.original0' in keys, keys; \
+assert 'parametrizations.weight.original1' in keys, keys; \
+print('weight_norm 백포트 OK, 키 이름 동일')"
+
+RUN pip install --no-cache-dir --no-deps --ignore-requires-python chatterbox-tts==0.1.7 \
+ && pip install --no-cache-dir --no-deps \
+      "transformers==4.46.3" "tokenizers<0.21" "diffusers==0.29.0" \
+      s3tokenizer "conformer==0.3.2" resemble-perth librosa omegaconf \
+      safetensors einops regex Unidecode inflect pykakasi num2words cn2an \
+      jieba pkuseg g2p_en huggingface_hub tqdm filelock requests packaging \
+      soxr soundfile audioread lazy_loader pooch joblib decorator msgpack \
+      platformdirs scikit-learn "numba==0.58.1" "llvmlite==0.41.1" "numpy==1.24.4" scipy typing_extensions \
+      importlib_metadata zipp "Pillow==10.4.0" cffi pycparser \
+      "antlr4-python3-runtime==4.9.3" pyyaml sympy networkx fsspec certifi \
+      charset-normalizer idna urllib3 threadpoolctl nltk
+
+# Eager attention instead of SDPA. transformers refuses SDPA below torch 2.1.1
+# because 2.1.0 gets it numerically wrong on non-contiguous inputs
+# (pytorch#112577), and this board's torch reads as 2.1.0a0 -- so the refusal is
+# right, not a version-string technicality to argue around. chatterbox hardcodes
+# "sdpa" in llama_configs, then flips it back to eager itself in
+# alignment_stream_analyzer, so eager is a path it already runs on.
+#
+# The grep is the point of the RUN: if upstream renames the field, this must
+# fail loudly rather than leave SDPA quietly requested.
+RUN CFG=/usr/local/lib/python3.8/dist-packages/chatterbox/models/t3/llama_configs.py \
+ && grep -q 'attn_implementation="sdpa"' "$CFG" \
+ && sed -i 's/attn_implementation="sdpa"/attn_implementation="eager"/' "$CFG" \
+ && grep -c 'attn_implementation="eager"' "$CFG"
+
+# The GPU is not attached during a build, so CUDA is checked at runtime, not
+# here. What is checked here is that the Jetson wheels are still the installed
+# ones: every NVIDIA build carries "nv" in its version and PyPI's does not.
+RUN python3 -c "import torch, torchaudio; \
+assert 'nv' in torch.__version__, f'torch가 교체됐습니다: {torch.__version__}'; \
+print('torch', torch.__version__, '| torchaudio', torchaudio.__version__)" \
+ && python3 -c "from chatterbox.mtl_tts import ChatterboxMultilingualTTS; print('chatterbox import OK')" \
+ && python3 -c "import perth; assert perth.PerthImplicitWatermarker is not None, \
+'perth가 워터마커 임포트를 삼켰습니다 — 의존성 확인'; print('perth 워터마커 OK')"

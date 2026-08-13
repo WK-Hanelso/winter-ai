@@ -1,0 +1,28 @@
+# torchaudio built against this board's torch, because nothing else will load.
+#
+# chatterbox needs torchaudio (s3gen imports it, xvector uses kaldi's fbank).
+# No JetPack 5 image ships it alongside torch 2.1: l4t-pytorch has torch 2.0
+# with a matching torchaudio, pytorch:2.1 has torch 2.1 with none, and PyPI's
+# torchaudio loads against a different libtorch and dies on an undefined symbol.
+#
+# So it is compiled here, once, against the torch that is actually installed.
+#
+# Note this base is torch 2.1.0a0+nv23.06 -- an alpha cut before
+# parametrizations.weight_norm landed. That gap is filled in the chatterbox
+# image, not here; this layer only owns torchaudio.
+FROM dustynv/pytorch:2.1-r35.4.1
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git cmake ninja-build pkg-config \
+ && rm -rf /var/lib/apt/lists/*
+
+# No sox, no ffmpeg: the parts chatterbox uses are the tensor ones, and every
+# optional backend is another build to get wrong.
+ENV BUILD_SOX=0 USE_FFMPEG=0 USE_ROCM=0 USE_CUDA=1
+RUN git clone --depth 1 --branch v2.1.0 https://github.com/pytorch/audio /tmp/audio \
+ && cd /tmp/audio \
+ && python3 setup.py bdist_wheel \
+ && pip install --no-cache-dir --no-deps dist/*.whl \
+ && rm -rf /tmp/audio
+
+RUN python3 -c "import torch, torchaudio; print('torch', torch.__version__, '| torchaudio', torchaudio.__version__); import torchaudio.compliance.kaldi; print('torchaudio 사용 가능')"
