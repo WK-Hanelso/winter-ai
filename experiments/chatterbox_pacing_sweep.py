@@ -55,7 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
     arguments.output_dir.mkdir(parents=True, exist_ok=True)
-    model = ChatterboxMultilingualTTS.from_pretrained(device="cuda")
+    model = ChatterboxMultilingualTTS.from_pretrained(device="cuda", t3_model="v3")
     count = syllables(arguments.text)
     print(f"목표 {REFERENCE_SYLLABLES_PER_SECOND:.2f} 음절/초 ({count}음절)")
     for weight in arguments.cfg_weights:

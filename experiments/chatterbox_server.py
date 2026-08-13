@@ -30,6 +30,10 @@ import torch
 
 DEFAULT_PORT = 8093
 LANGUAGE = "ko"
+# V3 rather than whatever the release ships. The earlier checkpoint invented
+# speech after the sentence — the same line came back at 1.6, 3.3 and 4.3
+# seconds — and V3's notes claim that is reduced.
+MODEL_VERSION = "v3"
 # 800M parameters in float32 is 3.2 GiB, and the card is 6. Qwen needs 2.4 of it
 # to answer on the GPU instead of the CPU, which is worth seven seconds a turn —
 # more than anything else in the path. Halving is how that room is found.
@@ -55,10 +59,9 @@ class Voice:
         exaggeration: float = DEFAULT_EXAGGERATION,
     ) -> None:
         started = time.perf_counter()
-        # The released package takes the device and nothing else. The README on
-        # master shows a `t3_model="v3"` argument that 0.1.7 does not have, so
-        # this is whatever multilingual checkpoint the release ships.
-        self._model = ChatterboxMultilingualTTS.from_pretrained(device=device)
+        self._model = ChatterboxMultilingualTTS.from_pretrained(
+            device=device, t3_model=MODEL_VERSION
+        )
         for name in half:
             part = getattr(self._model, name, None)
             if part is None or not hasattr(part, "half"):

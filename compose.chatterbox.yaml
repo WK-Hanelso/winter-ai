@@ -1,6 +1,6 @@
 services:
   chatterbox:
-    image: winter-ai:chatterbox
+    image: winter-ai:chatterbox-v3
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     gpus: all
     entrypoint: ["python", "/probe/chatterbox_server.py"]

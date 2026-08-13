@@ -45,7 +45,7 @@ INFERENCE_CFG_RATE = 0.7
 # control and it moved the rate by less than a tenth, so the stretch happens
 # here. 1.3 is his choice by ear from a sweep — not the value that matches her
 # average, which is 2.2 and sounds stretched.
-DEFAULT_LENGTH_ADJUST = 1.3
+DEFAULT_LENGTH_ADJUST = 1.15
 
 
 def conversion_arguments(

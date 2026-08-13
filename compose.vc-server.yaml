@@ -18,7 +18,7 @@ services:
       - ${VC_REFERENCE:?Set VC_REFERENCE to the Reference audio}
       # Her pace, chosen by ear. See the server for why it is set here.
       - --length-adjust
-      - "${VC_LENGTH_ADJUST:-1.3}"
+      - "${VC_LENGTH_ADJUST:-1.15}"
       - --diffusion-steps
       - "${VC_DIFFUSION_STEPS:-30}"
     volumes:
