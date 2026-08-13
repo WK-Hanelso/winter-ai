@@ -110,6 +110,7 @@ services:
   # Speaker embedding. Separate image because it needs a Python ML stack that
   # the transcription runtime does not.
   reference-speaker-probe:
+    gpus: all
     build:
       context: .
       dockerfile: Dockerfile.speaker-embedding
@@ -136,6 +137,7 @@ services:
   # Sortformer diarization. Separate image: NeMo is 8 GiB and has no business in
   # the transcription or embedding runtimes.
   reference-diarization-probe:
+    gpus: all
     build:
       context: .
       dockerfile: Dockerfile.diarization

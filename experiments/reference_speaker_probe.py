@@ -63,7 +63,15 @@ def load_encoder(model_dir: Path) -> EncoderClassifier:
     if baked_cache.is_dir() and not cache.exists():
         shutil.copytree(baked_cache, cache)
     os.environ["HF_HOME"] = str(cache)
-    return EncoderClassifier.from_hparams(source=str(scratch), savedir=str(scratch))
+    # speechbrain은 장치를 말해주지 않으면 CPU로 간다. 이 embedder는 chunk마다
+    # 다시 도는 것이라 그 기본값이 파이프라인 전체 시간에 그대로 실린다. 카드가
+    # 있으면 쓰고, 없으면 하던 대로 CPU로 돈다 — 이 probe는 GPU 없는 곳에서도
+    # 돌아야 한다.
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"화자 임베딩 장치: {device}", flush=True)
+    return EncoderClassifier.from_hparams(
+        source=str(scratch), savedir=str(scratch), run_opts={"device": device}
+    )
 
 
 def load_audio(path: Path) -> torch.Tensor:
