@@ -49,7 +49,9 @@ while [[ $start -lt $total ]]; do
   echo "  [$chunk]"
 
   # 1. chunk 자르기 + 단어 전사
-  if [[ ! -f "$PILOT/$chunk-words.vtt" ]]; then
+  # SKIP_TRANSCRIBE=1이면 전사는 Orin이 맡는다. 2060 CPU로 같은 chunk를 다시
+  # 돌리면 9배 느린 쪽이 GPU가 이미 끝낸 일을 반복한다.
+  if [[ "${SKIP_TRANSCRIBE:-0}" != "1" && ! -f "$PILOT/$chunk-words.vtt" ]]; then
     # 호스트에서 돌린다. 이 도구는 자기가 docker를 불러 ffmpeg와 whisper를
     # 띄우므로, 컨테이너 안에 넣으면 docker가 없어서 죽는다.
     #
@@ -65,7 +67,7 @@ while [[ $start -lt $total ]]; do
   fi
 
   # 2. 문장 전사 — 절단 경계는 여기서 온다
-  if [[ ! -f "$PILOT/$chunk-sentences.vtt" && -f "$PILOT/$chunk-words.wav" ]]; then
+  if [[ "${SKIP_TRANSCRIBE:-0}" != "1" && ! -f "$PILOT/$chunk-sentences.vtt" && -f "$PILOT/$chunk-words.wav" ]]; then
     docker run --rm --user "$(id -u):$(id -g)" \
       --entrypoint /app/build/bin/whisper-cli \
       -v "$PILOT:/work:rw" -v "$STT_MODEL_DIR:/models:ro" "$STT_IMAGE" \
@@ -93,6 +95,7 @@ while [[ $start -lt $total ]]; do
         --target-audio "/reference-data/derived/audio/stt-pilot/$chunk-words.wav" \
         --target-vtt "/reference-data/derived/audio/stt-pilot/$chunk-words.vtt" \
         --target-source-id "$chunk" \
+        --spans-path "/reference-data/reports/spans-$chunk.json" \
         --report-path "/reference-data/reports/who-is-reference-$chunk.json" >/dev/null 2>&1 \
       || echo "    화자 판정 실패"
   fi
