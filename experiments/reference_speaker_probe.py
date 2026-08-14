@@ -260,6 +260,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path(os.environ.get("SPEAKER_MODEL_DIR", "/opt/speaker-model")),
     )
+    parser.add_argument(
+        "--lone-speaker-similarity",
+        type=float,
+        help=(
+            "화자가 하나뿐인 chunk를 이 유사도 이상이면 Reference로 채택합니다. "
+            "생략하면 판정을 거부합니다 — 혼자 말하는 녹음에서는 클립이 나오지 않습니다."
+        ),
+    )
     parser.add_argument("--report-path", type=Path)
     parser.add_argument(
         "--spans-path",
@@ -362,7 +370,12 @@ def main(argv: list[str] | None = None) -> int:
                 hop_seconds=arguments.hop_seconds,
             )
             payload["identified_speaker"] = public_identification_summary(
-                identify_reference_speaker(centroids, seconds, enrolment)
+                identify_reference_speaker(
+                    centroids,
+                    seconds,
+                    enrolment,
+                    lone_speaker_similarity=arguments.lone_speaker_similarity,
+                )
             )
             payload["speaker_seconds"] = {
                 str(speaker): round(value, 2) for speaker, value in sorted(seconds.items())

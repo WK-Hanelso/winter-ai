@@ -481,6 +481,7 @@ def identify_reference_speaker(
     *,
     minimum_speaker_seconds: float = 10.0,
     minimum_margin: float = 0.1,
+    lone_speaker_similarity: float | None = None,
 ) -> ReferenceIdentification:
     """Rank diarized speakers by similarity to the enrolled voice.
 
@@ -515,12 +516,41 @@ def identify_reference_speaker(
             reason="every speaker held too little audio to judge",
         )
     if len(ranked) == 1:
+        # A recording of one person talking has nobody to compare against, and
+        # refusing to judge it threw away most of the material: of the chunks in
+        # sources 007, 008 and 009, twenty held one speaker and three held two.
+        # Those lone speakers scored 0.7177 and 0.7263 against the enrolment —
+        # higher than the 0.6868 and 0.6881 that won where there was a rival —
+        # so they were discarded for having no competition, not for being
+        # someone else.
+        #
+        # With a threshold the comparison becomes absolute instead. The gap the
+        # measurements leave is wide: certain matches sit at 0.687 to 0.726 and
+        # certain non-matches at 0.433 to 0.561, so anything between 0.56 and
+        # 0.69 separates them. Passing no threshold keeps the old refusal, so a
+        # caller that has not thought about it does not silently accept.
+        speaker, similarity = ranked[0]
+        if lone_speaker_similarity is None:
+            return ReferenceIdentification(
+                similarities=tuple(ranked),
+                reference_speaker=None,
+                margin=None,
+                skipped_speakers=skipped,
+                reason="only one speaker remained; nothing to compare against",
+            )
+        accepted = similarity >= lone_speaker_similarity
         return ReferenceIdentification(
             similarities=tuple(ranked),
-            reference_speaker=None,
+            reference_speaker=speaker if accepted else None,
             margin=None,
             skipped_speakers=skipped,
-            reason="only one speaker remained; nothing to compare against",
+            reason=(
+                f"one speaker, similarity {similarity:.4f} at or above "
+                f"{lone_speaker_similarity:g}"
+                if accepted
+                else f"one speaker, similarity {similarity:.4f} below "
+                f"{lone_speaker_similarity:g}"
+            ),
         )
     margin = ranked[0][1] - ranked[1][1]
     leads = margin >= minimum_margin

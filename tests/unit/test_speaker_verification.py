@@ -15,6 +15,7 @@ from companion.speaker_verification import (
     cosine_similarity,
     describe,
     find_threshold,
+    identify_reference_speaker,
     positive_control_rate,
     public_verification_summary,
     verify_segments,
@@ -361,3 +362,37 @@ def test_dropping_empty_cues_leaves_windowing_valid() -> None:
     # Every surviving cue must be safe to window; the zero-length one is not.
     for cue in audible_cues(cues):
         assert iter_windows(cue.start_seconds, cue.end_seconds)
+
+
+def test_lone_speaker_is_refused_without_a_threshold() -> None:
+    """생략하면 예전 동작 그대로. 생각하지 않은 호출자가 조용히 채택하지 않는다."""
+    result = identify_reference_speaker(
+        {0: (1.0, 0.0)}, {0: 60.0}, (1.0, 0.0)
+    )
+
+    assert result.reference_speaker is None
+    assert "nothing to compare against" in result.reason
+
+
+def test_lone_speaker_is_accepted_above_the_threshold() -> None:
+    """혼자 말하는 녹음이 비교 상대가 없다는 이유만으로 버려지지 않는다.
+
+    007·008·009에서 단일 화자 chunk가 0.7177, 0.7263으로 나왔는데, 상대가 있던
+    곳에서 채택된 1등이 0.6868이었다. 더 닮은 쪽이 버려지고 있었다.
+    """
+    result = identify_reference_speaker(
+        {0: (1.0, 0.0)}, {0: 60.0}, (1.0, 0.0), lone_speaker_similarity=0.65
+    )
+
+    assert result.reference_speaker == 0
+    assert result.margin is None
+
+
+def test_lone_speaker_below_the_threshold_is_still_refused() -> None:
+    """임계값은 문을 여는 것이지 없애는 것이 아니다."""
+    result = identify_reference_speaker(
+        {0: (0.0, 1.0)}, {0: 60.0}, (1.0, 0.0), lone_speaker_similarity=0.65
+    )
+
+    assert result.reference_speaker is None
+    assert "below" in result.reason

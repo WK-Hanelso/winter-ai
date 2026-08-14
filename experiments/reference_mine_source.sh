@@ -28,6 +28,12 @@ STT_IMAGE="${STT_IMAGE:-ghcr.io/ggml-org/whisper.cpp:main-vulkan}"
 # 3분이면 충분하다. 35분짜리로 재면 chunk당 190초, 3분이면 120초인데 판정은
 # 같았다 (source-002-600-300에서 화자 1, margin 0.1982 대 기존 0.2537).
 # chunk마다 다시 도는 단계라 그 70초가 130번 쌓인다.
+# 혼자 말하는 chunk를 비교 상대가 없다는 이유로 버리지 않는다. 천우가 준
+# 원본은 소음을 걷어내면 대부분 Reference의 목소리다. 실제로 007·008·009의
+# 단일 화자 chunk가 0.7177, 0.7263으로 상대가 있던 곳의 1등(0.6868)보다
+# 높은데도 버려지고 있었다. 확실한 타인은 0.433~0.561이라 그 사이가 넓게
+# 비어 있고, 0.65는 그 골짜기 한가운데다.
+LONE_SIMILARITY="${LONE_SIMILARITY:-0.65}"
 ENROL_AUDIO="${ENROL_AUDIO:-/reference-data/derived/audio/stt-pilot/enrol-short.wav}"
 ENROL_VTT="${ENROL_VTT:-/reference-data/derived/audio/stt-pilot/enrol-short.vtt}"
 
@@ -96,6 +102,7 @@ while [[ $start -lt $total ]]; do
         --target-vtt "/reference-data/derived/audio/stt-pilot/$chunk-words.vtt" \
         --target-source-id "$chunk" \
         --spans-path "/reference-data/reports/spans-$chunk.json" \
+        --lone-speaker-similarity "$LONE_SIMILARITY" \
         --report-path "/reference-data/reports/who-is-reference-$chunk.json" >/dev/null 2>&1 \
       || echo "    화자 판정 실패"
   fi
