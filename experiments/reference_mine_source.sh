@@ -94,9 +94,17 @@ while [[ $start -lt $total ]]; do
   fi
 
   # 4. 어느 화자가 겨울이인지
+  #
+  # CPU 휠이 든 옛 이미지는 같은 chunk에 190초, 부하가 걸리면 25분을 썼다.
+  # CUDA 이미지에 --identification-only를 붙이면 12초다. compose 서비스가
+  # 아니라 docker run을 직접 쓰는 이유는 --gpus와 모델 캐시 경로 때문이다.
   if [[ ! -f "$REPORTS/who-is-reference-$chunk.json" && -f "$REPORTS/spans-$chunk.json" ]]; then
-    docker compose -f compose.reference-source.yaml run --rm --no-deps \
-      reference-speaker-probe \
+    docker run --rm --gpus all -u "$(id -u):$(id -g)" \
+      -v "$ROOT_DIR":/workspace:ro -v "$REFERENCE_STORAGE_ROOT":/reference-data \
+      -e PYTHONPATH=/workspace/src -e SPEAKER_MODEL_DIR=/opt/speaker-model \
+      -e SPEAKER_HF_CACHE=/opt/hf-cache -e HF_HUB_OFFLINE=1 -e HOME=/tmp \
+      -w /workspace --entrypoint python3 winter-ai:speaker-embedding-cuda \
+      /workspace/experiments/reference_speaker_probe.py \
         --enrolment-audio "$ENROL_AUDIO" --enrolment-vtt "$ENROL_VTT" \
         --target-audio "/reference-data/derived/audio/stt-pilot/$chunk-words.wav" \
         --target-vtt "/reference-data/derived/audio/stt-pilot/$chunk-words.vtt" \
