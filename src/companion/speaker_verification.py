@@ -471,7 +471,15 @@ class ReferenceIdentification:
 
     @property
     def is_confident(self) -> bool:
-        return self.reference_speaker is not None and self.reason == "one speaker leads"
+        """화자를 골랐다면 확신한 것이다.
+
+        전에는 이유 문자열이 "one speaker leads"와 정확히 같은지도 봤다. 그때는
+        화자를 고르는 길이 하나뿐이라 같은 말이었지만, 상대가 없을 때 절대
+        유사도로 고르는 길이 생기자 그 검사가 조용히 거짓을 냈다 -- 화자를
+        골라놓고 확신은 아니라고 했고, 클립 절단은 is_confident만 보므로 결과가
+        하나도 나오지 않았다. 고르지 않은 모든 갈래는 reference_speaker를 None으로
+        두므로, 그 하나만 보면 된다."""
+        return self.reference_speaker is not None
 
 
 def identify_reference_speaker(

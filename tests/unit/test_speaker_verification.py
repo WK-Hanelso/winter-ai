@@ -396,3 +396,17 @@ def test_lone_speaker_below_the_threshold_is_still_refused() -> None:
 
     assert result.reference_speaker is None
     assert "below" in result.reason
+
+
+def test_accepted_lone_speaker_is_confident() -> None:
+    """골라놓고 확신은 아니라고 하면 클립 절단이 건너뛴다.
+
+    is_confident가 이유 문자열까지 대조하던 때 실제로 그렇게 됐다. 유사도
+    0.6945로 채택된 chunk가 is_confident False로 나와 버려질 뻔했다.
+    """
+    result = identify_reference_speaker(
+        {0: (1.0, 0.0)}, {0: 60.0}, (1.0, 0.0), lone_speaker_similarity=0.65
+    )
+
+    assert result.reference_speaker == 0
+    assert result.is_confident

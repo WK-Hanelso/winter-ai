@@ -103,6 +103,7 @@ while [[ $start -lt $total ]]; do
         --target-source-id "$chunk" \
         --spans-path "/reference-data/reports/spans-$chunk.json" \
         --lone-speaker-similarity "$LONE_SIMILARITY" \
+        --identification-only \
         --report-path "/reference-data/reports/who-is-reference-$chunk.json" >/dev/null 2>&1 \
       || echo "    화자 판정 실패"
   fi

@@ -261,6 +261,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path(os.environ.get("SPEAKER_MODEL_DIR", "/opt/speaker-model")),
     )
     parser.add_argument(
+        "--identification-only",
+        action="store_true",
+        help=(
+            "어느 화자가 Reference인가만 계산합니다. 방법을 고를 때 쓰던 비교 "
+            "지표(by_cue, by_window, clustered, clustered_control)를 건너뜁니다 — "
+            "네 가지가 각각 등록·대상 오디오 전체에 임베딩 패스를 돌아서, "
+            "채굴에서는 답이 이미 나온 질문에 chunk마다 그 비용을 다시 냅니다."
+        ),
+    )
+    parser.add_argument(
         "--lone-speaker-similarity",
         type=float,
         help=(
@@ -342,20 +352,32 @@ def main(argv: list[str] | None = None) -> int:
                 "control_segments": len(control_cues),
                 "windows_used": min(arguments.enrolment_windows, len(train_cues)),
             },
-            # Both are reported: the cue-level run is the approach that failed,
-            # and keeping it makes the comparison the evidence.
-            "by_cue": measure(by_window=False),
-            "by_window": measure(by_window=True),
         }
+        # Both are reported: the cue-level run is the approach that failed, and
+        # keeping it makes the comparison the evidence. That was worth its cost
+        # while the method was being chosen. It is not worth it while mining:
+        # nothing in the repository reads by_cue, by_window, clustered or
+        # clustered_control -- reference_utterance_clips.py opens these reports
+        # for identified_speaker and nothing else -- and each of the four costs
+        # a full embedding pass over both the control and the target audio. At
+        # 1.5 s windows on a 300 s chunk that is hundreds of forward passes,
+        # four times over, to answer a question already answered.
+        if not arguments.identification_only:
+            payload["by_cue"] = measure(by_window=False)
+            payload["by_window"] = measure(by_window=True)
 
         # Absolute similarity collapses across recordings. Clustering inside the
         # target removes that shift; the enrolment then only names a group.
-        target_vectors = window_embeddings(
-            encoder,
-            target_audio,
-            target_cues,
-            window_seconds=arguments.window_seconds,
-            hop_seconds=arguments.hop_seconds,
+        target_vectors = (
+            ()
+            if arguments.identification_only
+            else window_embeddings(
+                encoder,
+                target_audio,
+                target_cues,
+                window_seconds=arguments.window_seconds,
+                hop_seconds=arguments.hop_seconds,
+            )
         )
         if arguments.spans_path:
             raw_spans = json.loads(arguments.spans_path.read_text(encoding="utf-8"))
@@ -381,21 +403,22 @@ def main(argv: list[str] | None = None) -> int:
                 str(speaker): round(value, 2) for speaker, value in sorted(seconds.items())
             }
 
-        payload["clustered"] = public_cluster_summary(
-            label_clusters(target_vectors, enrolment)
-        )
-        control_vectors = window_embeddings(
-            encoder,
-            enrolment_audio,
-            control_cues,
-            window_seconds=arguments.window_seconds,
-            hop_seconds=arguments.hop_seconds,
-        )
-        # Single-speaker audio must NOT split convincingly. If it does, the
-        # clustering is finding something other than speakers.
-        payload["clustered_control"] = public_cluster_summary(
-            label_clusters(control_vectors, enrolment)
-        )
+        if not arguments.identification_only:
+            payload["clustered"] = public_cluster_summary(
+                label_clusters(target_vectors, enrolment)
+            )
+            control_vectors = window_embeddings(
+                encoder,
+                enrolment_audio,
+                control_cues,
+                window_seconds=arguments.window_seconds,
+                hop_seconds=arguments.hop_seconds,
+            )
+            # Single-speaker audio must NOT split convincingly. If it does, the
+            # clustering is finding something other than speakers.
+            payload["clustered_control"] = public_cluster_summary(
+                label_clusters(control_vectors, enrolment)
+            )
     except (SpeakerVerificationError, OSError, RuntimeError) as error:
         print(json.dumps({"status": "error", "error": str(error)}, ensure_ascii=False))
         return 2

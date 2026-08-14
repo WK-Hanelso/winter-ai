@@ -41,7 +41,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \
-        --index-url https://download.pytorch.org/whl/cu121 \
         "torch==${TORCH_VERSION}" "torchaudio==${TORCHAUDIO_VERSION}" \
     && pip install --no-cache-dir \
         "huggingface_hub==${HUGGINGFACE_HUB_VERSION}" \
