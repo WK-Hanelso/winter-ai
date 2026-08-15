@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 
@@ -5,6 +6,10 @@ from dataclasses import dataclass
 class ChatRequest:
     prompt: str
     messages: tuple["ConversationMessage", ...] = ()
+    max_tokens: int | None = None
+    response_format: Mapping[str, object] | None = None
+    temperature: float | None = None
+    seed: int | None = None
 
 
 @dataclass(frozen=True)

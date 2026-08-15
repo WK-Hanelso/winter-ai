@@ -1,3 +1,4 @@
+from http.client import RemoteDisconnected
 from io import BytesIO
 import json
 from urllib.error import URLError
@@ -82,6 +83,58 @@ def test_llama_adapter_sends_structured_context_messages(monkeypatch: pytest.Mon
     ]
 
 
+def test_llama_adapter_uses_the_turn_specific_token_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(request: object, timeout: float) -> FakeHttpResponse:
+        captured["body"] = request.data  # type: ignore[attr-defined]
+        return FakeHttpResponse('{"choices": [{"message": {"content": "응답"}}]}'.encode())
+
+    monkeypatch.setattr("companion.adapters.llama_cpp.urlopen", fake_urlopen)
+
+    LlamaCppHttpChatModel("http://llm:8080").generate(
+        ChatRequest(prompt="안녕", max_tokens=120)
+    )
+
+    assert json.loads(captured["body"])["max_tokens"] == 120
+
+
+def test_llama_adapter_forwards_an_explicit_structured_output_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(request: object, timeout: float) -> FakeHttpResponse:
+        captured["body"] = request.data  # type: ignore[attr-defined]
+        return FakeHttpResponse(b'{"choices": [{"message": {"content": "{}"}}]}')
+
+    monkeypatch.setattr("companion.adapters.llama_cpp.urlopen", fake_urlopen)
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "probe",
+            "strict": True,
+            "schema": {"type": "object", "additionalProperties": False},
+        },
+    }
+
+    LlamaCppHttpChatModel("http://llm:8080").generate(
+        ChatRequest(
+            prompt="안녕",
+            response_format=response_format,
+            temperature=0.0,
+            seed=42,
+        )
+    )
+
+    body = json.loads(captured["body"])
+    assert body["response_format"] == response_format
+    assert body["temperature"] == 0.0
+    assert body["seed"] == 42
+
+
 def test_llama_adapter_explains_unavailable_server(monkeypatch: pytest.MonkeyPatch) -> None:
     def failing_urlopen(*args: object, **kwargs: object) -> object:
         raise URLError("connection refused")
@@ -89,6 +142,18 @@ def test_llama_adapter_explains_unavailable_server(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("companion.adapters.llama_cpp.urlopen", failing_urlopen)
 
     with pytest.raises(AdapterUnavailableError, match="local llama.cpp server is unavailable"):
+        LlamaCppHttpChatModel("http://llm:8080").generate(ChatRequest(prompt="안녕"))
+
+
+def test_llama_adapter_wraps_remote_disconnect_without_crashing_queue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def failing_urlopen(*args: object, **kwargs: object) -> object:
+        raise RemoteDisconnected("server closed connection")
+
+    monkeypatch.setattr("companion.adapters.llama_cpp.urlopen", failing_urlopen)
+
+    with pytest.raises(AdapterUnavailableError, match="disconnected"):
         LlamaCppHttpChatModel("http://llm:8080").generate(ChatRequest(prompt="안녕"))
 
 

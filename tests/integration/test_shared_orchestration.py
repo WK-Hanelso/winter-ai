@@ -48,7 +48,7 @@ def test_voice_propagates_stt_failure_without_calling_core() -> None:
     assert repository.list_messages() == ()
 
 
-def test_cli_and_voice_create_explicit_memory_candidates_through_the_same_core(tmp_path) -> None:
+def test_cli_and_voice_activate_explicit_memories_through_the_same_core(tmp_path) -> None:
     memory_repository = SqliteMemoryRepository(tmp_path / "memories.sqlite")
     core = CompanionCore(
         FakeChatModel(),
@@ -67,7 +67,7 @@ def test_cli_and_voice_create_explicit_memory_candidates_through_the_same_core(t
 
     assert len(cli_response.memory_candidate_ids) == 1
     assert [(memory.content, memory.status) for memory in memory_repository.list()] == [
-        ("CLI에서도 후보를 저장해", "candidate"),
-        ("Voice에서도 후보를 저장해", "candidate"),
+        ("CLI에서도 후보를 저장해", "active"),
+        ("Voice에서도 후보를 저장해", "active"),
     ]
-    assert "기억 후보로 저장했어. 검토 후 활성화할 수 있어." in voice_output.data.decode()
+    assert "기억해둘게." in voice_output.data.decode()

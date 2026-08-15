@@ -1,6 +1,7 @@
 .env
 .env.*
 .claude/
+.cache/
 __pycache__/
 *.py[cod]
 /data/

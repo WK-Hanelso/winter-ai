@@ -8,59 +8,120 @@ if [[ -f .env ]]; then set -a; source .env; set +a; fi
 export LOCAL_UID="${LOCAL_UID:-$(id -u)}"
 export LOCAL_GID="${LOCAL_GID:-$(id -g)}"
 COMPOSE=(docker compose -f compose.yaml -f compose.llm.yaml -f compose.gpu.yaml)
-# The voice path additionally publishes the model server on Host loopback,
-# because its CLI runs on the Host rather than in the dev container.
-VOICE_COMPOSE=("${COMPOSE[@]}" -f compose.llm-host.yaml)
+MODEL_URL=${WINTER_LLM_URL:-http://127.0.0.1:18080}
+ANALYSIS_MODEL_URL=${WINTER_ANALYSIS_LLM_URL:-${WINTER_REFLECTION_LLM_URL:-}}
+PYTHON_BIN=${WINTER_PYTHON:-}
 
-require_model_config() {
-  for name in LLAMA_RUNTIME_DIR LLM_MODEL_DIR LLM_MODEL_FILE; do
-    [[ -n "${!name:-}" ]] || { echo "Missing $name. Copy .env.example to .env and set local model paths."; exit 1; }
-  done
+find_python() {
+  if [[ -n "$PYTHON_BIN" ]]; then
+    [[ -x "$PYTHON_BIN" ]] || {
+      echo "WINTER_PYTHON이 실행 가능한 파일이 아닙니다: $PYTHON_BIN" >&2
+      exit 1
+    }
+    return
+  fi
+  if command -v python3.11 >/dev/null 2>&1; then
+    PYTHON_BIN=$(command -v python3.11)
+  elif command -v pyenv >/dev/null 2>&1 && PYENV_VERSION=3.11.9 pyenv which python >/dev/null 2>&1; then
+    PYTHON_BIN=$(PYENV_VERSION=3.11.9 pyenv which python)
+  else
+    echo "Python 3.11을 찾지 못했습니다. WINTER_PYTHON에 Python 3.11 경로를 지정하세요." >&2
+    exit 1
+  fi
 }
 
 wait_for_llm() {
+  find_python
   for _ in $(seq 1 30); do
-    if "${COMPOSE[@]}" run --rm dev python -c "from urllib.request import urlopen; urlopen('http://llm:8080/health', timeout=2)" >/dev/null 2>&1; then return 0; fi
+    if "$PYTHON_BIN" -c "from urllib.request import urlopen; urlopen('${MODEL_URL%/}/health', timeout=2)" >/dev/null 2>&1; then return 0; fi
     sleep 2
   done
-  echo "Local LLM did not become ready within 60 seconds. Run ./winter status for details." >&2
+  echo "Orin LLM did not become ready within 60 seconds: $MODEL_URL" >&2
+  echo "scripts/orin-tunnel.sh 또는 터널 서비스를 확인하세요." >&2
   return 1
+}
+
+run_chat() {
+  local needs_llm=1
+  local needs_analysis_llm=0
+  for argument in "$@"; do
+    case "$argument" in
+      --review-outcomes|--outcome-audit|--review-memory-candidates|--companion-overview|--list-current-state-history)
+        needs_llm=0
+        ;;
+      --analyze-pending-turns|--analyze-pending-outcomes|--reflect-history)
+        needs_analysis_llm=1
+        ;;
+    esac
+  done
+  if [[ "$needs_analysis_llm" -eq 1 ]]; then
+    if [[ -z "$ANALYSIS_MODEL_URL" ]]; then
+      echo "사후 분석용 local LLM이 설정되지 않았습니다." >&2
+      echo "Orin은 분석 부하에서 재부팅된 기록이 있어 대화용 주소를 자동 재사용하지 않습니다." >&2
+      echo "안전한 별도 서버를 WINTER_ANALYSIS_LLM_URL로 지정하세요." >&2
+      exit 2
+    fi
+    MODEL_URL="$ANALYSIS_MODEL_URL"
+  fi
+  if [[ "$needs_llm" -eq 1 ]]; then
+    wait_for_llm
+  else
+    find_python
+  fi
+  exec env \
+    PYTHONPATH="$ROOT_DIR/src" \
+    WINTER_DATA_DIR="$ROOT_DIR/data" \
+    WINTER_LLM_URL="$MODEL_URL" \
+    "$PYTHON_BIN" -m companion.user_cli --model-url "$MODEL_URL" "$@"
 }
 
 case "${1:-start}" in
   start)
-    require_model_config
-    "${COMPOSE[@]}" up -d llm
-    wait_for_llm
-    exec "${COMPOSE[@]}" run --rm dev python -m companion.user_cli
+    shift || true
+    run_chat "$@"
     ;;
   chat)
-    require_model_config
-    wait_for_llm
-    exec "${COMPOSE[@]}" run --rm dev python -m companion.user_cli
+    shift
+    run_chat "$@"
     ;;
   voice)
-    require_model_config
     shift
-    "${VOICE_COMPOSE[@]}" up -d llm
-    # Polled from the Host, not through `run --rm dev`: this is the address the
-    # voice CLI will actually use, so probing anything else can pass while the
-    # real path is still broken.
-    for _ in $(seq 1 30); do
-      if python3 -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:8080/health', timeout=2)" >/dev/null 2>&1; then break; fi
-      sleep 2
-    done
-    exec env PYTHONPATH="$ROOT_DIR/src" python3 -m companion.voice_cli "$@"
+    wait_for_llm
+    exec env \
+      PYTHONPATH="$ROOT_DIR/src" \
+      WINTER_DATA_DIR="$ROOT_DIR/data" \
+      WINTER_LLM_URL="$MODEL_URL" \
+      "$PYTHON_BIN" -m companion.voice_cli --model-url "$MODEL_URL" "$@"
+    ;;
+  reflect)
+    shift
+    run_chat --reflect-history "$@"
+    ;;
+  memories)
+    shift
+    run_chat --review-memory-candidates "$@"
+    ;;
+  overview)
+    shift
+    run_chat --companion-overview "$@"
+    ;;
+  state)
+    shift
+    run_chat --list-current-state-history "$@"
     ;;
   status)
-    require_model_config
+    if curl -fsS --max-time 2 "${MODEL_URL%/}/health" >/dev/null; then
+      echo "Orin LLM: ready ($MODEL_URL)"
+    else
+      echo "Orin LLM: unavailable ($MODEL_URL)"
+    fi
     "${COMPOSE[@]}" ps
     ;;
   stop)
     "${COMPOSE[@]}" stop llm
     ;;
   *)
-    echo "Usage: ./winter {start|chat|voice|status|stop}" >&2
+    echo "Usage: ./winter {start|chat|voice|reflect|memories|overview|state|status|stop}" >&2
     exit 2
     ;;
 esac

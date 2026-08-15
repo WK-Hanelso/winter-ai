@@ -40,23 +40,47 @@ import wave
 from companion.adapters.cosyvoice import (
     CosyVoiceSpeechModel,
 )
-from companion.adapters.fake import AdapterUnavailableError, InMemoryConversationRepository
+from companion.adapters.fake import AdapterUnavailableError
 from companion.adapters.http_speech import STAGE_ONE_URLS, HttpSpeechModel
 from companion.adapters.llama_cpp import LlamaCppHttpChatModel
 from companion.adapters.seedvc import DEFAULT_SERVER_URL as DEFAULT_VC_URL
 from companion.adapters.seedvc import SeedVcVoiceConverter
+from companion.adapters.sqlite_repository import (
+    ConversationRepositoryError,
+    SqliteConversationRepository,
+)
+from companion.beliefs import (
+    ActiveBeliefRetriever,
+    BeliefRepositoryError,
+    SqliteBeliefRepository,
+)
 from companion.context import ConversationContextBuilder
 from companion.contracts import AudioOutput, SpeechRequest
 from companion.core import CompanionCore
 from companion.dialogue_act import classify as classify_dialogue_act
 from companion.identity import IdentityRepositoryError, JsonIdentityRepository
+from companion.memory import (
+    ActiveMemoryRetriever,
+    MemoryRepositoryError,
+    SqliteMemoryRepository,
+)
+from companion.open_loops import (
+    ActiveOpenLoopRetriever,
+    OpenLoopRepositoryError,
+    SqliteOpenLoopRepository,
+)
+from companion.outcome import OutcomeRepositoryError, SqliteOutcomeRepository
 from companion.response import CompanionResponse
 from companion.speech_segments import PAUSE_SECONDS
+from companion.turn_understanding import (
+    SqliteTurnUnderstandingRepository,
+    TurnUnderstandingRepositoryError,
+)
 from companion.verbal_style import ALLOWED_PROFILES, VerbalStylePlanner, load_verbal_style
 from companion.voice_pipeline import stream
 from companion.voice_profile import ProsodyPlanner
 
-DEFAULT_MODEL_URL = "http://127.0.0.1:8080"
+DEFAULT_MODEL_URL = os.environ.get("WINTER_LLM_URL", "http://127.0.0.1:18080")
 DEFAULT_OUTPUT = Path("generated_audio") / "voice"
 # The voice lives in private storage, not in the repository. Both paths come
 # from .env because they are Host paths to Reference-derived material.
@@ -64,7 +88,14 @@ DEFAULT_FLOW = "derived/training/source-004/exp/flow/epoch_29_whole.pt"
 DEFAULT_SPEAKER = "artifacts/voice/winter-speaker.pt"
 # Host path: this CLI runs outside the dev container, so the container's
 # /workspace/data does not exist here.
-DEFAULT_IDENTITY = Path("data") / "identity.json"
+DEFAULT_DATA = Path(os.environ.get("WINTER_DATA_DIR", "data"))
+DEFAULT_IDENTITY = DEFAULT_DATA / "identity.json"
+DEFAULT_CONVERSATION = DEFAULT_DATA / "conversations.sqlite"
+DEFAULT_MEMORIES = DEFAULT_DATA / "memories.sqlite"
+DEFAULT_BELIEFS = DEFAULT_DATA / "beliefs.sqlite"
+DEFAULT_DIALOGUE_STATE = DEFAULT_DATA / "dialogue_state.sqlite"
+DEFAULT_TURN_UNDERSTANDING = DEFAULT_DATA / "turn_understanding.sqlite"
+DEFAULT_OUTCOMES = DEFAULT_DATA / "outcomes.sqlite"
 PROMPT = "천우> "
 
 
@@ -73,6 +104,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-url", default=DEFAULT_MODEL_URL)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--identity-path", type=Path, default=DEFAULT_IDENTITY)
+    parser.add_argument("--conversation-path", type=Path, default=DEFAULT_CONVERSATION)
+    parser.add_argument("--memory-path", type=Path, default=DEFAULT_MEMORIES)
+    parser.add_argument("--belief-path", type=Path, default=DEFAULT_BELIEFS)
+    parser.add_argument(
+        "--dialogue-state-path", type=Path, default=DEFAULT_DIALOGUE_STATE
+    )
+    parser.add_argument(
+        "--turn-understanding-path",
+        type=Path,
+        default=DEFAULT_TURN_UNDERSTANDING,
+    )
+    parser.add_argument("--outcome-path", type=Path, default=DEFAULT_OUTCOMES)
     parser.add_argument("--style", choices=ALLOWED_PROFILES, default="reference_conversation")
     parser.add_argument(
         "--storage-root",
@@ -285,12 +328,56 @@ def main(argv: Sequence[str] | None = None) -> int:
         # 겨울이, which is the whole point. Refuse instead of quietly degrading.
         print(f"Identity를 읽지 못했습니다: {error}", file=sys.stderr)
         return 1
+    try:
+        conversation_repository = SqliteConversationRepository(arguments.conversation_path)
+    except ConversationRepositoryError as error:
+        print(f"대화를 읽지 못했습니다: {error}", file=sys.stderr)
+        return 1
+    try:
+        memory_repository = SqliteMemoryRepository(arguments.memory_path)
+        memory_retriever = ActiveMemoryRetriever(memory_repository)
+    except MemoryRepositoryError as error:
+        print(f"천우에 대한 기억을 읽지 못했습니다: {error}", file=sys.stderr)
+        return 1
+    try:
+        belief_retriever = ActiveBeliefRetriever(
+            SqliteBeliefRepository(arguments.belief_path)
+        )
+    except BeliefRepositoryError as error:
+        print(f"겨울이 관점을 읽지 못했습니다: {error}", file=sys.stderr)
+        return 1
+    try:
+        open_loop_repository = SqliteOpenLoopRepository(arguments.dialogue_state_path)
+        open_loop_retriever = ActiveOpenLoopRetriever(open_loop_repository)
+    except OpenLoopRepositoryError as error:
+        print(f"이어갈 이야기를 읽지 못했습니다: {error}", file=sys.stderr)
+        return 1
+    try:
+        turn_understanding_repository = SqliteTurnUnderstandingRepository(
+            arguments.turn_understanding_path
+        )
+    except TurnUnderstandingRepositoryError as error:
+        print(f"대화 이해 기록을 열지 못했습니다: {error}", file=sys.stderr)
+        return 1
+    try:
+        outcome_repository = SqliteOutcomeRepository(arguments.outcome_path)
+    except OutcomeRepositoryError as error:
+        print(f"대화 결과 기록을 열지 못했습니다: {error}", file=sys.stderr)
+        return 1
     core = CompanionCore(
         LlamaCppHttpChatModel(base_url=arguments.model_url),
-        InMemoryConversationRepository(),
+        conversation_repository,
         ConversationContextBuilder(max_messages=12, max_characters=4000),
         identity=identity,
+        memory_retriever=memory_retriever,
+        memory_repository=memory_repository,
         verbal_style_planner=VerbalStylePlanner(load_verbal_style(arguments.style)),
+        belief_retriever=belief_retriever,
+        open_loop_repository=open_loop_repository,
+        open_loop_retriever=open_loop_retriever,
+        turn_understanding_repository=turn_understanding_repository,
+        outcome_repository=outcome_repository,
+        turn_source="voice",
     )
     tts: HttpSpeechModel | CosyVoiceSpeechModel
     if arguments.own_container:

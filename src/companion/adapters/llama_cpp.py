@@ -44,18 +44,23 @@ class LlamaCppHttpChatModel:
         return f"{self.base_url.rstrip('/')}/v1/chat/completions"
 
     def _payload(self, request: ChatRequest, *, stream: bool) -> bytes:
-        return json.dumps(
-            {
-                "messages": [
-                    {"role": message.role, "content": message.content}
-                    for message in request.messages
-                ]
-                or [{"role": "user", "content": request.prompt}],
-                "stream": stream,
-                "max_tokens": MAX_TOKENS,
-                **SAMPLING,
-            }
-        ).encode("utf-8")
+        payload: dict[str, object] = {
+            "messages": [
+                {"role": message.role, "content": message.content}
+                for message in request.messages
+            ]
+            or [{"role": "user", "content": request.prompt}],
+            "stream": stream,
+            "max_tokens": request.max_tokens or MAX_TOKENS,
+            **SAMPLING,
+        }
+        if request.response_format is not None:
+            payload["response_format"] = request.response_format
+        if request.temperature is not None:
+            payload["temperature"] = request.temperature
+        if request.seed is not None:
+            payload["seed"] = request.seed
+        return json.dumps(payload).encode("utf-8")
 
     def generate_stream(self, request: ChatRequest) -> Iterator[str]:
         """Yield the answer in pieces, as the model writes it.
@@ -93,6 +98,10 @@ class LlamaCppHttpChatModel:
             raise AdapterUnavailableError(
                 f"local llama.cpp server timed out after {self.timeout_seconds:g}s at {endpoint}"
             ) from error
+        except ConnectionError as error:
+            raise AdapterUnavailableError(
+                f"local llama.cpp server disconnected at {endpoint}: {error}"
+            ) from error
 
     def generate(self, request: ChatRequest) -> ChatResult:
         endpoint = self._endpoint()
@@ -116,6 +125,10 @@ class LlamaCppHttpChatModel:
         except TimeoutError as error:
             raise AdapterUnavailableError(
                 f"local llama.cpp server timed out after {self.timeout_seconds:g}s at {endpoint}"
+            ) from error
+        except ConnectionError as error:
+            raise AdapterUnavailableError(
+                f"local llama.cpp server disconnected at {endpoint}: {error}"
             ) from error
 
         return ChatResult(text=_extract_text(raw_response, endpoint))

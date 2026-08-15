@@ -18,6 +18,17 @@
 
 > 사전학습된 Local LLM, 외부화된 Identity, 구조화된 Memory, 사전학습된 TTS를 조합하면 사용자가 시간이 지나도 동일한 Companion과 대화하고 있다고 느낄 수 있다.
 
+Winter V1의 최상위 제품 목표는
+[`docs/winter-v1-goal.md`](docs/winter-v1-goal.md)에 정의한다. V1은 천우와의 대화에서
+의도·감정·기억·개선 신호를 이해하고 결과로 교정하며, 자신의 실제 능력과 한계를 토론한
+뒤 천우가 승인한 변경만 격리된 Worker로 구현·검증·채택하는 **Level 3 공동 자기발전
+Companion**을 목표로 한다.
+
+이 목표에서 “자기발전”은 자유로운 자기 코드 수정이 아니다. 겨울이는 문제 인식, 토론,
+제안과 최종 설명을 소유하고, Worker는 승인된 기술 scope만 구현한다. 구현 승인과 실제
+capability 채택 승인은 분리하며, 테스트·audit·version·rollback 없는 변경은 겨울이의
+능력으로 등록하지 않는다.
+
 ---
 
 ## 2. Fixed Requirements
@@ -528,13 +539,40 @@ evaluation view를 파생한다.
 
 ### Milestone 7 — Worker Integration
 
-이 단계부터 Claude, GPT, Gemini 같은 외부 Worker 연결을 검토한다.
+이 단계부터 Claude, GPT, Gemini 같은 외부 Worker 연결을 검토하고 V1 Level 3
+공동 자기발전 cycle을 완성한다.
 
 Companion Identity를 Worker에 넘기지 않는다. Worker는 전문 작업 결과만 반환하고, 최종 응답은 Companion이 재구성한다.
 
+완료 조건:
+
+- `SelfModel`, `CapabilityRegistry`, `ImprovementLedger`가 재시작 후 유지됨
+- 천우가 승인하기 전에는 Worker job이 실행되지 않음
+- Worker가 격리된 branch/worktree와 승인된 scope에서만 수정함
+- 시스템이 Worker와 별도로 tests, lint, type, privacy와 scope를 검증함
+- 천우의 채택 승인 뒤에만 capability가 `available`이 됨
+- 채택된 변경을 rollback하고 이전 capability/version으로 복원할 수 있음
+- 실제 작은 capability 하나가 대화 제안부터 구현·채택·재평가까지 전체 cycle을 완주함
+
 ---
 
-## 8. Current First Task
+## 8. Current Work Direction
+
+Task 001과 초기 Milestone 기반은 완료되었다. 기존 저장소를 다시 bootstrap하지 않는다.
+현재 최우선 작업은 V1 구현 순서의 첫 항목인 `TurnUnderstanding Shadow Mode`다.
+
+1. 현재 혼합 worktree의 사용자·Claude·Codex 변경을 보존한다.
+2. `TurnUnderstanding` domain schema와 Port를 정의한다.
+3. deterministic fake interpreter와 offline acceptance tests를 먼저 만든다.
+4. 분석 결과는 event log에만 저장하고 초기에는 응답·Memory를 변경하지 않는다.
+5. held-out dialogue에서 evidence, intent hypotheses, temporal scope, memory/improvement
+   proposal과 uncertainty를 평가한다.
+6. 실제 Local LLM interpreter는 별도 model marker로 연결하고 latency와 오류를 측정한다.
+
+`TurnUnderstanding` 검증 전에는 추론형 자동 기억을 active로 만들거나 실제 Worker 자동
+실행을 연결하지 않는다. 전체 범위와 완료 조건은 `docs/winter-v1-goal.md`를 따른다.
+
+## 8.1 Historical First Task — Completed
 
 Codex가 저장소를 처음 열었을 때 다음 순서로 진행한다.
 
@@ -600,6 +638,18 @@ Codex는 한 번에 큰 기능 전체를 구현하지 않는다.
   설정, 검증 방법, 알려진 한계에 영향을 주는지 확인한다.
 - 영향을 준다면 같은 변경 또는 PR 안에서 README를 함께 갱신한다.
 - README 변경이 필요 없다고 판단한 경우에는 PR 설명에 그 이유를 간단히 기록한다.
+
+### Maturity and Enhancement Tracking
+
+구현 범위의 완료와 기능 전체의 완성도를 구분한다.
+
+- 주요 기능을 추가하거나 동작·평가 결과가 바뀌면 `docs/v1-maturity-ledger.md`를 같은
+  변경에서 갱신한다.
+- 각 기능에 현재 가능한 범위, 검증 근거, 알려진 한계, activation gate와 다음 고도화
+  항목을 남긴다.
+- 단일 성공 사례나 테스트 통과만으로 기능을 완성형이라고 보고하지 않는다.
+- 실패한 실험과 낮은 평가 결과도 삭제하거나 성공으로 표현하지 않고 baseline으로 남긴다.
+- 사용자 보고에서 `범위 완료`, 현재 maturity와 남은 고도화를 구분한다.
 
 ### Branch Naming
 

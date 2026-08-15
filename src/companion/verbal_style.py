@@ -127,6 +127,10 @@ class VerbalStylePlanner:
             directness=act["directness"],
             sentence_length=act["sentence_length"],
             register=register,
+            max_sentences=act.get("max_sentences", self._profile.max_sentences),
+            max_words_per_sentence=act.get(
+                "max_words_per_sentence", self._profile.max_words_per_sentence
+            ),
         )
 
     def instruction(self, dialogue_act: str) -> str | None:
