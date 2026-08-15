@@ -59,10 +59,11 @@ docker compose run --rm dev python -m companion.cli \
 
 ## M2 이후의 한계
 
-- 기억 후보의 승인·활성화는 아직 CLI ID 명령으로만 한다. Voice 대화만으로 확정하지
-  않는다.
-- 명시적 `기억해` 또는 `기억해줘` 형식만 결정론적으로 인식한다.
-- 검색은 keyword overlap 기반이다. embedding/vector search, 자동 conflict 판단,
-  장기 선호의 반복 관찰 기반 갱신은 다음 단계다.
+- 2026-08-15 이후에는 안정적인 1인칭 직접 진술도 CLI·Web·Voice의 shared Core에서
+  자동 활성화한다. 순간 상태·질문·추측·제3자 진술은 제외한다.
+- 같은 named fact와 동일 대상의 명확한 반대 선호만 결정론적으로 supersede한다. 모호한
+  의미 충돌과 모델이 추론한 기억은 자동 활성화하지 않는다.
+- 검색은 keyword overlap 기반이다. embedding/vector search와 장기 선호의 반복 관찰
+  기반 갱신은 다음 단계다.
 - 실제 마이크·스피커 기반 Voice round trip은 #34의 수동 하드웨어 검증이 남아 있다.
 - 데이터 파일(`data/`, SQLite, 음성, 모델)은 Git에 저장하지 않는다.

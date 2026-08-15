@@ -86,6 +86,27 @@ Companion> 현재는 대화 기반의 언어 모델로 실행되고 있습니다
 repository에만 남고 model prompt에 이전 turn을 포함하지 않는다. SQLite 영속화와
 conversation context는 후속 Milestone 1 작업이다.
 
+## Current Orin runtime — 2026-08-15
+
+Milestone 0의 Qwen probe와 현재 운영 endpoint는 같지 않다. `/props`로 실제 서버를
+확인한 결과는 다음과 같다.
+
+| Item | Verified value |
+| --- | --- |
+| Endpoint | Host SSH loopback `http://127.0.0.1:18080` |
+| Server model path | `/home/armstrong/models/A.X-4.0-Light-Q4_K_M.gguf` |
+| Context | 4096 tokens |
+| First token / full response | 0.439 s / 1.455 s on the measured continuity prompt |
+| Privacy | Orin loopback only; Host에서 SSH tunnel로 접근 |
+
+기존 `./winter chat`은 문서와 달리 PC의 CPU-only llama-server를 호출해 같은 종류의
+문맥에서 first token 13.846초, full response 19.446초가 걸렸다. launcher와 모든 live
+interface 기본값을 Orin tunnel로 통일했다.
+
+`A.X-4.0-Light`의 정확한 upstream model card와 checkpoint license는 이 저장소에서 아직
+검증되지 않았다. 개인 local runtime 사용과 별개로, checkpoint를 재배포하거나 결과를
+최종 모델 선택 근거로 확정하기 전에는 provenance와 license를 반드시 추가 확인한다.
+
 ## Probe order and acceptance
 
 ### 1. LLM
