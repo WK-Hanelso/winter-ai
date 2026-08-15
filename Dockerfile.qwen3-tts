@@ -25,4 +25,3 @@ RUN pip install --no-cache-dir qwen-tts==0.1.1 \
     && python -c "from qwen_tts import Qwen3TTSModel; print('Qwen3-TTS import OK')"
 
 WORKDIR /opt/qwen3-tts
-

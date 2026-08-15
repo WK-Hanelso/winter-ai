@@ -309,4 +309,3 @@ def _from_row(row: sqlite3.Row) -> Belief:
 
 def _terms(text: str) -> set[str]:
     return {match.group(0).lower() for match in _TERMS.finditer(text)}
-

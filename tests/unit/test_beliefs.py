@@ -115,4 +115,3 @@ def test_belief_context_marks_stances_as_revisable_judgements(tmp_path: Path) ->
     assert belief.id in context
     assert "TTS 개선이 먼저다" in context
     assert "고정된 사실이 아니라" in context
-
