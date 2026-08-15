@@ -29,6 +29,7 @@ needs no network:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 import shutil
@@ -79,6 +80,14 @@ def embed(encoder: EncoderClassifier, path: Path) -> torch.Tensor:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reference", type=Path, required=True)
+    parser.add_argument(
+        "--reference-extra",
+        type=Path,
+        action="append",
+        default=[],
+        help="held-out Reference clip to include in the mean target embedding",
+    )
+    parser.add_argument("--report", type=Path)
     parser.add_argument("paths", type=Path, nargs="+")
     return parser
 
@@ -86,13 +95,31 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
     encoder = load_encoder()
-    reference = embed(encoder, arguments.reference)
+    references = [arguments.reference, *arguments.reference_extra]
+    reference = torch.stack([embed(encoder, path) for path in references]).mean(dim=0)
+    reference = reference / reference.norm()
     width = max(len(path.name) for path in arguments.paths)
+    scores: list[dict[str, object]] = []
     for path in arguments.paths:
         if path == arguments.reference:
             continue
         similarity = float(torch.dot(embed(encoder, path), reference))
+        scores.append({"path": path.name, "similarity": similarity})
         print(f"{path.name:{width}s}  {similarity:.4f}")
+    if arguments.report:
+        arguments.report.write_text(
+            json.dumps(
+                {
+                    "reference_count": len(references),
+                    "references": [path.name for path in references],
+                    "scores": scores,
+                },
+                ensure_ascii=False,
+                indent=1,
+            ),
+            encoding="utf-8",
+        )
+        arguments.report.chmod(0o600)
     return 0
 
 

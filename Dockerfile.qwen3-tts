@@ -1,0 +1,28 @@
+# Direct Korean voice-cloning candidate: Qwen3-TTS 12Hz Base (Apache-2.0).
+#
+# This is deliberately a separate image. Qwen3-TTS pins a newer transformers
+# stack than Chatterbox and Seed-VC, and changing either working image to make a
+# probe fit would turn an architecture comparison into a dependency migration.
+FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOME=/cache \
+    HF_HOME=/cache/huggingface \
+    NUMBA_CACHE_DIR=/cache/numba \
+    MPLCONFIGDIR=/cache/matplotlib \
+    TORCH_HOME=/cache/torch
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg libsndfile1 sox \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pin the official package version used by this probe. Model weights remain in
+# the mounted Host cache: the first run downloads them, later runs can be fully
+# offline and rebuilding this image never downloads a multi-gigabyte checkpoint.
+RUN pip install --no-cache-dir qwen-tts==0.1.1 \
+    && python -c "from qwen_tts import Qwen3TTSModel; print('Qwen3-TTS import OK')"
+
+WORKDIR /opt/qwen3-tts
+

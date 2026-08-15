@@ -104,7 +104,7 @@ def widest_gap(scores: list[float]) -> float:
 
 def seconds(path: Path) -> float:
     info = torchaudio.info(str(path))
-    return info.num_frames / info.sample_rate
+    return float(info.num_frames / info.sample_rate)
 
 
 def build_parser() -> argparse.ArgumentParser:

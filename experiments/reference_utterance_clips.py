@@ -187,7 +187,8 @@ def chunk_speaker(reports: Path, chunk: str, fallback: int | None) -> int | None
     identified = json.loads(report.read_text(encoding="utf-8"))["identified_speaker"]
     if not identified.get("is_confident"):
         return None
-    return identified["reference_speaker"]
+    speaker = identified.get("reference_speaker")
+    return speaker if type(speaker) is int else None
 
 
 def join_cues(cues: Sequence[Word], maximum_seconds: float = MAXIMUM_SECONDS) -> list[Word]:

@@ -1,0 +1,29 @@
+services:
+  vc:
+    # Alternative stage 2: preserve the source F0 contour explicitly. This is
+    # kept separate from compose.vc-server.yaml until the listening gate is
+    # passed; both expose the same HTTP contract and must not run together.
+    image: winter-ai:seedvc
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    gpus: all
+    working_dir: /opt/seed-vc
+    entrypoint: ["python", "/probe/seedvc_server.py"]
+    command:
+      - --f0-condition
+      - --auto-f0-adjust
+      - --reference
+      - ${VC_REFERENCE:?Set VC_REFERENCE to the Reference audio}
+      - --length-adjust
+      - "${VC_LENGTH_ADJUST:-1.15}"
+      - --diffusion-steps
+      - "${VC_DIFFUSION_STEPS:-30}"
+    volumes:
+      - ${REFERENCE_STORAGE_ROOT:?Set REFERENCE_STORAGE_ROOT}:${REFERENCE_STORAGE_ROOT}:ro
+      - ./experiments:/probe:ro
+    ports:
+      - "127.0.0.1:8091:8091"
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"

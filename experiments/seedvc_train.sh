@@ -43,11 +43,24 @@ fi
 # links cost nothing and survive the delete: it removes a name, not the data.
 ARCHIVE="$RUNS/archive"
 mkdir -p "$ARCHIVE"
+# 이 장치는 지난 두 번의 실행에서 archive 디렉토리조차 남기지 않았다. 코드가
+# 있는 것과 도는 것은 다르므로, 무엇을 언제 보관했는지 적는다 -- 끝나고 나서
+# 두 개만 남은 것을 발견하면 그 학습은 다시 해야 한다.
 keep_checkpoints() {
-  while sleep 20; do
+  while sleep 10; do
     for found in "$RUNS"/run_*/"${SEEDVC_RUN_NAME:-winter}"/DiT_epoch_*.pth; do
       [ -e "$found" ] || continue
-      ln -f "$found" "$ARCHIVE/$(basename "$found")" 2>/dev/null || true
+      name="$(basename "$found")"
+      [ -e "$ARCHIVE/$name" ] && continue
+      if ln -f "$found" "$ARCHIVE/$name" 2>/dev/null; then
+        echo "  [보관] $name ($(date +%H:%M:%S))"
+      else
+        # 하드 링크는 같은 파일 시스템 안에서만 된다. 실패하면 복사한다 --
+        # 느리지만, 지워진 뒤에 알아차리는 것보다 낫다.
+        cp "$found" "$ARCHIVE/$name" 2>/dev/null \
+          && echo "  [보관·복사] $name ($(date +%H:%M:%S))" \
+          || echo "  [보관 실패] $name" >&2
+      fi
     done
   done
 }

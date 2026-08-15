@@ -27,8 +27,10 @@ import types
 sys.path.append("/opt/seed-vc")
 
 import inference  # noqa: E402
+import torch  # noqa: E402
 
 INFERENCE_CFG_RATE = 0.7
+BASE_SEED = 240814
 
 
 def main() -> None:
@@ -53,10 +55,15 @@ def main() -> None:
         started = time.perf_counter()
         loaded = inference.load_models(settings)
         original = inference.load_models
-        inference.load_models = lambda _a: loaded
+        inference.load_models = lambda _a, model=loaded: model
         print(f"[{tag}] 모델 준비 {time.perf_counter() - started:.1f}초", flush=True)
         try:
-            for source in options.sources:
+            for index, source in enumerate(options.sources):
+                # The two auto-adjust modes must see the same diffusion noise;
+                # otherwise their difference is partly a different random take.
+                torch.manual_seed(BASE_SEED + index)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(BASE_SEED + index)
                 settings.source = str(source)
                 settings.target = str(options.reference)
                 with tempfile.TemporaryDirectory(prefix="winter-f0-") as staging:
@@ -70,7 +77,8 @@ def main() -> None:
                     destination = options.out / f"{source.stem}__{tag}.wav"
                     shutil.copyfile(produced[0], destination)
                 destination.chmod(0o600)
-                print(f"  {source.stem} -> {destination.name} ({time.perf_counter()-at:.2f}초)", flush=True)
+                elapsed = time.perf_counter() - at
+                print(f"  {source.stem} -> {destination.name} ({elapsed:.2f}초)", flush=True)
         finally:
             inference.load_models = original
 

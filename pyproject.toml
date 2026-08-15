@@ -71,6 +71,11 @@ module = [
     "trim_leaked_opening",
     "bitsandbytes.*",
     "hyperpyyaml.*",
+    "chatterbox.*",
+    "inference",
+    "librosa.*",
+    "qwen_tts.*",
+    "rvc.*",
 ]
 ignore_missing_imports = true
 

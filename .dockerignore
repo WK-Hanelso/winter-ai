@@ -2,6 +2,8 @@
 .github/
 .env
 .env.*
+.cache/
+review/
 data/
 models/
 checkpoints/

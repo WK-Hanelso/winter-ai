@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Literal, TypedDict
 
 import librosa
 import numpy as np
@@ -50,16 +51,30 @@ TAIL_SHARE = 0.3
 MINIMUM_FRAMES = 20
 
 
+class PitchMeasure(TypedDict):
+    end_slope: float
+    width: float
+
+
+class MeasurementRow(TypedDict):
+    name: str
+    kind: str
+    source: PitchMeasure
+    converted: PitchMeasure | None
+
+
 def contour(path: Path) -> np.ndarray | None:
     """반음 단위 음높이 곡선. 중앙값을 0으로 놓아 화자 간 비교가 되게 한다."""
     audio, rate = librosa.load(str(path), sr=22050, mono=True)
-    frequency, voiced, _ = librosa.pyin(
-        audio, fmin=MINIMUM_HZ, fmax=MAXIMUM_HZ, sr=rate, frame_length=1024
+    frequency_raw, voiced_raw, _ = librosa.pyin(
+        np.asarray(audio), fmin=MINIMUM_HZ, fmax=MAXIMUM_HZ, sr=rate, frame_length=1024
     )
+    frequency = np.asarray(frequency_raw, dtype=float)
+    voiced = np.asarray(voiced_raw, dtype=bool)
     frequency = frequency[voiced & ~np.isnan(frequency)]
     if len(frequency) < MINIMUM_FRAMES:
         return None
-    return 12 * np.log2(frequency / np.median(frequency))
+    return np.asarray(12 * np.log2(frequency / np.median(frequency)), dtype=float)
 
 
 def end_slope(semitones: np.ndarray) -> float:
@@ -68,7 +83,7 @@ def end_slope(semitones: np.ndarray) -> float:
     return float(np.polyfit(np.arange(len(tail)), tail, 1)[0] * len(tail))
 
 
-def measure(path: Path) -> dict[str, float] | None:
+def measure(path: Path) -> PitchMeasure | None:
     semitones = contour(path)
     if semitones is None:
         return None
@@ -91,8 +106,11 @@ def main() -> None:
     parser.add_argument("--report", type=Path)
     options = parser.parse_args()
 
-    rows: list[dict[str, object]] = []
-    print(f"{'문장':<10} {'소스 끝기울기':>13} {'변환 끝기울기':>13} {'소스 폭':>8} {'변환 폭':>8}")
+    rows: list[MeasurementRow] = []
+    print(
+        f"{'문장':<10} {'소스 끝기울기':>13} {'변환 끝기울기':>13} "
+        f"{'소스 폭':>8} {'변환 폭':>8}"
+    )
     for source in sorted(options.pairs.glob("[sq][0-9].wav")):
         converted = source.with_name(f"{source.stem}{options.converted_suffix}.wav")
         before = measure(source)
@@ -101,7 +119,12 @@ def main() -> None:
             print(f"{source.stem:<10} 유성 구간 부족")
             continue
         kind = "평서" if source.stem.startswith("s") else "의문"
-        row = {"name": source.stem, "kind": kind, "source": before, "converted": after}
+        row: MeasurementRow = {
+            "name": source.stem,
+            "kind": kind,
+            "source": before,
+            "converted": after,
+        }
         rows.append(row)
         if after is None:
             print(f"{source.stem}({kind}) {before['end_slope']:>12.2f} {'변환 없음':>14}")
@@ -117,35 +140,54 @@ def main() -> None:
             "평서문은 s로, 의문문은 q로 시작하는 이름이어야 합니다."
         )
 
-    def gap(stage: str) -> float | None:
+    def values(
+        stage: Literal["source", "converted"],
+        field: Literal["end_slope", "width"],
+        kind: str | None = None,
+    ) -> list[float]:
+        selected: list[float] = []
+        for row in rows:
+            measurement = row[stage]
+            if measurement is not None and (kind is None or row["kind"] == kind):
+                selected.append(measurement[field])
+        return selected
+
+    def gap(stage: Literal["source", "converted"]) -> float | None:
         """의문문과 평서문의 끝 기울기 차이. 이것이 두 문형을 가르는 값이다."""
-        questions = [r[stage]["end_slope"] for r in rows if r["kind"] == "의문" and r[stage]]
-        statements = [r[stage]["end_slope"] for r in rows if r["kind"] == "평서" and r[stage]]
+        questions = values(stage, "end_slope", "의문")
+        statements = values(stage, "end_slope", "평서")
         if not questions or not statements:
             return None
         return float(np.mean(questions) - np.mean(statements))
 
-    def width(stage: str) -> float | None:
-        values = [r[stage]["width"] for r in rows if r[stage]]
-        return float(np.mean(values)) if values else None
+    def width(stage: Literal["source", "converted"]) -> float | None:
+        widths = values(stage, "width")
+        return float(np.mean(widths)) if widths else None
 
-    summary = {
-        "question_statement_gap_source": gap("source"),
+    source_gap = gap("source")
+    source_width = width("source")
+    assert source_gap is not None and source_width is not None
+    summary: dict[str, float | None] = {
+        "question_statement_gap_source": source_gap,
         "question_statement_gap_converted": gap("converted"),
-        "width_source": width("source"),
+        "width_source": source_width,
         "width_converted": width("converted"),
     }
     print()
     print("의문문-평서문 끝 기울기 차이 (클수록 두 문형이 구별된다)")
-    print(f"  소스   {summary['question_statement_gap_source']:.2f} 반음")
-    if summary["question_statement_gap_converted"] is not None:
-        kept = summary["question_statement_gap_converted"] / summary["question_statement_gap_source"]
-        print(f"  변환   {summary['question_statement_gap_converted']:.2f} 반음  (보존 {kept:.0%})")
+    print(f"  소스   {source_gap:.2f} 반음")
+    converted_gap = summary["question_statement_gap_converted"]
+    if converted_gap is not None:
+        kept = converted_gap / source_gap
+        print(f"  변환   {converted_gap:.2f} 반음  (보존 {kept:.0%})")
     print("억양 폭 (클수록 오르내림이 살아 있다)")
-    print(f"  소스   {summary['width_source']:.2f} 반음")
-    if summary["width_converted"] is not None:
-        print(f"  변환   {summary['width_converted']:.2f} 반음  "
-              f"(보존 {summary['width_converted'] / summary['width_source']:.0%})")
+    print(f"  소스   {source_width:.2f} 반음")
+    converted_width = summary["width_converted"]
+    if converted_width is not None:
+        print(
+            f"  변환   {converted_width:.2f} 반음  "
+            f"(보존 {converted_width / source_width:.0%})"
+        )
     print()
     print("보존율만 비교할 것. 소스 절대값은 생성할 때마다 달라진다.")
     print("2026-08-14, 25.2분으로 학습한 체크포인트: 차이 보존 9%, 폭 보존 50%")

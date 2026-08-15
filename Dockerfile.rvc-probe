@@ -1,0 +1,47 @@
+# Reproducible local probe for public RVC v2 voice models.
+#
+# Applio is pinned because its latest dependency set moves quickly. The base
+# image already contains a CUDA/PyTorch combination that is known to run on
+# this machine's Turing GPU; installing Applio's CUDA 12.8 image would exceed
+# the installed driver's supported runtime.
+FROM winter-ai:qwen3-tts
+
+ARG APPLIO_COMMIT=085197e738ce9dd4c0bae1e0a74df5de25b89444
+ARG APPLIO_RESOURCES_REVISION=774d3d1f46102030638bc27d3a95cda6f68cf293
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone https://github.com/IAHispano/Applio.git /opt/applio \
+    && git -C /opt/applio checkout "$APPLIO_COMMIT" \
+    && rm -rf /opt/applio/.git
+
+# VoiceConverter imports every supported F0 and post-processing backend even
+# though this probe deliberately uses only RMVPE and no effects.
+RUN pip install --no-cache-dir \
+      faiss-cpu==1.14.3 \
+      noisereduce==3.0.3 \
+      pedalboard==0.9.24 \
+      stftpitchshift==2.0 \
+      torchcrepe==0.0.24 \
+      torchfcpe==0.0.4 \
+      wget==3.2
+
+RUN mkdir -p \
+      /opt/applio/rvc/models/predictors \
+      /opt/applio/rvc/models/embedders/contentvec \
+    && wget -q -O /opt/applio/rvc/models/predictors/rmvpe.pt \
+      "https://huggingface.co/IAHispano/Applio/resolve/${APPLIO_RESOURCES_REVISION}/Resources/predictors/rmvpe.pt" \
+    && wget -q -O /opt/applio/rvc/models/embedders/contentvec/pytorch_model.bin \
+      "https://huggingface.co/IAHispano/Applio/resolve/${APPLIO_RESOURCES_REVISION}/Resources/embedders/contentvec/pytorch_model.bin" \
+    && wget -q -O /opt/applio/rvc/models/embedders/contentvec/config.json \
+      "https://huggingface.co/IAHispano/Applio/resolve/${APPLIO_RESOURCES_REVISION}/Resources/embedders/contentvec/config.json"
+
+ENV PYTHONPATH=/opt/applio \
+    NUMBA_CACHE_DIR=/tmp/numba \
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+WORKDIR /opt/applio
+
+RUN python -c "from rvc.infer.infer import VoiceConverter; print('RVC import OK')"

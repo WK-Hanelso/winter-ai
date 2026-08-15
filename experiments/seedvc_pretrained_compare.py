@@ -65,7 +65,8 @@ def convert_all(settings: types.SimpleNamespace, sources: list[Path],
                 destination = out / f"{source.stem}__{tag}.wav"
                 shutil.copyfile(produced[0], destination)
             destination.chmod(0o600)
-            print(f"  {source.stem} -> {destination.name} ({time.perf_counter()-elapsed:.2f}초)", flush=True)
+            duration = time.perf_counter() - elapsed
+            print(f"  {source.stem} -> {destination.name} ({duration:.2f}초)", flush=True)
     finally:
         inference.load_models = original
 

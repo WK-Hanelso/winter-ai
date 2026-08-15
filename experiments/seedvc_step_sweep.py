@@ -79,7 +79,10 @@ def main() -> None:
                 destination = options.out / f"{source.stem}_step{steps:02d}.wav"
                 shutil.copyfile(produced[0], destination)
             destination.chmod(0o600)
-            print(f"  {source.stem} step {steps:>2}: {elapsed:.2f}초 -> {destination.name}", flush=True)
+            print(
+                f"  {source.stem} step {steps:>2}: {elapsed:.2f}초 -> {destination.name}",
+                flush=True,
+            )
 
 
 if __name__ == "__main__":

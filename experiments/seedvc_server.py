@@ -49,13 +49,19 @@ DEFAULT_LENGTH_ADJUST = 1.15
 
 
 def conversion_arguments(
-    checkpoint: Path, config: Path, length_adjust: float, diffusion_steps: int
+    checkpoint: Path | None,
+    config: Path | None,
+    length_adjust: float,
+    diffusion_steps: int,
+    *,
+    f0_condition: bool = False,
+    auto_f0_adjust: bool = False,
 ) -> types.SimpleNamespace:
     return types.SimpleNamespace(
-        checkpoint=str(checkpoint),
-        config=str(config),
-        f0_condition=False,
-        auto_f0_adjust=False,
+        checkpoint=str(checkpoint) if checkpoint else None,
+        config=str(config) if config else None,
+        f0_condition=f0_condition,
+        auto_f0_adjust=auto_f0_adjust,
         semi_tone_shift=0,
         diffusion_steps=diffusion_steps,
         length_adjust=length_adjust,
@@ -72,15 +78,23 @@ class Converter:
 
     def __init__(
         self,
-        checkpoint: Path,
-        config: Path,
+        checkpoint: Path | None,
+        config: Path | None,
         reference: Path,
         length_adjust: float,
         diffusion_steps: int = DEFAULT_DIFFUSION_STEPS,
+        *,
+        f0_condition: bool = False,
+        auto_f0_adjust: bool = False,
     ) -> None:
         started = time.perf_counter()
         self._arguments = conversion_arguments(
-            checkpoint, config, length_adjust, diffusion_steps
+            checkpoint,
+            config,
+            length_adjust,
+            diffusion_steps,
+            f0_condition=f0_condition,
+            auto_f0_adjust=auto_f0_adjust,
         )
         loaded = inference.load_models(self._arguments)
         # The one line this server exists for: upstream reloads the models on
@@ -88,7 +102,8 @@ class Converter:
         inference.load_models = lambda _arguments: loaded
         self._reference = reference
         self._lock = threading.Lock()
-        print(f"변환 준비됨 ({time.perf_counter() - started:.1f}초)", flush=True)
+        mode = "F0 맞춤" if f0_condition and auto_f0_adjust else "F0" if f0_condition else "일반"
+        print(f"변환 준비됨 ({mode}, {time.perf_counter() - started:.1f}초)", flush=True)
 
     def convert(self, wav: bytes) -> bytes:
         started = time.perf_counter()
@@ -151,9 +166,11 @@ def make_handler(converter: Converter) -> type[BaseHTTPRequestHandler]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument("--config", type=Path)
     parser.add_argument("--reference", type=Path, required=True)
+    parser.add_argument("--f0-condition", action="store_true")
+    parser.add_argument("--auto-f0-adjust", action="store_true")
     parser.add_argument("--length-adjust", type=float, default=DEFAULT_LENGTH_ADJUST)
     # Fewer steps is less time per sentence. Whether it is also less quality is
     # a question for 천우's ears, so it is a setting rather than a constant.
@@ -164,7 +181,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
-    for path in (arguments.checkpoint, arguments.config, arguments.reference):
+    if arguments.auto_f0_adjust and not arguments.f0_condition:
+        print("--auto-f0-adjust는 --f0-condition과 함께 써야 합니다", file=sys.stderr)
+        return 2
+    if not arguments.f0_condition and (not arguments.checkpoint or not arguments.config):
+        print("일반 모델에는 --checkpoint와 --config가 필요합니다", file=sys.stderr)
+        return 2
+    if bool(arguments.checkpoint) != bool(arguments.config):
+        print("--checkpoint와 --config는 함께 지정해야 합니다", file=sys.stderr)
+        return 2
+    paths = [arguments.reference]
+    paths.extend(path for path in (arguments.checkpoint, arguments.config) if path)
+    for path in paths:
         if not path.exists():
             print(f"찾지 못했습니다: {path}", file=sys.stderr)
             return 1
@@ -174,6 +202,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         arguments.reference,
         arguments.length_adjust,
         arguments.diffusion_steps,
+        f0_condition=arguments.f0_condition,
+        auto_f0_adjust=arguments.auto_f0_adjust,
     )
     server = ThreadingHTTPServer(("0.0.0.0", arguments.port), make_handler(converter))
     print(f"대기 중: http://0.0.0.0:{arguments.port}/convert", flush=True)
