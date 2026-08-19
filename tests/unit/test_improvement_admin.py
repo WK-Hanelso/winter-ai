@@ -20,4 +20,7 @@ def test_admin_prints_only_aggregate_state(
 
     assert "improvements: total=1" in output
     assert "observed: 1" in output
+    assert "implementation_approvals: 0" in output
+    assert "adoption_approvals: 0" in output
+    assert "cycle_records: 0" in output
     assert "private" not in output

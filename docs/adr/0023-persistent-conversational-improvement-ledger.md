@@ -45,7 +45,7 @@ CLI, Web, Voice는 같은 `data/improvements.sqlite`를 사용한다.
 
 - 품질 gate에 실패한 TurnUnderstanding signal의 자동 등록
 - 일반 대화 문구만으로 승인 추측
-- Worker 실행, source 적용, 검증 또는 채택 상태 전이
+- 실제 Worker 실행, source 적용 또는 Capability Registry 갱신
 - Capability Registry 자동 갱신
 - 기존 ChangeProposal/Adoption Shadow 구현의 재작성
 
@@ -53,13 +53,14 @@ CLI, Web, Voice는 같은 `data/improvements.sqlite`를 사용한다.
 
 개선 안건과 proposal revision은 재시작 뒤에도 사라지지 않고 구현 승인의 정확한 대상이
 보존된다. 반대로 이번 단계만으로 실제 변경은 일어나지 않는다. 이후 Fake Worker 전체
-state machine은 이 Ledger의 `approved`를 입력으로 받고, 별도 검증과 채택 승인을 거쳐야 한다.
+state machine은 ADR-0024에서 이 Ledger의 `approved`를 입력으로 받고 별도 검증과 채택
+승인 경계를 증명한다.
 
 ## 남은 한계
 
 - stable evidence reference 형식은 강제하지만 각 source DB row 존재 여부를 아직 교차 검증하지
   않는다.
 - 실제 대화에서 observation/proposal을 생성하는 겨울이 소유의 semantic route는 미연결이다.
-- implementing 이후 lifecycle과 기존 ChangeProposal의 연결은 다음 Issue다.
+- Fake lifecycle과 기존 isolated ChangeProposal의 실제 연결은 다음 Issue다.
 - 정상 사용에서 천우에게 관리 명령을 요구하지 않는다. `./winter improvements`는 원문 없는
   개발·audit 집계만 제공한다.

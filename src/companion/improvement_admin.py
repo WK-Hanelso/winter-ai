@@ -31,7 +31,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     for status in sorted(statuses):
         print(f"{status}: {statuses[status]}")
     print(f"proposal_versions: {sum(len(item.proposals) for item in items)}")
-    print(f"implementation_approvals: {sum(len(item.decisions) for item in items)}")
+    print(
+        "implementation_approvals: "
+        f"{sum(sum(d.kind == 'implementation_approval' for d in item.decisions) for item in items)}"
+    )
+    print(
+        "adoption_approvals: "
+        f"{sum(sum(d.kind == 'adoption_approval' for d in item.decisions) for item in items)}"
+    )
+    print(f"cycle_records: {sum(len(item.cycle_records) for item in items)}")
     return 0
 
 

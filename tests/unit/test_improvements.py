@@ -1,4 +1,5 @@
 from pathlib import Path
+import sqlite3
 
 import pytest
 
@@ -8,6 +9,26 @@ from companion.improvements import (
     PersistentImprovementSnapshot,
     SqliteImprovementLedger,
 )
+
+
+def test_schema_v1_migrates_to_cycle_records(tmp_path: Path) -> None:
+    path = tmp_path / "improvements.sqlite"
+    with sqlite3.connect(path) as connection:
+        connection.execute("CREATE TABLE improvement_schema (version INTEGER NOT NULL)")
+        connection.execute("INSERT INTO improvement_schema VALUES (1)")
+
+    SqliteImprovementLedger(path)
+
+    with sqlite3.connect(path) as connection:
+        version = connection.execute(
+            "SELECT version FROM improvement_schema"
+        ).fetchone()
+        cycle_table = connection.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type = 'table' AND name = 'improvement_cycle_records'"
+        ).fetchone()
+    assert version == (2,)
+    assert cycle_table == ("improvement_cycle_records",)
 
 
 def _observe(ledger: SqliteImprovementLedger):
