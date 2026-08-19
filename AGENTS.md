@@ -598,13 +598,13 @@ Task 001과 초기 Milestone 기반은 완료되었다. 기존 저장소를 다�
 `Winter-owned Work Orchestration` Shadow V0를 검증하는 것이다.
 
 2026-08-19 전체 감사의 prerequisite 복구 순서에 따라 #119 `read-only SelfModel + persistent
-CapabilityRegistry`와 #120 `persistent conversational ImprovementLedger`의 구현·운영 검증을
-완료했다. 현재 단일 active scope는 다시 Issue #118 `background maintenance`다. 24시간 관찰
-중 한 120초 deferred row가 계속 선두에서 재선택돼 이후 queue가 굶는 결함을 발견했기 때문이다.
-이번 수정은 deferred row를 실패·삭제하지 않고 재시도 횟수를 보존하며 뒤로 회전시키는
-queue fairness만 다룬다. 결과 품질 gate는 실패 상태이고 새 소비자에 연결하지 않는다.
-TurnUnderstanding 자동 등록의 의미 정책, Worker 실행, Capability 채택, 권한 변경과 Shadow
-결과 activation은 금지한다. 아래 Work Orchestration 계약과 실패 기준선은 그대로 보존한다.
+CapabilityRegistry`, #120 `persistent conversational ImprovementLedger`와 #118 deferred queue
+fairness의 구현·운영 검증을 완료했다. #118은 24시간 관찰 트랙에 남고 결과 품질 gate는 실패
+상태다. 현재 단일 active scope는 Issue #121 `Fake Worker Level 3 lifecycle`이다. approved
+Improvement의 exact version/hash에서만 deterministic Fake Worker를 호출하고, 독립 검증·별도
+채택 승인·rollback까지 상태 경계를 offline으로 증명한다. 실제 Worker, source 변경,
+Capability `available`, 계정 권한, 외부 write와 TurnUnderstanding 자동 등록은 금지한다.
+아래 Work Orchestration 계약과 실패 기준선은 그대로 보존한다.
 
 1. 현재 혼합 worktree의 사용자·Claude·Codex 변경을 보존한다.
 2. 하나의 Winter Core Model이 `IntentBrief`와 `WinterDecision`을 모두 생성한다. 두 개의

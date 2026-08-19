@@ -431,3 +431,7 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   120.1초 뒤 pending·defer count 1로 회전했고 다음 row가 94.9초에 completed돼 aggregate가
   17/8/177로 전진했다. maintenance restart 0, analysis health 정상, active Memory 10건 불변으로
   fairness 운영 gate를 통과했다. 24시간 안정성과 분석 내용 품질 gate 실패는 계속 남긴다.
+- 2026-08-19: #118 fairness를 관찰 트랙으로 돌리고 Issue #121 Fake Worker Level 3 lifecycle을
+  단일 active code scope로 전환했다. 실제 Worker나 source를 연결하지 않고 #120 approved
+  proposal에서 독립 검증·별도 adoption 승인·rollback까지 deterministic state machine만
+  구현한다.
