@@ -69,7 +69,7 @@ dependencies = ["shared_core"]
 
 [[features]]
 id = "web_ingress_safety"
-maturity = "shadow"
+maturity = "operational"
 evidence = [
   "docs/web-ingress-safety.md",
   "tests/unit/test_web_ingress.py",

@@ -54,8 +54,23 @@ curl -fsS http://127.0.0.1:8000/health
 tailscale serve status
 ```
 
-그 뒤 `ss -ltn 'sport = :8000'`에서 `127.0.0.1:8000`만 보여야 한다. Tailscale HTTPS에서
-폰 page와 짧은 push-to-talk 한 turn도 확인한다.
+그 뒤 `ss -ltn 'sport = :8000'`에서 `127.0.0.1:8000`만 보여야 한다. 폰의 일반적인
+push-to-talk 대화는 이후 실사용 관찰에 포함하지만, 변경하지 않은 음성 기능을 다시 수동
+시연하는 것을 이 ingress 보안 수정의 activation gate로 삼지는 않는다.
+
+## 2026-08-19 운영 검증
+
+- 설치된 user unit과 repository unit이 일치하고 서비스가 새 설정으로 재시작됐다.
+- 실제 socket은 `127.0.0.1:8000`에만 열렸고 `0.0.0.0:8000` listener는 없다.
+- loopback `/health`가 `ok`를 반환했다.
+- 실행 중인 서버에 16 MiB를 넘는 `/turn`을 보내 HTTP 413과 명시적 오류 본문을 확인했다.
+- Tailscale Serve는 tailnet 전용 HTTPS hostname을 `127.0.0.1:8000`으로 전달한다.
+- 서버의 Tailscale IP로 hostname을 resolve해 HTTPS `/health=ok`를 확인했으므로 인증서와
+  Serve proxy를 포함한 ingress 경로가 실제로 동작한다.
+
+이 증거는 #114의 범위인 직접 LAN 노출 제거와 request body 상한을 실제 운영 process에서
+확인한다. Android peer가 당시 offline이어서 폰 시연은 하지 않았지만, 이는 보안 경계의
+성공 여부를 바꾸지 않는다.
 
 ## 복구
 

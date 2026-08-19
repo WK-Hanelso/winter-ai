@@ -320,3 +320,8 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
 - 2026-08-19: repository Web 경로는 loopback과 16 MiB body limit으로 수정하고 HTTP 실패
   회귀를 추가했다. 전체 687 tests, Ruff, mypy를 통과했지만 설치된 service 재시작 전이므로
   `web_ingress_safety=shadow`로 유지한다. 실제 socket은 여전히 `0.0.0.0:8000`으로 확인됐다.
+- 2026-08-19: 설치된 unit을 repository와 동기화해 재시작했다. 실제 listener는
+  `127.0.0.1:8000`만 남았고 local health, live oversized `/turn` HTTP 413, Tailscale Serve
+  HTTPS health를 확인해 `web_ingress_safety=operational`로 승격했다. 당시 Android peer는
+  offline이었지만 변경하지 않은 폰 음성 시연은 ingress 보안 gate에서 제외하고 일상
+  실사용 관찰로 돌렸다.

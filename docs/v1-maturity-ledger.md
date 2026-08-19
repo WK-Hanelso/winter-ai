@@ -50,6 +50,7 @@ diff scope 검사를 다음 고도화로 남긴다.
 | Verbal Style | 3 | Reference 기반 profile과 held-out 문장 길이 평가 | Zeta/Polybuzz 수준의 관계 행동·장기 변화 아님 | 장시간 joint dialogue 선호 평가 |
 | Voice identity | 2, 제한 운영 | 이전 blind에서 현재 Seed-VC보다 높았던 Chatterbox S3Gen Reference를 직접 출력. 고정 문장 warm 2.21~2.27초, old two-stage 4.82초. Seed-VC rollback 보존 | 모든 기존 후보가 자연스러움·질문 억양·사람 착각 수준 미달. 직접 생성 3회 중 1회 구절 반복 | 실제 일상 청취와 새 voice path blind gate, 질문·고유명사 content fidelity |
 | Phone STT/Web | 2, 제한 운영 | push-to-talk→SenseVoice Q8→Core→직접 Chatterbox SSE audio 동작. 기존 Whisper+2단계 실제 폰 first-play p50 9.68초. 새 직접 경로 실제 폰 4턴 first-play p50 4.41초·p95 5.03초, release-to-STT p50 0.90초. path별 privacy-minimal latency DB 분리 | 4/20으로 표본 부족, 수동 transcript 2/4 materially wrong, 성공 turn만 기록해 failure rate 없음. VAD·barge-in·network 복구와 사람 수준 음질 미달 | 실제 폰 20 turn과 STT held-out 뒤 first-audio p50≤3초·p95≤5초 |
+| Web ingress safety | 4, 제한 운영 | 실제 user service가 loopback에만 listen하고 Tailscale Serve HTTPS가 이를 전달함. live health와 16 MiB 초과 `/turn`의 HTTP 413, offline 400/411/413 회귀 확인 | tailnet 계정 접근통제에 의존하며 앱별 사용자 인증·rate limit·slow-client timeout은 없음 | 실사용 failure 지표 뒤 timeout/rate-limit 필요성을 별도 판단 |
 | SelfModel / Capability Registry | 0 | V1 설계만 있음 | 실제 가능·불가능을 runtime 근거로 설명 못함 | health/evaluation 기반 read-only registry |
 | Improvement Ledger / proposal | 0 | 이 maturity 문서와 V1 설계만 있음 | 대화 신호가 정식 improvement state로 연결되지 않음 | problem→proposal→approval state machine |
 | Worker / Level 3 | 2, read-only 제한 운영 + write Shadow | explicit read-only route 유지. 별도 구현 승인은 sanitized copy·exact diff·bubblewrap host 검증→SQLite proposal과 근거 기반 Winter 설명을 만든다. exact hash 채택 뒤 대상 before hash가 같을 때만 임시 파일로 적용하고, 오류 시 전 대상 복원·재시작 뒤 rollback·적용 후 편집 보호를 offline 14개와 gpt-5.4 synthetic 전체 cycle로 검증 | write Shadow는 대화·project 전체 stale·process crash recovery·실제 Winter 검증 profile·Capability Registry에 미연결. 복수 line 의미 설명은 line 수 수준. hostile 동시 변경과 외부 container 격리 미검증 | 전체 baseline/recovery와 실제 repo pytest/Ruff/mypy profile 뒤 대화 route·공격 suite·실제 작은 capability 완주 |
@@ -60,8 +61,9 @@ diff scope 검사를 다음 고도화로 남긴다.
 기능 행의 근거로 기록한다.
 
 Issue #114의 Web ingress safety는 loopback 기본값·명시적 systemd host·16 MiB body limit과
-HTTP 400/411/413 offline 회귀까지 구현한 Shadow다. 설치된 user service를 재시작하고 실제
-socket·Tailscale phone turn을 확인하기 전에는 운영 보안 수정으로 승격하지 않는다.
+HTTP 400/411/413 offline 회귀를 구현했다. 설치된 user service, 실제 loopback socket,
+live HTTP 413, Tailscale Serve HTTPS health까지 확인해 제한 운영으로 승격했다. 변경하지 않은
+폰 음성 기능의 재시연은 이 보안 수정의 gate가 아니며 이후 일상 대화에서 관찰한다.
 
 ## 지속 갱신 규칙
 
