@@ -20,9 +20,11 @@ Issue #118 `대화 자원과 분리된 background Shadow maintenance 배포`는 
 계속 실행 중이며 실제 schema/grounding 실패도 별도 기록한다. Issue #119 `실제 근거 기반
 read-only SelfModel·persistent CapabilityRegistry`는 구현·운영 검증을 완료했다. 현재 코드
 Issue #118의 deferred row queue starvation은 운영에서 다음 row 진행까지 확인했고 24시간
-관찰만 계속한다. #120 `persistent conversational ImprovementLedger` 기반도 완료했다. 현재
-단일 active scope는 Issue #121 `Fake Worker Level 3 lifecycle`이다. 실제 Worker와 기존
-Shadow 재연결 전 승인→검증→별도 채택→rollback 경계를 deterministic fake로 증명했다.
+관찰만 계속한다. #120 `persistent conversational ImprovementLedger` 기반과 #121
+`Fake Worker Level 3 lifecycle` Shadow 검증도 완료했다. 현재 단일 active scope는 Issue
+#122 `approved lifecycle과 isolated implementation Shadow 연결`이다. exact proposal과 격리
+수정안의 identity·검증 근거·재시작 복구만 연결하며 실제 source 적용과 capability 등록은
+금지한다.
 
 ## Current state
 
@@ -48,6 +50,7 @@ Winter V1의 전체 제품 목표는 [Winter V1 Product Goal](winter-v1-goal.md)
 | 4 | SelfModel·CapabilityRegistry | **Issue #119 범위 완료, 제한 운영 검증 중** — 별도 persistent Registry, evidence-gated lifecycle, turn별 read-only snapshot과 Core claim authorization. CLI·Web·Voice가 같은 DB를 쓰며 health+test/evaluation 근거 없는 `available`은 금지 |
 | 5 | ImprovementLedger와 대화형 proposal | **Issue #120 기반 범위 완료** — stable evidence, 문제·대안·위험·privacy·exact scope·acceptance·rollback의 immutable version/hash와 명시적 구현 승인, read-only Core snapshot. Worker 실행·자동 signal·채택은 미연결 |
 | 6 | Fake Worker Level 3 state machine | **Issue #121 Shadow 범위 완료** — approved exact proposal만 fake 실행, Worker 성공과 독립 검증을 분리하고 exact validation report에 대한 별도 adoption approval·재시작·rollback을 persistent audit로 검증. 실제 Worker/source/Capability 연결 제외 |
+| 6a | Improvement lifecycle ↔ isolated implementation bridge | **Issue #122 active** — exact 승인에서만 격리 수정안 생성, Worker result와 독립 host verification identity를 persistent lifecycle에 연결하고 crash boundary를 fail-closed로 복원. source 적용·Capability 등록 제외 |
 | 7 | 격리 worktree·scope/test/adoption gate | **적용·rollback까지 Shadow 완료** — sanitized copy, exact scope, host 검증, Winter 설명·SQLite 재시작 보존과 hash 기반 채택. 대상 before hash stale 차단, 중간 오류 전 파일 복원, 적용 후 편집 보호 rollback을 offline·gpt-5.4 synthetic로 검증. project 전체 stale·crash recovery·실제 repo 검증 남음 |
 | 8 | 승인된 Worker Adapter 하나 연결 | **read-only 0.1 완료** — explicit Codex route, sanitized text bundle, ephemeral/read-only 실행, structured provenance와 실제 1회 성공. write/adoption이 아니라 분석 capability만 제한 운영 |
 | 8a | Winter-owned Work Orchestration | **typed provider Shadow 구현, activation 실패** — Qwen 46/66, Gemma 40/66. 빈 agent cwd, shell/web 차단, `env -i` MCP와 목록·검색·읽기, snapshot/evidence/audit offline 17개 + gpt-5.4 synthetic live 1/1. 공격 suite·실제 20 task 필요 |

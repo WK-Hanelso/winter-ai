@@ -606,13 +606,14 @@ docker compose run --rm dev mypy src
 2. persistent Capability Registry와 read-only SelfModel — **#119 범위 완료, 제한 운영 검증 중**
 3. Improvement Ledger와 대화형 proposal state machine — **#120 기반 범위 완료**
 4. Fake Worker 승인→독립 검증→별도 채택→rollback — **#121 Shadow 범위 완료**
-5. Work Orchestration V2.1 안전 계약과 기존 모델 baseline — **구현 완료, activation 실패**
-6. project 전체 stale 판정·process crash 복구·실제 Winter 검증 profile
-7. prompt-injection·path/network/write 격리 공격 suite
-8. 새 Core/runtime가 기존 ambiguity·grounding gate를 해결한다는 근거 확보
-9. semantic·권한 gate 합격 후 read-only 실제 작업 20개를 사람 평가
-10. 검증된 WinterDecision을 기존 Codex read-only route 앞뒤에 Shadow로 연결
-11. 실제 작은 capability의 제안→승인→구현→검증→채택→재평가→rollback 완주
+5. 승인 lifecycle과 기존 격리 수정안 Shadow 연결 — **#122 진행 중, source 적용 금지**
+6. Work Orchestration V2.1 안전 계약과 기존 모델 baseline — **구현 완료, activation 실패**
+7. project 전체 stale 판정·process crash 복구·실제 Winter 검증 profile
+8. prompt-injection·path/network/write 격리 공격 suite
+9. 새 Core/runtime가 기존 ambiguity·grounding gate를 해결한다는 근거 확보
+10. semantic·권한 gate 합격 후 read-only 실제 작업 20개를 사람 평가
+11. 검증된 WinterDecision을 기존 Codex read-only route 앞뒤에 Shadow로 연결
+12. 실제 작은 capability의 제안→승인→구현→검증→채택→재평가→rollback 완주
 
 ## 15. 주요 문서 인덱스
 
