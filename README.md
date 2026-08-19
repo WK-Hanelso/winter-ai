@@ -48,7 +48,7 @@ V1의 목표 자율성은 **Level 3 — 천우가 승인한 변경만 Worker가 
 | CLI 대화 | 운영 | Local LLM과 지속 대화, 모든 SQLite 상태 공유 | 장시간 자유 대화 평가는 부족 |
 | Phone Web/Voice | 제한 운영 | push-to-talk → STT → Core → 문장 단위 음성 재생 | VAD·barge-in 없음, STT와 음질 미성숙 |
 | Conversation | 운영 | CLI·Web·Voice 원문을 하나의 DB에 순서대로 보존 | 전체 원문을 매 turn prompt에 넣지 않음 |
-| Direct Memory | 운영 | 명시적 `기억해`, 안정적인 직접 진술 저장·수정 이력 | 추론형 자동 기억은 gate 실패로 미연결 |
+| Direct Memory | 운영 + provenance 개선 Shadow | 명시적 `기억해`, 좁은 named fact·안정 preference·결정 저장과 수정 이력 | broad 자기규정은 즉시 저장하지 않으며 추론형 자동 기억은 gate 실패로 미연결 |
 | Current State | 검토형 | 현재 상태와 과거 상태 Timeline 유지 | Local 분석 정확도가 activation gate 미달 |
 | Open Loop | 운영 | 나중에 이어갈 주제와 재시작 callback | 간접 약속·자동 완료 판정 부족 |
 | TurnUnderstanding | Shadow | 의도·감정·시간 범위·제안 구조 기록 | held-out 5/10, 응답과 Memory에 미연결 |
@@ -225,7 +225,8 @@ Port/Adapter 경계로 모델을 교체하며 CLI와 Voice는 반드시 같은 C
 ### 한 번의 text turn 내부 순서
 
 1. 사용자 원문을 Conversation DB에 저장한다.
-2. 명시적 Memory, 안정적인 직접 진술과 Open Loop를 deterministic 정책으로 확인한다.
+2. 명시적 Memory, exact conversation evidence가 있는 좁은 직접 진술과 Open Loop를
+   deterministic 정책으로 확인한다.
 3. 관련 active Memory, Current State, Belief, 과거 turn과 Open Loop를 조회한다.
 4. `DialogueDirector`가 `listen`, `state_view`, `self_reciprocate` 같은 대화 행동을 고른다.
 5. Identity → Memory → Belief → recall → style → grounding 순으로 context를 만든다.
@@ -279,9 +280,13 @@ CLI에 보이는 lexical response와 Voice가 말하는 문장은 동일해야 �
 
 - `기억해. 나는 Python config를 선호해` 같은 명시적 저장 요청
 - `나는 결론부터 듣는 설명을 좋아해` 같은 안정적인 1인칭 직접 진술
+- `내 생일은 3월 12일이야` 같은 이름이 정해진 사실 field
 - `우리는 SQLite로 하기로 했어` 같은 직접 결정
 
-질문, 추측, 제3자 사실, `오늘/지금`의 순간 상태는 안정 Memory로 자동 저장하지 않는다.
+질문, 추측, 제3자 사실, `오늘/지금`의 순간 상태와 일반적인 자기평가는 안정 Memory로 자동
+저장하지 않는다. 새 자동 기억은 정확한 `conversation:<message_id>` 근거와 시간 범위를
+보존한다. 근거가 없던 기존 row는 내용을 추측해 backfill하지 않고 `unknown`으로 유지한다.
+세부 계약은 [Direct Memory Evidence](docs/memory-evidence-temporal.md)를 따른다.
 
 ### Current State와 History
 

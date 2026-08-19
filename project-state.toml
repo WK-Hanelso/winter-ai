@@ -60,9 +60,11 @@ dependencies = ["shared_core"]
 
 [[features]]
 id = "direct_memory_safety"
-maturity = "contract"
+maturity = "shadow"
 evidence = [
   "docs/memory-evidence-temporal.md",
+  "tests/unit/test_memory.py",
+  "tests/unit/test_companion_core.py",
 ]
 dependencies = ["persistent_memory"]
 

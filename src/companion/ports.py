@@ -9,6 +9,7 @@ from companion.contracts import (
     AudioOutput,
     ChatRequest,
     ChatResult,
+    ConversationAppendReceipt,
     ConversationMessage,
     SpeechRequest,
     Transcript,
@@ -85,7 +86,7 @@ class TextToSpeech(Protocol):
 
 
 class ConversationRepository(Protocol):
-    def append(self, message: ConversationMessage) -> None: ...
+    def append(self, message: ConversationMessage) -> ConversationAppendReceipt: ...
 
     def list_messages(self) -> Sequence[ConversationMessage]: ...
 
@@ -121,12 +122,24 @@ class MemoryCandidateRepository(Protocol):
         source: str = "user_explicit",
         importance: int = 5,
         confidence: float = 1.0,
+        evidence_ref: str | None = None,
+        temporal_scope: str = "unknown",
     ) -> Memory: ...
 
-    def remember_explicit(self, *, kind: str, content: str) -> Memory: ...
+    def remember_explicit(
+        self,
+        *,
+        kind: str,
+        content: str,
+        evidence_ref: str | None = None,
+    ) -> Memory: ...
 
     def remember_direct_statement(
-        self, statement: DirectMemoryStatement
+        self,
+        statement: DirectMemoryStatement,
+        *,
+        evidence_ref: str,
+        temporal_scope: str,
     ) -> Memory | None: ...
 
 

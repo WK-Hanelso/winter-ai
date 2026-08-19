@@ -93,8 +93,11 @@ def test_cli_and_voice_activate_explicit_memories_through_the_same_core(tmp_path
     voice_output = voice.handle_audio(AudioInput(b"audio", "audio/fake"))
 
     assert len(cli_response.memory_candidate_ids) == 1
-    assert [(memory.content, memory.status) for memory in memory_repository.list()] == [
-        ("CLI에서도 후보를 저장해", "active"),
-        ("Voice에서도 후보를 저장해", "active"),
+    assert [
+        (memory.content, memory.status, memory.evidence_ref, memory.temporal_scope)
+        for memory in memory_repository.list()
+    ] == [
+        ("CLI에서도 후보를 저장해", "active", "conversation:1", "unknown"),
+        ("Voice에서도 후보를 저장해", "active", "conversation:3", "unknown"),
     ]
     assert "기억해둘게." in voice_output.data.decode()

@@ -5,6 +5,7 @@ from companion.contracts import (
     AudioOutput,
     ChatRequest,
     ChatResult,
+    ConversationAppendReceipt,
     ConversationMessage,
     SpeechRequest,
     Transcript,
@@ -51,8 +52,9 @@ class FakeTextToSpeech:
 class InMemoryConversationRepository:
     _messages: list[ConversationMessage] = field(default_factory=list)
 
-    def append(self, message: ConversationMessage) -> None:
+    def append(self, message: ConversationMessage) -> ConversationAppendReceipt:
         self._messages.append(message)
+        return ConversationAppendReceipt(id=len(self._messages))
 
     def list_messages(self) -> tuple[ConversationMessage, ...]:
         return tuple(self._messages)

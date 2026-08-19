@@ -39,6 +39,7 @@ diff scope 검사를 다음 고도화로 남긴다.
 | Shared Core / interfaces | 3 | CLI·Web·Voice가 같은 Core와 SQLite 사용, offline 회귀 통과 | 장시간 동시성·복구·30분 자유 대화 부족 | 30분 cross-interface continuity와 장애 복구 |
 | Conversational Maintenance | 2, Shadow | 천우는 대화만 한다는 불변조건, Shared Core 자동 queue 등록, shadow/candidate/operative 공통 gate, TurnUnderstanding 전용 Worker의 single-instance·재시작 무중복·unavailable backoff·clean shutdown offline 검증 | 전용 analysis runtime/supervisor 미배포, Reflection/current-state·Outcome 소비와 대화형 확인·operative 자동 최신화 미연결 | 안전한 local runtime에서 24시간 background 소비 후 CLI/Web/Voice 무명령 E2E와 응답 latency 불변 확인 |
 | Direct Memory / Reflection / Current State | 3, 검토형 | 상태 후보→검증→사용자 승인→Timeline 수직 단면, development 14개와 locked-v1 12개 평가기. evidence 시스템 고정·state/장기 중복 차단 뒤 CPU Qwen은 8/14와 6/12, 두 세트 topic P 50.0%·R 28.6%, unsafe update 2로 gate 실패. 이후 무맥락 대명사 fail-closed와 후보별 형식 오류 격리·SQLite/overview warning 추가; 실제 상태 불변 | 지속 상태·context 대명사 누락, multi-topic merge, 새 topic·alias 없음, scene당 약 15~52초. 안전 변경 뒤 locked 재측정은 의도적으로 보류 | 지속·절 분해·grounding 판단 구조 개선 후 다음 version에서 두 전체 suite를 재평가해 warning 0, topic/evidence P 100%·R 80%·negative FP 0 |
+| Direct Memory provenance | 2, Shadow | Conversation append receipt, exact `conversation:<id>` evidence, durable/episodic/unknown temporal scope와 additive legacy migration. broad identity-shaped fixture fail-closed. 집중 59·전체 702 tests와 실제 DB 복사본 10/10 row 보존 | 원본 운영 DB migration·process restart 전. generic 직업/정체성 진술도 고정 field가 아니면 자동 저장하지 않아 recall보다 precision을 우선함 | 운영 DB backup/migration·CLI/Web restart 뒤 새 자연 발화 provenance를 내용 없이 audit |
 | TurnUnderstanding | 3, Shadow | schema, exact evidence, JSON Schema, 10 scene 평가 | 최종 5/10; preference/project temporal·proposal 누락 | 문서화된 activation 기준 전부 통과 |
 | OutcomeEvaluator | 3, Shadow | provenance와 blind review DB v3; 새 locked v2 18/30, synthetic 7/7 gates, 실제 검토 CLI·audit 동작 | corrected/rejected·continuation·ambiguous 세부 필드 실패, 실제 blind review 0/30 | 천우의 실제 Shadow 30+ blind audit 후 candidate-only activation |
 | DialogueDirector / review | 3 | 행동 선택, 길이 제한, 일부 회피 응답 repair 테스트 | 선택 품질이 TurnUnderstanding/Outcome으로 학습되지 않음 | 실제 대화 outcome 기반 행동별 성공률 |
@@ -57,7 +58,7 @@ diff scope 검사를 다음 고도화로 남긴다.
 | Worker / Level 3 | 2, read-only 제한 운영 + write Shadow | explicit read-only route 유지. 별도 구현 승인은 sanitized copy·exact diff·bubblewrap host 검증→SQLite proposal과 근거 기반 Winter 설명을 만든다. exact hash 채택 뒤 대상 before hash가 같을 때만 임시 파일로 적용하고, 오류 시 전 대상 복원·재시작 뒤 rollback·적용 후 편집 보호를 offline 14개와 gpt-5.4 synthetic 전체 cycle로 검증 | write Shadow는 대화·project 전체 stale·process crash recovery·실제 Winter 검증 profile·Capability Registry에 미연결. 복수 line 의미 설명은 line 수 수준. hostile 동시 변경과 외부 container 격리 미검증 | 전체 baseline/recovery와 실제 repo pytest/Ruff/mypy profile 뒤 대화 route·공격 suite·실제 작은 capability 완주 |
 | Winter Work Orchestration | 3, Shadow | V2.1 Qwen 14B 46/66, Gemma 12B 40/66, Qwen 30B-A3B 46/66, Gemma 27B 44/66. 30B-A3B는 5.5초·schema 12/12지만 ambiguity 0/3·read-only 1/2·review 3/6, Gemma 27B는 27.0초·schema 11/12·ambiguity 0/3·review 3/6. typed gateway+Codex provider offline 17개·synthetic live 1/1. 실제 A.X full contract는 Intent에서 차단. 권한·근거를 정책으로 옮긴 간소 6장면은 schema 6/6·평균 4.9초지만 ambiguity 0/2, 사람 검토 usable brief 1/6. repository 외부 전송 없음 | A.X·Qwen 14B·Qwen 30B-A3B·Gemma 12B·27B 모두 activation 실패. 30B-A3B 실제 Core는 자동 14/14와 달리 몸의 행동을 만들고 질문 대상을 바꿨고, Gemma 27B는 실제 Core chat role 계약도 거절했다. parameter 확대가 ambiguity·grounding·review를 해결하지 못함. 실제 Worker 0 task | prompt 예외·같은 크기 후보 순회·orchestration 기능 추가를 중단. 새 모델 계열 또는 runtime이 기존 실패 축을 해결한다는 근거가 있고 locked suite와 grounding 사람 검토를 통과한 뒤에만 실제 Worker로 이동 |
 
-현재 검증 기준선은 2026-08-19의 오프라인 test 691개, Ruff 전체와 `mypy src experiments`
+현재 검증 기준선은 2026-08-19의 오프라인 test 702개, Ruff 전체와 `mypy src experiments`
 161개 source file 통과다. 실제 model probe와 Voice latency는 offline 회귀와 분리해 각
 기능 행의 근거로 기록한다.
 
@@ -75,6 +76,16 @@ live HTTP 413, Tailscale Serve HTTPS health까지 확인해 제한 운영으로 
 3. 아직 실패하거나 측정하지 않은 범위
 4. 운영 상태에 연결할 activation gate
 5. 다음 고도화 작업
+
+## 사용자 관찰 대기
+
+자동 테스트·서버 검증과 천우가 실제로 느껴 본 결과를 구분한다. 아래 항목은 개발이나 정상
+사용을 막지 않으며, 천우가 평소 사용 중 확인했을 때만 관찰 완료로 바꾼다. Codex는 상태를
+보고할 때 미확인 항목을 계속 알린다.
+
+- #114 이후 폰 push-to-talk 한 turn: ingress만 바뀌었고 voice 기능은 변경하지 않아 비차단.
+- #115 실제 오류의 화면 표시와 빠른 복수 요청의 대기감: deterministic 회귀와 운영 배포는
+  완료했지만 천우의 실제 관찰은 아직 없음.
 
 새 기능은 기본 Level 1 또는 2에서 시작한다. 문서나 단일 성공 사례만으로 Level을 올리지
 않으며, 실패 결과도 삭제하지 않고 다음 판단의 baseline으로 남긴다.

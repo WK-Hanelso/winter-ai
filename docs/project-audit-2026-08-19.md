@@ -340,3 +340,8 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   current-state history를 재작성하지 않고, synchronous direct-memory가 broad self-appraisal을
   영구 semantic으로 확정하는 경로와 새 Memory의 conversation evidence·temporal metadata
   부재만 다룬다. background extractor 품질 개선은 다음 scope로 분리한다.
+- 2026-08-19: Conversation append receipt, Memory의 exact evidence·temporal column과 additive
+  migration, broad identity-shaped direct activation 차단을 구현했다. 집중 59 tests, 전체 702
+  tests, Ruff와 mypy를 통과했고 실제 DB 임시 복사본 10개 row의 상태·link 집계가 migration
+  전후 동일했다. 원본 DB와 실행 process에는 아직 반영하지 않아
+  `direct_memory_safety=shadow`로 유지한다.

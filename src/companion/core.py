@@ -282,13 +282,17 @@ class CompanionCore:
 
     def _prepare(self, text: str) -> _Turn:
         maintenance_route = self._maintenance_policy.route()
-        self._conversation_repository.append(ConversationMessage(role="user", content=text))
+        user_message = self._conversation_repository.append(
+            ConversationMessage(role="user", content=text)
+        )
+        evidence_ref = f"conversation:{user_message.id}"
         candidate_ids: tuple[str, ...] = ()
         candidate_content = extract_explicit_memory_content(text)
         if candidate_content is not None and self._memory_repository is not None:
             candidate = self._memory_repository.remember_explicit(
                 kind=classify_explicit_memory_kind(candidate_content),
                 content=candidate_content,
+                evidence_ref=evidence_ref,
             )
             candidate_ids = (candidate.id,)
         selected_open_loops = (
@@ -328,7 +332,11 @@ class CompanionCore:
         if not candidate_ids and self._memory_repository is not None:
             automatic_memory_ids_list: list[str] = []
             for statement in extract_direct_memory_statements(text):
-                memory = self._memory_repository.remember_direct_statement(statement)
+                memory = self._memory_repository.remember_direct_statement(
+                    statement,
+                    evidence_ref=evidence_ref,
+                    temporal_scope="durable",
+                )
                 if memory is not None:
                     automatic_memory_ids_list.append(memory.id)
             automatic_memory_ids = tuple(automatic_memory_ids_list)

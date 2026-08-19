@@ -232,6 +232,8 @@ def test_core_automatically_remembers_a_direct_stable_preference(tmp_path) -> No
         "active",
         "user_direct",
     )
+    assert memory.evidence_ref == "conversation:1"
+    assert memory.temporal_scope == "durable"
 
     restarted_model = CapturingChatModel()
     restarted = CompanionCore(
@@ -248,6 +250,30 @@ def test_core_automatically_remembers_a_direct_stable_preference(tmp_path) -> No
         for message in restarted_model.requests[0].messages
         if message.role == "system"
     )
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "나는 낮잠 중이야",
+        "나는 형편없는 사람이야",
+        "나는 일정 때문에 지친 사람이야",
+    ),
+)
+def test_core_does_not_activate_state_or_self_appraisal_as_durable_memory(
+    tmp_path, text: str
+) -> None:
+    memory_repository = SqliteMemoryRepository(tmp_path / "memory.sqlite")
+    core = CompanionCore(
+        FakeChatModel(),
+        InMemoryConversationRepository(),
+        memory_repository=memory_repository,
+    )
+
+    response = core.respond_to_text(text)
+
+    assert response.automatic_memory_ids == ()
+    assert memory_repository.list() == ()
 
 
 def test_core_injects_state_timeline_only_for_a_change_question(tmp_path) -> None:

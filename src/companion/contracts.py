@@ -47,3 +47,10 @@ class AudioOutput:
 class ConversationMessage:
     role: str
     content: str
+
+
+@dataclass(frozen=True)
+class ConversationAppendReceipt:
+    """Stable reference to the exact persisted conversation row."""
+
+    id: int

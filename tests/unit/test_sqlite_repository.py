@@ -16,11 +16,13 @@ def test_sqlite_repository_persists_ordered_messages_across_instances(tmp_path: 
     first = ConversationMessage(role="user", content="첫 메시지")
     second = ConversationMessage(role="assistant", content="둘째 메시지")
 
-    repository.append(first)
-    repository.append(second)
+    first_receipt = repository.append(first)
+    second_receipt = repository.append(second)
 
     reopened_repository = SqliteConversationRepository(database_path)
     assert reopened_repository.list_messages() == (first, second)
+    assert first_receipt.id == 1
+    assert second_receipt.id == 2
 
 
 def test_sqlite_repository_creates_schema_version(tmp_path: Path) -> None:

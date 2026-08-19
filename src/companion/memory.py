@@ -37,9 +37,6 @@ _DIRECT_SEMANTIC_FIELD = re.compile(
     r"(?P<value>.+?(?:이야|야|예요|이에요|입니다|이다))$",
     re.IGNORECASE,
 )
-_DIRECT_IDENTITY = re.compile(
-    r"^(?:나는|난|저는|전)\s+.+?(?:이야|야|예요|이에요|입니다|이다)$"
-)
 _DIRECT_DECISION = re.compile(
     r"^(?:나는|난|우리는|우리|이건|그건|이번\s*프로젝트(?:에서는|는)?|"
     r"겨울이\s*프로젝트(?:에서는|는)?)\s+.+?"
@@ -83,6 +80,8 @@ _RETRIEVAL_STOP = {
 }
 _CURRENT_STATE_PREFIX = "current_state:"
 _CURRENT_STATE_TOPIC = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
+_CONVERSATION_EVIDENCE = re.compile(r"^conversation:[1-9][0-9]*$")
+_TEMPORAL_SCOPES = frozenset({"unknown", "durable", "episodic"})
 _STATE_HISTORY_TIME = re.compile(r"예전|과거|전에는|그때|이전|변화|달라|비교")
 _STATE_HISTORY_CONDITION = re.compile(
     r"상태|기분|마음|멘탈|힘들|괜찮|나아|회복|건강|스트레스|어땠"
@@ -100,7 +99,9 @@ CREATE TABLE IF NOT EXISTS memories (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     last_accessed_at TEXT,
-    supersedes TEXT
+    supersedes TEXT,
+    evidence_ref TEXT,
+    temporal_scope TEXT NOT NULL DEFAULT 'unknown'
 )
 """
 
@@ -122,6 +123,8 @@ class Memory:
     updated_at: str
     last_accessed_at: str | None
     supersedes: str | None
+    evidence_ref: str | None
+    temporal_scope: str
 
 
 @dataclass(frozen=True)
@@ -149,9 +152,12 @@ class SqliteMemoryRepository:
         source: str = "user_explicit",
         importance: int = 5,
         confidence: float = 1.0,
+        evidence_ref: str | None = None,
+        temporal_scope: str = "unknown",
     ) -> Memory:
         if not kind.strip() or not content.strip():
             raise MemoryRepositoryError("memory kind and content are required")
+        _validate_provenance(evidence_ref, temporal_scope)
         now = _now()
         memory = Memory(
             str(uuid4()),
@@ -165,19 +171,34 @@ class SqliteMemoryRepository:
             now,
             None,
             None,
+            evidence_ref,
+            temporal_scope,
         )
         self._write(
-            "INSERT INTO memories VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            """
+            INSERT INTO memories
+            (id, kind, content, importance, confidence, status, source,
+             created_at, updated_at, last_accessed_at, supersedes,
+             evidence_ref, temporal_scope)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
             _values(memory),
         )
         return memory
 
-    def remember_explicit(self, *, kind: str, content: str) -> Memory:
+    def remember_explicit(
+        self,
+        *,
+        kind: str,
+        content: str,
+        evidence_ref: str | None = None,
+    ) -> Memory:
         """Activate a memory the user explicitly commanded us to remember.
 
         The lifecycle is still recorded candidate -> approved -> active.  The
         command itself is the approval; inferred memories never use this path.
         """
+        _validate_provenance(evidence_ref, "unknown")
         normalized = content.strip()
         for memory in self.list_active():
             if memory.kind == kind and memory.content == normalized:
@@ -188,12 +209,18 @@ class SqliteMemoryRepository:
             source="user_explicit",
             importance=5,
             confidence=1.0,
+            evidence_ref=evidence_ref,
+            temporal_scope="unknown",
         )
         self.transition(candidate.id, "approved")
         return self.transition(candidate.id, "active")
 
     def remember_direct_statement(
-        self, statement: DirectMemoryStatement
+        self,
+        statement: DirectMemoryStatement,
+        *,
+        evidence_ref: str,
+        temporal_scope: str,
     ) -> Memory | None:
         """Activate a stable first-person statement, returning only new writes.
 
@@ -202,6 +229,7 @@ class SqliteMemoryRepository:
         (the same named fact, or the opposite preference about the same object)
         supersedes the old active value so retrieval cannot return both.
         """
+        _validate_provenance(evidence_ref, temporal_scope)
         normalized = statement.content.strip()
         active = self.list_active()
         if any(
@@ -223,6 +251,8 @@ class SqliteMemoryRepository:
             source="user_direct",
             importance=5,
             confidence=1.0,
+            evidence_ref=evidence_ref,
+            temporal_scope=temporal_scope,
         )
         if superseded is not None:
             self._write(
@@ -284,6 +314,7 @@ class SqliteMemoryRepository:
             source="user_current_state",
             importance=7,
             confidence=1.0,
+            temporal_scope="episodic",
         )
         if current is not None:
             self._write(
@@ -328,6 +359,7 @@ class SqliteMemoryRepository:
             source="user_edit",
             importance=old.importance,
             confidence=old.confidence,
+            temporal_scope=old.temporal_scope,
         )
         self._write(
             "UPDATE memories SET supersedes = ? WHERE id = ?",
@@ -403,6 +435,17 @@ class SqliteMemoryRepository:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             with self._connect() as c:
                 c.execute(_CREATE_MEMORIES_TABLE)
+                columns = {
+                    str(row["name"])
+                    for row in c.execute("PRAGMA table_info(memories)").fetchall()
+                }
+                if "evidence_ref" not in columns:
+                    c.execute("ALTER TABLE memories ADD COLUMN evidence_ref TEXT")
+                if "temporal_scope" not in columns:
+                    c.execute(
+                        "ALTER TABLE memories ADD COLUMN temporal_scope "
+                        "TEXT NOT NULL DEFAULT 'unknown'"
+                    )
         except (OSError, sqlite3.Error) as e:
             raise MemoryRepositoryError(
                 f"could not initialize memory database {self._path}: {e}"
@@ -438,6 +481,8 @@ def _values(m: Memory) -> tuple[object, ...]:
         m.updated_at,
         m.last_accessed_at,
         m.supersedes,
+        m.evidence_ref,
+        m.temporal_scope,
     )
 
 
@@ -611,9 +656,18 @@ def extract_direct_memory_statements(text: str) -> tuple[DirectMemoryStatement, 
         if _DIRECT_DECISION.match(sentence):
             extracted.append(DirectMemoryStatement("decision", sentence, None, None))
             continue
-        if _DIRECT_IDENTITY.match(sentence):
-            extracted.append(DirectMemoryStatement("semantic", sentence, None, None))
     return tuple(extracted)
+
+
+def _validate_provenance(evidence_ref: str | None, temporal_scope: str) -> None:
+    if evidence_ref is not None and not _CONVERSATION_EVIDENCE.fullmatch(evidence_ref):
+        raise MemoryRepositoryError(
+            "memory evidence_ref must be an exact conversation:<message_id> reference"
+        )
+    if temporal_scope not in _TEMPORAL_SCOPES:
+        raise MemoryRepositoryError(
+            f"unsupported memory temporal_scope: {temporal_scope}"
+        )
 
 
 def _direct_statements_conflict(

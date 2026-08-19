@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import sqlite3
 
-from companion.contracts import ConversationMessage
+from companion.contracts import ConversationAppendReceipt, ConversationMessage
 
 
 class ConversationRepositoryError(RuntimeError):
@@ -21,13 +21,20 @@ class SqliteConversationRepository:
         self._database_path = database_path
         self._initialize()
 
-    def append(self, message: ConversationMessage) -> None:
+    def append(self, message: ConversationMessage) -> ConversationAppendReceipt:
         try:
             with self._connect() as connection:
-                connection.execute(
+                cursor = connection.execute(
                     "INSERT INTO conversation_messages (role, content) VALUES (?, ?)",
                     (message.role, message.content),
                 )
+                if cursor.lastrowid is None:
+                    raise ConversationRepositoryError(
+                        "conversation insert did not return a row id"
+                    )
+                return ConversationAppendReceipt(id=int(cursor.lastrowid))
+        except ConversationRepositoryError:
+            raise
         except sqlite3.Error as error:
             raise ConversationRepositoryError(
                 f"could not save conversation to {self._database_path}: {error}"

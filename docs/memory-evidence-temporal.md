@@ -42,3 +42,21 @@ user conversation row
 - 기존 Memory의 근거를 추측해 backfill하지 않는다. provenance가 없는 과거 row는 unknown으로
   정직하게 유지한다.
 - embedding/vector 검색과 새로운 저장소 도입은 범위 밖이다.
+
+## 2026-08-19 구현 검증
+
+- SQLite와 in-memory Conversation Repository가 append한 정확한 row receipt를 반환한다.
+- Core가 새 direct/explicit Memory에 `conversation:<message_id>`를 연결한다.
+- synchronous direct activation은 named fact, 안정 preference와 명시적 decision으로 제한한다.
+- broad identity-shaped state/self-appraisal fixture는 Memory를 만들지 않는다.
+- 새 direct Memory는 `durable`, reviewed current state는 `episodic`, 근거가 없던 기존 row는
+  `unknown` temporal scope를 사용한다.
+- CLI와 Voice가 같은 Core에서 각자 실제 user row를 provenance로 기록한다.
+- legacy DB migration fixture가 lifecycle·supersedes·history를 보존한다.
+- 실제 `data/memories.sqlite`의 임시 복사본에서도 10개 row와 status/link 집계가 migration
+  전후 동일했고 새 column만 추가됐다. 임시 복사본은 검증 직후 삭제했다.
+- 집중 59 tests와 전체 offline 702 tests, Ruff 전체, mypy 161 source files를 통과했다.
+
+원본 운영 DB에는 아직 migration을 적용하지 않았으므로 현재 maturity는 Shadow다. 구현
+commit 뒤 CLI와 Web process를 새 코드로 기동하고 원본 row 보존을 재확인한 뒤 제한 운영으로
+승격한다.

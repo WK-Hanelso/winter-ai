@@ -1,4 +1,5 @@
 from pathlib import Path
+import sqlite3
 
 import pytest
 
@@ -46,14 +47,19 @@ def test_direct_stable_user_statements_are_extracted_without_a_memory_command() 
             polarity=None,
         ),
     )
-    assert extract_direct_memory_statements("나는 개발자야") == (
-        DirectMemoryStatement(
-            kind="semantic",
-            content="나는 개발자야",
-            conflict_key=None,
-            polarity=None,
-        ),
-    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "나는 낮잠 중이야",
+        "나는 형편없는 사람이야",
+        "나는 일정 때문에 지친 사람이야",
+        "나는 개발자야",
+    ),
+)
+def test_broad_identity_shaped_wording_is_not_a_durable_direct_memory(text: str) -> None:
+    assert extract_direct_memory_statements(text) == ()
 
 
 @pytest.mark.parametrize(
@@ -116,23 +122,67 @@ def test_direct_statement_is_automatically_active_and_exact_repeat_is_idempotent
     repo = SqliteMemoryRepository(tmp_path / "memory.sqlite")
     statement = extract_direct_memory_statements("나는 긴 설명을 싫어해")[0]
 
-    first = repo.remember_direct_statement(statement)
-    repeated = repo.remember_direct_statement(statement)
+    first = repo.remember_direct_statement(
+        statement,
+        evidence_ref="conversation:7",
+        temporal_scope="durable",
+    )
+    repeated = repo.remember_direct_statement(
+        statement,
+        evidence_ref="conversation:7",
+        temporal_scope="durable",
+    )
 
     assert first is not None
     assert first.status == "active"
     assert first.source == "user_direct"
+    assert first.evidence_ref == "conversation:7"
+    assert first.temporal_scope == "durable"
     assert repeated is None
     assert repo.list_active() == (first,)
+
+
+@pytest.mark.parametrize(
+    ("evidence_ref", "temporal_scope", "message"),
+    (
+        ("message:7", "durable", "evidence_ref"),
+        ("conversation:0", "durable", "evidence_ref"),
+        ("conversation:7", "forever", "temporal_scope"),
+    ),
+)
+def test_direct_memory_rejects_invalid_provenance_even_for_an_exact_repeat(
+    tmp_path: Path,
+    evidence_ref: str,
+    temporal_scope: str,
+    message: str,
+) -> None:
+    repo = SqliteMemoryRepository(tmp_path / "memory.sqlite")
+    statement = extract_direct_memory_statements("나는 긴 설명을 싫어해")[0]
+    repo.remember_direct_statement(
+        statement,
+        evidence_ref="conversation:1",
+        temporal_scope="durable",
+    )
+
+    with pytest.raises(MemoryRepositoryError, match=message):
+        repo.remember_direct_statement(
+            statement,
+            evidence_ref=evidence_ref,
+            temporal_scope=temporal_scope,
+        )
 
 
 def test_clear_direct_preference_change_supersedes_the_old_memory(tmp_path: Path) -> None:
     repo = SqliteMemoryRepository(tmp_path / "memory.sqlite")
     old = repo.remember_direct_statement(
-        extract_direct_memory_statements("나는 긴 설명을 좋아해")[0]
+        extract_direct_memory_statements("나는 긴 설명을 좋아해")[0],
+        evidence_ref="conversation:1",
+        temporal_scope="durable",
     )
     new = repo.remember_direct_statement(
-        extract_direct_memory_statements("나는 긴 설명을 싫어해")[0]
+        extract_direct_memory_statements("나는 긴 설명을 싫어해")[0],
+        evidence_ref="conversation:3",
+        temporal_scope="durable",
     )
 
     assert old is not None and new is not None
@@ -144,10 +194,14 @@ def test_clear_direct_preference_change_supersedes_the_old_memory(tmp_path: Path
 def test_named_direct_fact_change_supersedes_the_old_value(tmp_path: Path) -> None:
     repo = SqliteMemoryRepository(tmp_path / "memory.sqlite")
     old = repo.remember_direct_statement(
-        extract_direct_memory_statements("내 생일은 3월 12일이야")[0]
+        extract_direct_memory_statements("내 생일은 3월 12일이야")[0],
+        evidence_ref="conversation:1",
+        temporal_scope="durable",
     )
     new = repo.remember_direct_statement(
-        extract_direct_memory_statements("내 생일은 4월 2일이야")[0]
+        extract_direct_memory_statements("내 생일은 4월 2일이야")[0],
+        evidence_ref="conversation:3",
+        temporal_scope="durable",
     )
 
     assert old is not None and new is not None
@@ -186,6 +240,8 @@ def test_current_state_replaces_previous_value_and_is_always_available(
     assert current.supersedes == previous.id
     assert current.source == "user_current_state"
     assert current.importance == 7
+    assert previous.temporal_scope == "episodic"
+    assert current.temporal_scope == "episodic"
     assert ActiveMemoryRetriever(repo).retrieve("오늘 뭐 할까?") == (current,)
     assert "영구 특성이 아니라 지금의 상태" in memory_context((current,))
 
@@ -244,14 +300,82 @@ def test_retrieval_uses_korean_content_words_not_generic_first_person_words(
 ) -> None:
     repo = SqliteMemoryRepository(tmp_path / "memory.sqlite")
     name = repo.remember_direct_statement(
-        extract_direct_memory_statements("내 이름은 천우야")[0]
+        extract_direct_memory_statements("내 이름은 천우야")[0],
+        evidence_ref="conversation:1",
+        temporal_scope="durable",
     )
     birthday = repo.remember_direct_statement(
-        extract_direct_memory_statements("내 생일은 3월 12일이야")[0]
+        extract_direct_memory_statements("내 생일은 3월 12일이야")[0],
+        evidence_ref="conversation:3",
+        temporal_scope="durable",
     )
 
     assert name is not None and birthday is not None
     assert ActiveMemoryRetriever(repo).retrieve("내 생일이 언제였지?") == (birthday,)
+
+
+def test_legacy_memory_database_migrates_without_losing_lifecycle_or_history(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "legacy-memory.sqlite"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE memories (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                content TEXT NOT NULL,
+                importance INTEGER NOT NULL,
+                confidence REAL NOT NULL,
+                status TEXT NOT NULL,
+                source TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                last_accessed_at TEXT,
+                supersedes TEXT
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO memories VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "old",
+                "current_state:wellbeing",
+                "과거 상태 fixture",
+                7,
+                1.0,
+                "deprecated",
+                "user_current_state",
+                "2026-08-01T00:00:00+00:00",
+                "2026-08-02T00:00:00+00:00",
+                None,
+                None,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO memories VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "new",
+                "current_state:wellbeing",
+                "현재 상태 fixture",
+                7,
+                1.0,
+                "active",
+                "user_current_state",
+                "2026-08-02T00:00:00+00:00",
+                "2026-08-02T00:00:00+00:00",
+                None,
+                "old",
+            ),
+        )
+
+    repository = SqliteMemoryRepository(database_path)
+    history = repository.list_current_state_history(topic="wellbeing")
+
+    assert tuple(memory.id for memory in history) == ("old", "new")
+    assert history[1].supersedes == "old"
+    assert all(memory.evidence_ref is None for memory in history)
+    assert all(memory.temporal_scope == "unknown" for memory in history)
 
 def test_replacement_deprecates_old_memory_only_when_replacement_activates(tmp_path: Path) -> None:
     repo = SqliteMemoryRepository(tmp_path / "memory.sqlite")
