@@ -54,6 +54,7 @@ def _worker() -> FakeImprovementWorker:
             succeeded=True,
             summary="격리된 fake artifact를 만들었다",
             evidence=("test:fake-worker:passed",),
+            artifact_id="fake-artifact-1",
             artifact_hash="artifact-sha256",
         )
     )
@@ -275,6 +276,7 @@ def test_worker_failure_stops_before_verification(tmp_path: Path) -> None:
             succeeded=False,
             summary="격리 구현 실패",
             evidence=("test:fake-worker:failed",),
+            artifact_id="fake-artifact-failed",
             artifact_hash="failed-artifact-sha256",
         )
     )

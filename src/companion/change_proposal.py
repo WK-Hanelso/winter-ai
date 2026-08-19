@@ -268,6 +268,21 @@ class SqliteChangeProposalRepository:
             raise ChangeProposalError(f"수정안 조회에 실패했습니다: {error}") from error
         return _proposal_from_row(row) if row is not None else None
 
+    def get_by_authorization_id(
+        self, authorization_id: str
+    ) -> StoredChangeProposal | None:
+        try:
+            with self._connect() as connection:
+                row = connection.execute(
+                    "SELECT * FROM change_proposals WHERE authorization_id = ?",
+                    (authorization_id,),
+                ).fetchone()
+        except sqlite3.Error as error:
+            raise ChangeProposalError(
+                f"구현 승인에 연결된 수정안 조회에 실패했습니다: {error}"
+            ) from error
+        return _proposal_from_row(row) if row is not None else None
+
     def latest_awaiting_adoption(self) -> StoredChangeProposal | None:
         try:
             with self._connect() as connection:

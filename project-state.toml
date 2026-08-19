@@ -203,7 +203,9 @@ id = "work_orchestration"
 maturity = "shadow"
 evidence = [
   "docs/work-orchestration.md",
+  "docs/adr/0025-isolated-lifecycle-shadow-bridge.md",
   "tests/unit/test_work_orchestration.py",
+  "tests/unit/test_isolated_lifecycle_bridge.py",
 ]
 dependencies = ["self_model", "capability_registry", "improvement_ledger"]
 sync_status = true

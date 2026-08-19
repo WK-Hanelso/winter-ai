@@ -19,6 +19,7 @@ class WorkerResult:
     succeeded: bool
     summary: str
     evidence: tuple[str, ...]
+    artifact_id: str
     artifact_hash: str
 
 
@@ -110,6 +111,7 @@ class FakeWorkerLifecycle:
                 succeeded=False,
                 summary=f"Worker exception: {type(error).__name__}",
                 evidence=("test:fake-worker-exception",),
+                artifact_id="fake-worker-exception",
                 artifact_hash=failure_hash,
             )
         return self._ledger.record_worker_result(
@@ -120,6 +122,7 @@ class FakeWorkerLifecycle:
             succeeded=result.succeeded,
             summary=result.summary,
             evidence=result.evidence,
+            artifact_id=result.artifact_id,
             artifact_hash=result.artifact_hash,
         )
 
@@ -144,6 +147,7 @@ class FakeWorkerLifecycle:
             succeeded=cast(bool, payload["succeeded"]),
             summary=cast(str, payload["summary"]),
             evidence=tuple(cast(list[str], payload["evidence"])),
+            artifact_id=cast(str, payload["artifact_id"]),
             artifact_hash=cast(str, payload["artifact_hash"]),
         )
         report = self._verifier.verify(proposal, result)

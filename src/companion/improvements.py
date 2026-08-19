@@ -42,7 +42,8 @@ _TRANSITIONS: dict[str, frozenset[str]] = {
     "rejected": frozenset(),
 }
 _EVIDENCE_REFERENCE = re.compile(
-    r"^(?:conversation|winter_event|evaluation|outcome|latency|issue|test):\S+$"
+    r"^(?:conversation|winter_event|evaluation|outcome|latency|issue|test|"
+    r"change_proposal|verification|worker_run):\S+$"
 )
 
 
@@ -412,6 +413,7 @@ class SqliteImprovementLedger:
         succeeded: bool,
         summary: str,
         evidence: tuple[str, ...],
+        artifact_id: str,
         artifact_hash: str,
     ) -> ImprovementItem:
         payload: dict[str, object] = {
@@ -419,6 +421,7 @@ class SqliteImprovementLedger:
             "succeeded": succeeded,
             "summary": _required(summary, "worker result summary"),
             "evidence": _evidence_items(evidence),
+            "artifact_id": _required(artifact_id, "worker artifact id"),
             "artifact_hash": _required(artifact_hash, "worker artifact hash"),
         }
         return self._record_and_transition(
