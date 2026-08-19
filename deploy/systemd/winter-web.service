@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/home/hanelso/hanelso/winter
 Environment=PYTHONPATH=/home/hanelso/hanelso/winter/src
-ExecStart=/home/hanelso/.pyenv/versions/3.11.9/bin/python3.11 -m companion.web --port 8000 --model-url http://127.0.0.1:18080 --stt-backend sensevoice --no-voice-conversion --voice-metrics-path data/voice_latency-sensevoice-direct.sqlite --codex-worker --codex-executable /home/hanelso/.nvm/versions/node/v20.20.2/bin/codex --codex-model gpt-5.4
+ExecStart=/home/hanelso/.pyenv/versions/3.11.9/bin/python3.11 -m companion.web --host 127.0.0.1 --port 8000 --max-request-bytes 16777216 --model-url http://127.0.0.1:18080 --stt-backend sensevoice --no-voice-conversion --voice-metrics-path data/voice_latency-sensevoice-direct.sqlite --codex-worker --codex-executable /home/hanelso/.nvm/versions/node/v20.20.2/bin/codex --codex-model gpt-5.4
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=true

@@ -69,9 +69,10 @@ dependencies = ["shared_core"]
 
 [[features]]
 id = "web_ingress_safety"
-maturity = "contract"
+maturity = "shadow"
 evidence = [
-  "docs/project-audit-2026-08-19.md",
+  "docs/web-ingress-safety.md",
+  "tests/unit/test_web_ingress.py",
 ]
 dependencies = ["phone_voice"]
 

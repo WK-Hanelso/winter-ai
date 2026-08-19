@@ -181,8 +181,10 @@ curl http://127.0.0.1:8000/health
 ```
 
 서비스 기준 파일은 [deploy/systemd/winter-web.service](deploy/systemd/winter-web.service)다.
-폰 외부 접속의 HTTPS는 Tailscale 경로를 사용하며 공개 인터넷에 인증 없는 포트를 열지
-않는다.
+Web은 `127.0.0.1:8000`에만 bind하고, 폰 외부 접속은 Tailscale Serve HTTPS가 loopback으로
+전달한다. POST body는 기본 16 MiB로 제한한다. 운영 반영과 확인 절차는
+[Web ingress safety](docs/web-ingress-safety.md)를 따른다. 공개 인터넷이나 LAN에 인증 없는
+포트를 직접 열지 않는다.
 
 ## 4. 전체 동작 구조
 
@@ -464,6 +466,9 @@ curl http://127.0.0.1:8000/health
 Reference 절대경로를 Compose 파일, 로그나 Git에 넣지 않는다. Web 경로는
 `--stt-backend sensevoice --no-voice-conversion`을 사용한다. 장애 시 fake, Whisper나
 Seed-VC로 자동 전환하지 않고 오류를 드러낸다.
+
+repository의 Web unit 변경은 실행 중인 대화를 끊지 않도록 자동 배포하지 않는다. unit을
+설치·재시작한 뒤 `ss -ltn 'sport = :8000'`에서 loopback만 listen하는지 확인해야 한다.
 
 현재 기준 systemd Web unit은 Codex read-only Worker를 함께 켠다. 폰에서 명시적으로
 `코덱스로 ... 확인해줘`라고 말하면 기다리는 동안 진행 상태를 표시하고 결과를 같은

@@ -55,9 +55,13 @@ diff scope 검사를 다음 고도화로 남긴다.
 | Worker / Level 3 | 2, read-only 제한 운영 + write Shadow | explicit read-only route 유지. 별도 구현 승인은 sanitized copy·exact diff·bubblewrap host 검증→SQLite proposal과 근거 기반 Winter 설명을 만든다. exact hash 채택 뒤 대상 before hash가 같을 때만 임시 파일로 적용하고, 오류 시 전 대상 복원·재시작 뒤 rollback·적용 후 편집 보호를 offline 14개와 gpt-5.4 synthetic 전체 cycle로 검증 | write Shadow는 대화·project 전체 stale·process crash recovery·실제 Winter 검증 profile·Capability Registry에 미연결. 복수 line 의미 설명은 line 수 수준. hostile 동시 변경과 외부 container 격리 미검증 | 전체 baseline/recovery와 실제 repo pytest/Ruff/mypy profile 뒤 대화 route·공격 suite·실제 작은 capability 완주 |
 | Winter Work Orchestration | 3, Shadow | V2.1 Qwen 14B 46/66, Gemma 12B 40/66, Qwen 30B-A3B 46/66, Gemma 27B 44/66. 30B-A3B는 5.5초·schema 12/12지만 ambiguity 0/3·read-only 1/2·review 3/6, Gemma 27B는 27.0초·schema 11/12·ambiguity 0/3·review 3/6. typed gateway+Codex provider offline 17개·synthetic live 1/1. 실제 A.X full contract는 Intent에서 차단. 권한·근거를 정책으로 옮긴 간소 6장면은 schema 6/6·평균 4.9초지만 ambiguity 0/2, 사람 검토 usable brief 1/6. repository 외부 전송 없음 | A.X·Qwen 14B·Qwen 30B-A3B·Gemma 12B·27B 모두 activation 실패. 30B-A3B 실제 Core는 자동 14/14와 달리 몸의 행동을 만들고 질문 대상을 바꿨고, Gemma 27B는 실제 Core chat role 계약도 거절했다. parameter 확대가 ambiguity·grounding·review를 해결하지 못함. 실제 Worker 0 task | prompt 예외·같은 크기 후보 순회·orchestration 기능 추가를 중단. 새 모델 계열 또는 runtime이 기존 실패 축을 해결한다는 근거가 있고 locked suite와 grounding 사람 검토를 통과한 뒤에만 실제 Worker로 이동 |
 
-현재 검증 기준선은 2026-08-19의 오프라인 test 681개, Ruff 전체와 `mypy src experiments`
+현재 검증 기준선은 2026-08-19의 오프라인 test 687개, Ruff 전체와 `mypy src experiments`
 161개 source file 통과다. 실제 model probe와 Voice latency는 offline 회귀와 분리해 각
 기능 행의 근거로 기록한다.
+
+Issue #114의 Web ingress safety는 loopback 기본값·명시적 systemd host·16 MiB body limit과
+HTTP 400/411/413 offline 회귀까지 구현한 Shadow다. 설치된 user service를 재시작하고 실제
+socket·Tailscale phone turn을 확인하기 전에는 운영 보안 수정으로 승격하지 않는다.
 
 ## 지속 갱신 규칙
 

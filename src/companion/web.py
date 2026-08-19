@@ -106,6 +106,8 @@ from companion.winter_events import (
 Emit = Callable[[str, dict[str, str | float]], None]
 
 DEFAULT_PORT = 8000
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_MAX_REQUEST_BYTES = 16 * 1024 * 1024
 DEFAULT_MODEL_URL = os.environ.get("WINTER_LLM_URL", "http://127.0.0.1:18080")
 DEFAULT_DATA = Path(os.environ.get("WINTER_DATA_DIR", "data"))
 DEFAULT_IDENTITY = DEFAULT_DATA / "identity.json"
@@ -225,7 +227,12 @@ class Companion:
 def make_handler(
     companion: Companion,
     voice_latency_repository: SqliteVoiceLatencyRepository,
+    *,
+    max_request_bytes: int = DEFAULT_MAX_REQUEST_BYTES,
 ) -> type[BaseHTTPRequestHandler]:
+    if max_request_bytes < 1:
+        raise ValueError("max_request_bytes must be positive")
+
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -239,6 +246,32 @@ def make_handler(
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
+
+        def _request_error(self, status: int, message: str) -> None:
+            self.close_connection = True
+            self._send(
+                status,
+                json.dumps({"error": message}, ensure_ascii=False).encode(),
+                "application/json",
+            )
+
+        def _read_request_body(self) -> bytes | None:
+            raw_length = self.headers.get("Content-Length")
+            if raw_length is None:
+                self._request_error(411, "Content-Length header is required")
+                return None
+            try:
+                length = int(raw_length)
+            except ValueError:
+                self._request_error(400, "Content-Length must be an integer")
+                return None
+            if length < 0:
+                self._request_error(400, "Content-Length must not be negative")
+                return None
+            if length > max_request_bytes:
+                self._request_error(413, f"request body exceeds {max_request_bytes} bytes")
+                return None
+            return self.rfile.read(length) if length else b""
 
         def do_GET(self) -> None:  # noqa: N802
             if self.path in ("/", "/index.html"):
@@ -266,8 +299,12 @@ def make_handler(
             self.send_error(404)
 
         def do_POST(self) -> None:  # noqa: N802
-            length = int(self.headers.get("Content-Length", "0"))
-            body = self.rfile.read(length) if length else b""
+            if self.path not in ("/listen", "/turn", "/voice-metric"):
+                self.send_error(404)
+                return
+            body = self._read_request_body()
+            if body is None:
+                return
             if self.path == "/listen":
                 started = time.perf_counter()
                 try:
@@ -294,7 +331,6 @@ def make_handler(
             if self.path == "/voice-metric":
                 self._voice_metric(body)
                 return
-            self.send_error(404)
 
         def _voice_metric(self, body: bytes) -> None:
             try:
@@ -373,12 +409,27 @@ def make_handler(
     return Handler
 
 
+def _positive_integer(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="겨울이와 브라우저로 대화합니다.")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    # 0.0.0.0 rather than loopback: the point is the phone. What keeps this
-    # private is the network it is on, not the interface it binds to.
-    parser.add_argument("--host", default="0.0.0.0")  # noqa: S104
+    parser.add_argument(
+        "--host",
+        default=DEFAULT_HOST,
+        help="listen address; keep loopback when Tailscale Serve is the remote ingress",
+    )
+    parser.add_argument(
+        "--max-request-bytes",
+        type=_positive_integer,
+        default=DEFAULT_MAX_REQUEST_BYTES,
+        help="maximum accepted HTTP request body size",
+    )
     parser.add_argument("--model-url", default=DEFAULT_MODEL_URL)
     parser.add_argument(
         "--codex-worker",
@@ -542,7 +593,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     server = ThreadingHTTPServer(
         (arguments.host, arguments.port),
-        make_handler(companion, voice_latency_repository),
+        make_handler(
+            companion,
+            voice_latency_repository,
+            max_request_bytes=arguments.max_request_bytes,
+        ),
     )
     started = datetime.now(UTC).strftime("%H:%M")
     print(f"[{started}] 겨울이 대기 중: http://{arguments.host}:{arguments.port}/", flush=True)

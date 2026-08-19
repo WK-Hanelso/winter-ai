@@ -317,3 +317,6 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   보존했다. 이 snapshot은 기능 완료가 아니라 이후 Issue diff를 분리하기 위한 복구점이다.
 - 2026-08-19: clean baseline 뒤 Issue #114를 첫 운영 P0로 활성화했다. 범위는 loopback-only
   Web ingress와 bounded request body이며, thread 오류·동시성은 다음 Issue로 분리한다.
+- 2026-08-19: repository Web 경로는 loopback과 16 MiB body limit으로 수정하고 HTTP 실패
+  회귀를 추가했다. 전체 687 tests, Ruff, mypy를 통과했지만 설치된 service 재시작 전이므로
+  `web_ingress_safety=shadow`로 유지한다. 실제 socket은 여전히 `0.0.0.0:8000`으로 확인됐다.

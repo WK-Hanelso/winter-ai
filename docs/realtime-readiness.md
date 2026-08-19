@@ -99,6 +99,11 @@ manager 안에서 장애 시 2초 뒤 재시작한다. 현재 host의 linger는 
 전부터 서비스를 올리는 배포는 아직 아니다. 폰이 이전 JavaScript를 재사용해 계측을
 누락하지 않도록 HTML과 JSON 응답은 `Cache-Control: no-store`로 제공한다.
 
+Issue #114의 repository unit과 Web 기본값은 `127.0.0.1:8000` loopback, POST body 16 MiB
+상한으로 변경했다. Tailscale Serve가 유일한 원격 ingress가 되는 구조다. 실행 중 service는
+unit 설치·재시작과 실제 socket 확인 전까지 이전 상태일 수 있으므로, 이 변경은 운영 확인
+전에는 Shadow로 판정한다. 세부 절차는 [Web ingress safety](web-ingress-safety.md)를 따른다.
+
 ## 다음 고도화 순서
 
 속도 문제를 prompt나 대화 코드 수정으로 해결하지 않는다. LLM은 현재 경로에서 가장
