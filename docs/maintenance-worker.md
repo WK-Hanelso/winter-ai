@@ -27,6 +27,8 @@ Reflection/current-state 후보 생성과 Outcome 분석은 아직 이 상시 Wo
   시작을 거부한다.
 - 모델이 꺼져 있으면 pending event를 실패로 소진하지 않고 exponential backoff 뒤
   다시 시도한다.
+- transient timeout row는 `defer_count`와 시각을 남기고 defer가 적은 pending 뒤로 회전한다.
+  같은 row가 queue 선두를 영구 점유하지 않으며 삭제·failed 전환도 하지 않는다.
 - 같은 queue에 Worker가 두 개 뜨지 않도록 local file lock을 잡는다.
 - 재시작해도 이미 completed인 event를 다시 분석하지 않는다.
 - fake backend는 test와 명시적인 개발 probe에서만 선택할 수 있다. 운영 실패를 fake
@@ -116,6 +118,20 @@ offline test로 검증했다. 2026-08-19에는 전용 CPU runtime과 user system
 따라서 배포 안정성 관찰은 계속하되 결과 소비자 연결 gate는 실패 상태다. 24시간이 끝나도
 이 실패율과 사람 품질 audit가 해결되지 않으면 service 생존과 분석 결과 activation을 별도로
 판정한다.
+
+### Deferred starvation 보강 — 2026-08-19 16:35 KST
+
+- 16:31 snapshot에서 한 row가 120.1초 timeout으로 최소 8회 연속 deferred돼 뒤의 pending
+  177건을 막는 head-of-line starvation을 확인했다.
+- schema v3는 pending row마다 `defer_count`, `last_deferred_at`을 additive column으로 보존한다.
+  선택 순서는 defer가 적은 row를 우선하므로 timeout row는 pending인 채 뒤로 회전한다.
+- 두 row deterministic 회귀에서 첫 row defer 뒤 두 번째 row가 다음 cycle에 완료됐고, 재시작
+  뒤 첫 row의 defer count와 pending 상태가 유지됐다.
+- 운영 DB 복사본 migration 전후 집계는 completed 16·failed 8·pending 177로 동일했다.
+- 집중 37 tests, 전체 749 tests, Ruff 전체와 mypy 165 source files를 통과했다.
+
+운영 DB migration과 실제 timeout row 뒤의 다음 row 진행을 확인하기 전에는 배포 완료로
+판정하지 않는다.
 
 개발자가 상태만 확인할 때:
 

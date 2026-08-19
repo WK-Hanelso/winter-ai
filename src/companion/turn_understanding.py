@@ -215,6 +215,8 @@ class ShadowTurnEvent:
     error: str | None
     created_at: str
     updated_at: str
+    defer_count: int = 0
+    last_deferred_at: str | None = None
 
 
 class FakeTurnInterpreter:
@@ -252,7 +254,7 @@ class FakeTurnInterpreter:
 class SqliteTurnUnderstandingRepository:
     """Persists raw turns before any interpreter can affect product behaviour."""
 
-    _SCHEMA_VERSION = 2
+    _SCHEMA_VERSION = 3
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -436,6 +438,37 @@ class SqliteTurnUnderstandingRepository:
         )
         return self.get(event_id)
 
+    def defer(self, event_id: str) -> ShadowTurnEvent:
+        """Keep a transient failure pending but rotate it behind fresher work."""
+        current = self.get(event_id)
+        if current.status != "pending":
+            raise TurnUnderstandingRepositoryError(
+                f"cannot defer event {event_id} from {current.status}"
+            )
+        now = _now()
+        try:
+            with self._connect() as connection:
+                updated = connection.execute(
+                    """
+                    UPDATE turn_understanding_events
+                    SET defer_count = defer_count + 1,
+                        last_deferred_at = ?, updated_at = ?
+                    WHERE id = ? AND status = 'pending'
+                    """,
+                    (now, now, event_id),
+                )
+                if updated.rowcount != 1:
+                    raise TurnUnderstandingRepositoryError(
+                        "pending event changed before defer could be recorded"
+                    )
+        except TurnUnderstandingRepositoryError:
+            raise
+        except sqlite3.Error as error:
+            raise TurnUnderstandingRepositoryError(
+                f"could not defer Shadow turn: {error}"
+            ) from error
+        return self.get(event_id)
+
     def get(self, event_id: str) -> ShadowTurnEvent:
         try:
             with self._connect() as connection:
@@ -467,7 +500,13 @@ class SqliteTurnUnderstandingRepository:
         if status is not None:
             sql += " WHERE status = ?"
             values = (status,)
-        sql += " ORDER BY created_at, id"
+        if status == "pending":
+            sql += (
+                " ORDER BY defer_count, "
+                "COALESCE(last_deferred_at, created_at), created_at, id"
+            )
+        else:
+            sql += " ORDER BY created_at, id"
         if limit is not None:
             sql += " LIMIT ?"
             values += (limit,)
@@ -552,7 +591,9 @@ class SqliteTurnUnderstandingRepository:
                         understanding_json TEXT,
                         error TEXT,
                         created_at TEXT NOT NULL,
-                        updated_at TEXT NOT NULL
+                        updated_at TEXT NOT NULL,
+                        defer_count INTEGER NOT NULL DEFAULT 0,
+                        last_deferred_at TEXT
                     )
                     """
                 )
@@ -566,6 +607,22 @@ class SqliteTurnUnderstandingRepository:
                     )
                     """
                 )
+                event_columns = {
+                    row["name"]
+                    for row in connection.execute(
+                        "PRAGMA table_info(turn_understanding_events)"
+                    ).fetchall()
+                }
+                if "defer_count" not in event_columns:
+                    connection.execute(
+                        "ALTER TABLE turn_understanding_events "
+                        "ADD COLUMN defer_count INTEGER NOT NULL DEFAULT 0"
+                    )
+                if "last_deferred_at" not in event_columns:
+                    connection.execute(
+                        "ALTER TABLE turn_understanding_events "
+                        "ADD COLUMN last_deferred_at TEXT"
+                    )
                 if version is None:
                     connection.execute(
                         "INSERT INTO turn_understanding_schema VALUES (?)",
@@ -618,6 +675,7 @@ class ShadowAnalysisService:
             try:
                 understanding = self._interpreter.interpret(event.request)
             except TurnInterpreterUnavailableError:
+                self._repository.defer(event.id)
                 deferred += 1
             except TurnInterpretationError as error:
                 self._repository.fail(event.id, str(error))
@@ -795,6 +853,8 @@ def _event_from_row(row: sqlite3.Row) -> ShadowTurnEvent:
         error=row["error"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        defer_count=row["defer_count"],
+        last_deferred_at=row["last_deferred_at"],
     )
 
 

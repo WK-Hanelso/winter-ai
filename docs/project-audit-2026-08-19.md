@@ -422,3 +422,8 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   동일한 선두 pending row가 120.1초 timeout으로 최소 8회 연속 deferred되고 backoff가 120초에
   도달해 이후 row를 영구적으로 굶겼다. row를 실패·삭제하지 않고 defer audit와 retry rotation만
   추가하는 범위로 #118을 다시 active code scope로 전환했다.
+- 2026-08-19: schema v3에 persistent defer count/time과 least-deferred pending selection을
+  추가했다. deterministic 두 row에서 timeout row는 pending으로 회전하고 뒤 row가 다음 cycle에
+  완료됐으며 재시작 뒤 audit가 유지됐다. 운영 DB 복사본 migration의 16/8/177 집계는 불변,
+  집중 37·전체 749 tests, Ruff와 mypy 165 files를 통과했다. 운영 migration과 실제 진행은
+  아직 남았다.

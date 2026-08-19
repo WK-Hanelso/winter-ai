@@ -69,6 +69,7 @@ def test_worker_backs_off_without_failing_pending_turn(tmp_path: Path) -> None:
     assert (third.deferred, third.next_delay_seconds) == (1, 10)
     assert len(repository.list(status="pending")) == 1
     assert repository.list(status="failed") == ()
+    assert repository.list(status="pending")[0].defer_count == 3
 
 
 def test_worker_serve_stops_cleanly_after_cycle(tmp_path: Path) -> None:

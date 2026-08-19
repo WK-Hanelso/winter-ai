@@ -21,6 +21,10 @@ boundary. Keep prompts out of logs and record only aggregate queue and latency f
 The worker consumes TurnUnderstanding only. Its outputs remain Shadow and cannot alter responses,
 Memory, Identity, Belief, capability state, or Worker authority.
 
+A transient timeout keeps its row pending, increments persistent `defer_count`, and rotates the row
+behind work with fewer deferrals. This avoids both data loss and head-of-line starvation. A deferred
+row is not relabeled as a schema failure, and no validator or quality gate is weakened.
+
 ## Rejected Alternatives
 
 - Reusing `:18080`: couples maintenance to the conversation critical path.

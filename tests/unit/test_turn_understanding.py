@@ -210,4 +210,33 @@ def test_shadow_service_keeps_transient_model_failure_pending(tmp_path: Path) ->
         0,
         1,
     )
-    assert repository.get(event.id).status == "pending"
+    deferred = repository.get(event.id)
+    assert deferred.status == "pending"
+    assert deferred.defer_count == 1
+    assert deferred.last_deferred_at is not None
+
+
+def test_deferred_turn_rotates_behind_never_attempted_work(tmp_path: Path) -> None:
+    class SelectiveInterpreter:
+        def interpret(self, request: TurnInterpretationRequest) -> TurnUnderstanding:
+            if request.user_text == "느린 발화":
+                raise TurnInterpreterUnavailableError("request timeout")
+            return FakeTurnInterpreter().interpret(request)
+
+    path = tmp_path / "turn.sqlite"
+    repository = SqliteTurnUnderstandingRepository(path)
+    slow = repository.enqueue(_request("느린 발화"), source="cli")
+    later = repository.enqueue(_request("뒤의 발화"), source="web")
+    service = ShadowAnalysisService(repository, SelectiveInterpreter())
+
+    first = service.process_pending(limit=1)
+    pending_after_defer = repository.list(status="pending")
+    second = service.process_pending(limit=1)
+    reopened = SqliteTurnUnderstandingRepository(path)
+
+    assert (first.deferred, first.completed) == (1, 0)
+    assert [event.id for event in pending_after_defer] == [later.id, slow.id]
+    assert (second.completed, second.deferred) == (1, 0)
+    assert reopened.get(slow.id).defer_count == 1
+    assert reopened.get(slow.id).status == "pending"
+    assert reopened.get(later.id).status == "completed"
