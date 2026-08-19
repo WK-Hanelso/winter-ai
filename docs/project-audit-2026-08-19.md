@@ -414,3 +414,7 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   `구현 단계·해결 중`으로 확대했다. prompt 성공으로 간주하지 않고 두 실패를 보존한 뒤 final
   claim gate가 Ledger보다 앞선 진행 상태를 차단하게 했다. 세 번째는 `구현은 승인됐지만 아직
   적용되지 않음`으로 일치했다. 보강 뒤 전체 748 tests, Ruff와 mypy 165 files를 통과했다.
+- 2026-08-19: 운영 `improvements.sqlite`는 천우와 합의하지 않은 synthetic 안건을 넣지 않고
+  total 0으로 초기화했다. 최종 claim gate commit 뒤 Web PID `687163`, restart 0,
+  `127.0.0.1:8000` listener와 local/Tailscale HTTPS health를 확인했다. 실제 개선 안건의
+  자연스러운 상태 설명과 overblock은 사용자 관찰 대기다.
