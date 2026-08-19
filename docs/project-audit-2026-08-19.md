@@ -325,3 +325,7 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   HTTPS health를 확인해 `web_ingress_safety=operational`로 승격했다. 당시 Android peer는
   offline이었지만 변경하지 않은 폰 음성 시연은 ingress 보안 gate에서 제외하고 일상
   실사용 관찰로 돌렸다.
+- 2026-08-19: #114를 완료하고 Issue #115를 active scope로 전환했다. Web Core thread의
+  예외가 빈 `done`으로 숨는 문제와 동시에 시작된 turn이 Shared Core에서 겹치는 문제를
+  하나의 full-turn 경계로 수정한다. streaming 재설계·Memory·Worker 확장은 이 scope에서
+  제외한다.
