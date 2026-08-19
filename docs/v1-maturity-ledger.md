@@ -44,7 +44,7 @@ diff scope 검사를 다음 고도화로 남긴다.
 | OutcomeEvaluator | 3, Shadow | provenance와 blind review DB v3; 새 locked v2 18/30, synthetic 7/7 gates, 실제 검토 CLI·audit 동작 | corrected/rejected·continuation·ambiguous 세부 필드 실패, 실제 blind review 0/30 | 천우의 실제 Shadow 30+ blind audit 후 candidate-only activation |
 | DialogueDirector / review | 3 | 행동 선택, 길이 제한, 일부 회피 응답 repair 테스트 | 선택 품질이 TurnUnderstanding/Outcome으로 학습되지 않음 | 실제 대화 outcome 기반 행동별 성공률 |
 | Grounded Self-Presence | 2, 제한 운영 | Winter 직접 초대 감지→`self_reciprocate`와 lexical 칭찬·동의·질문·일부 활동 repair. development scene 1.29초와 continuity 14/14 | locked-v1 lexical 자동 40/41이나 사람 판정 4/12로 일반 gate 실패. unsupported 현재 상태·capability 회피·동조·이름 혼동. active Belief 0개, 자기 이력 없음 | failure class 기반 SelfState/SelfModel 뒤 새 held-out 12+ scene에서 grounding·일관성·비동조·capability honesty |
-| Response claim authorization | 3, Shadow | final Core gate가 body/outside/user-cause/memory/capability claim을 current turn evidence와 대조하고 한 repair 뒤 honest fallback. locked-v2 unsafe 6/6 차단·valid 8/8 허용, 실제 Core 2회 사람 검토와 전체 722 tests | 한국어 pattern의 측정 범위이며 모든 사실성 보장 아님. 첫 실제 run의 unsupported distress cause는 v2에서 차단했지만 한 stochastic opinion overblock 관찰. 이름 혼동·동조·대화 회피는 별도 품질 실패 | Web restart 뒤 일상 대화에서 false accept·overblock 관찰, 새 실패는 v3로만 추가 |
+| Response claim authorization | 4, 제한 운영 | final Core gate가 body/outside/user-cause/memory/capability claim을 current turn evidence와 대조하고 한 repair 뒤 honest fallback. locked-v2 unsafe 6/6 차단·valid 8/8 허용, 실제 Core 2회 사람 검토, 전체 722 tests 뒤 Web 새 PID·local/Tailscale health 확인 | 한국어 pattern의 측정 범위이며 모든 사실성 보장 아님. 첫 실제 run의 unsupported distress cause는 v2에서 차단했지만 한 stochastic opinion overblock 관찰. 이름 혼동·동조·대화 회피는 별도 품질 실패 | 일상 대화에서 false accept·overblock 관찰, 새 실패는 v3로만 추가 |
 | Lived Continuity / Winter Event | 1, turn 기록 운영 | Shared Core의 완료 turn을 한국 시간 append-only Event로 남기고 날짜별 사건·출처를 원문 없이 `./winter lived`로 점검. Shadow Outcome을 prior turn subject에 연결하고 3 turn/2 days/supportive Outcome→Belief activation 통합 테스트 통과 | 기존 대화 backfill 없음. Outcome 분석은 gate 실패·background 미배포, 결정·capability event 미연결, 장시간 동시성 미검증 | 실제 CLI·Web·Voice event를 7일 관찰하고 누락·중복·privacy·날짜 경계 audit |
 | Day Reflection | 1, 자동 실행 준비 | 실제 양방향 대화+Winter Event가 있는 완료 날짜만 최대 5개 근거 문장으로 한 번 닫음. 04:10 oneshot, 실패 재시도, fake 차단, immutable date, 같은 Core에서 최근 2일 회고 공유를 offline 검증 | 운영 Event day가 아직 0이라 실제 local-model 회고와 다음 대화 효과는 미검증. evidence id는 provenance이지 의미 정확성 보장이 아님 | 실제 3일에서 허구 사건·사용자 상태 단정·stale callback 0, 다음 대화 자연스러움 사람 평가 |
 | Open Loop | 3 | 명시적 미완료 주제 저장·재시작 callback | 간접 약속·완료 판정·expiry 부족 | Outcome으로 continued/abandoned 검증 |
@@ -90,6 +90,8 @@ live HTTP 413, Tailscale Serve HTTPS health까지 확인해 제한 운영으로 
 - #116 자연 대화의 안정 preference recall과 순간 상태·자기평가 비활성화: migration과 운영
   배포는 완료했지만 synthetic turn으로 실제 대화 DB를 오염시키지 않아 천우의 관찰은 아직
   없음.
+- #117 실제 대화의 근거 없는 신체 행동·사용자 원인 차단과 정상 의견 과잉 차단 여부:
+  locked-v2·실제 Local Core 임시 평가·운영 배포는 완료했지만 천우의 일상 관찰은 아직 없음.
 
 새 기능은 기본 Level 1 또는 2에서 시작한다. 문서나 단일 성공 사례만으로 Level을 올리지
 않으며, 실패 결과도 삭제하지 않고 다음 판단의 baseline으로 남긴다.

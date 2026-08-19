@@ -54,7 +54,7 @@ V1의 목표 자율성은 **Level 3 — 천우가 승인한 변경만 Worker가 
 | TurnUnderstanding | Shadow | 의도·감정·시간 범위·제안 구조 기록 | held-out 5/10, 응답과 Memory에 미연결 |
 | OutcomeEvaluator | Shadow | 이전 답변과 다음 천우 반응을 연결해 평가 | locked 18/30, background 운영 미배포 |
 | Grounded Self-Presence | 제한 운영 | 직접 초대받은 턴에서 겨울이 쪽 판단·가치·반응 표현 | 사람 판정 4/12, 완성된 자아가 아님 |
-| Response Claim Gate | Shadow | 최종 답변의 신체 행동·바깥 사건·기억·외부 능력을 deterministic evidence와 대조 | locked-v2 synthetic 14장면과 실제 Core 임시 평가, 범용 사실성 보장 아님 |
+| Response Claim Gate | 제한 운영 | 최종 답변의 신체 행동·바깥 사건·기억·외부 능력을 deterministic evidence와 대조 | locked-v2 14장면과 실제 Core 임시 평가 범위이며 범용 사실성 보장 아님 |
 | Winter Event/Day | turn 기록 운영 | 실제 turn을 한국 시간의 겨울이 하루로 기록 | 기존 대화 소급 없음, event 종류 확장 중 |
 | Winter Belief | manual 운영 / autonomous Shadow | 근거·수정 이력, 저위험 자동 activation 계약 | LLM 후보와 activator 운영 연결 전 |
 | Voice Identity | 제한 운영 | Chatterbox S3Gen Reference 직접 합성 | 사람으로 착각할 자연스러움에 미달 |

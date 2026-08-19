@@ -362,3 +362,6 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   valid 8/8을 통과했으며 listening fallback을 한 문장으로 고쳤다. 두 번째 실제 run은 lexical
   40/41이고 cause false accept는 차단됐다. 한 stochastic opinion overblock과 이름 혼동·동조·
   회피는 실패 근거로 유지한다. 전체 기준선은 722 tests이며 Web restart 전 Shadow다.
+- 2026-08-19: 구현 commit 뒤 Web을 새 PID로 재시작하고 loopback listener와 local/Tailscale
+  HTTPS health를 확인해 `grounding=operational`로 제한 승격했다. 실제 DB에는 synthetic turn을
+  넣지 않았으며 false accept·overblock은 사용자 관찰 대기에 남긴다.

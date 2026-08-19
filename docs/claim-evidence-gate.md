@@ -67,6 +67,7 @@ final draft
   opinion overblock은 gate 밖 대화 품질 또는 다음 overblock 관찰 근거로 보존한다.
 - 전체 offline 722 tests, Ruff 전체와 mypy 161 source files를 통과했다.
 
-현재 코드는 deterministic suite와 실제 local Core 임시 평가를 통과한 Shadow다. Web process를
-재시작하고 일상 대화에서 false accept·과잉 차단을 관찰하기 전에는 운영 gate로 승격하지
-않는다.
+구현 commit 뒤 Web service를 새 PID로 재시작하고 loopback listener, local health와
+Tailscale HTTPS health를 확인해 제한 운영으로 승격했다. 운영 Conversation DB에는 synthetic
+turn을 넣지 않았다. 실제 false accept·과잉 차단은 사용자 관찰 대기로 두고, 새 실패는 기존
+v2 정답을 고치지 않고 v3 scene으로만 추가한다.

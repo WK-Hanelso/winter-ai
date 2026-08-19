@@ -115,7 +115,7 @@ dependencies = ["shared_core"]
 
 [[features]]
 id = "grounding"
-maturity = "shadow"
+maturity = "operational"
 evidence = [
   "docs/grounding-policy.md",
   "docs/claim-evidence-gate.md",
