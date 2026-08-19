@@ -69,3 +69,16 @@ Orin을 이 Worker에 연결하지 않는다.
 
 평가 gate를 통과하기 전에는 Worker가 계속 돌아도 추론 결과를 active Memory로 승격하지
 않는다.
+
+## Issue #118 운영 시작점 — 2026-08-19
+
+- production TurnUnderstanding queue는 원문을 읽지 않은 aggregate 기준 pending 196건이다.
+- `127.0.0.1:18081` 전용 analysis listener와 maintenance user unit은 아직 없다.
+- `127.0.0.1:18080`은 대화 경로이므로 명시·암묵적으로 재사용하지 않는다.
+- GPU free 약 2.3 GiB 상태에서 두 번째 GPU model 상주를 가정하지 않는다.
+- 이전 평가에 사용한 CPU-only Qwen3-4B runtime을 로컬에서 먼저 resolve하고 copied DB
+  canary→bounded live batch→continuous Shadow 순서로만 연다.
+- 로그에는 cycle별 processed/completed/failed/deferred와 queue depth·latency aggregate만
+  남기며 user text, context와 model prompt를 출력하지 않는다.
+- 24시간 관찰은 service 최초 배포 완료와 분리한다. 실제 시간이 지나기 전에 완료로
+  기록하지 않는다.

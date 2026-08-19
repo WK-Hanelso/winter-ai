@@ -365,3 +365,7 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
 - 2026-08-19: 구현 commit 뒤 Web을 새 PID로 재시작하고 loopback listener와 local/Tailscale
   HTTPS health를 확인해 `grounding=operational`로 제한 승격했다. 실제 DB에는 synthetic turn을
   넣지 않았으며 false accept·overblock은 사용자 관찰 대기에 남긴다.
+- 2026-08-19: #117을 완료하고 Issue #118 background Shadow maintenance deployment를 active
+  scope로 전환했다. aggregate pending은 196건이고 전용 18081 listener·maintenance unit은
+  없다. 대화용 18080과 GPU를 재사용하지 않고 이전 CPU-only Qwen3-4B를 resolve한 뒤 copied
+  DB canary부터 시작한다. 초기 배포와 실제 24시간 gate는 분리한다.

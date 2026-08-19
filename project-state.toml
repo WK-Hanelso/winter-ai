@@ -1,7 +1,7 @@
 schema_version = 1
 current_phase = "foundation_recovery"
-active_issue = 117
-active_work = ["grounding"]
+active_issue = 118
+active_work = ["background_maintenance"]
 
 # These files define mission, current product target, maturity and the audit baseline.
 canonical_documents = [
