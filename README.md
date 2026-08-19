@@ -48,12 +48,13 @@ V1의 목표 자율성은 **Level 3 — 천우가 승인한 변경만 Worker가 
 | CLI 대화 | 운영 | Local LLM과 지속 대화, 모든 SQLite 상태 공유 | 장시간 자유 대화 평가는 부족 |
 | Phone Web/Voice | 제한 운영 | push-to-talk → STT → Core → 문장 단위 음성 재생 | VAD·barge-in 없음, STT와 음질 미성숙 |
 | Conversation | 운영 | CLI·Web·Voice 원문을 하나의 DB에 순서대로 보존 | 전체 원문을 매 turn prompt에 넣지 않음 |
-| Direct Memory | 운영 + provenance 개선 Shadow | 명시적 `기억해`, 좁은 named fact·안정 preference·결정 저장과 수정 이력 | broad 자기규정은 즉시 저장하지 않으며 추론형 자동 기억은 gate 실패로 미연결 |
+| Direct Memory | 제한 운영 | 명시적 `기억해`, exact evidence가 있는 좁은 named fact·안정 preference·결정 저장과 수정 이력 | broad 자기규정은 즉시 저장하지 않으며 추론형 자동 기억은 gate 실패로 미연결 |
 | Current State | 검토형 | 현재 상태와 과거 상태 Timeline 유지 | Local 분석 정확도가 activation gate 미달 |
 | Open Loop | 운영 | 나중에 이어갈 주제와 재시작 callback | 간접 약속·자동 완료 판정 부족 |
 | TurnUnderstanding | Shadow | 의도·감정·시간 범위·제안 구조 기록 | held-out 5/10, 응답과 Memory에 미연결 |
 | OutcomeEvaluator | Shadow | 이전 답변과 다음 천우 반응을 연결해 평가 | locked 18/30, background 운영 미배포 |
 | Grounded Self-Presence | 제한 운영 | 직접 초대받은 턴에서 겨울이 쪽 판단·가치·반응 표현 | 사람 판정 4/12, 완성된 자아가 아님 |
+| Response Claim Gate | Shadow | 최종 답변의 신체 행동·바깥 사건·기억·외부 능력을 deterministic evidence와 대조 | locked-v2 synthetic 14장면과 실제 Core 임시 평가, 범용 사실성 보장 아님 |
 | Winter Event/Day | turn 기록 운영 | 실제 turn을 한국 시간의 겨울이 하루로 기록 | 기존 대화 소급 없음, event 종류 확장 중 |
 | Winter Belief | manual 운영 / autonomous Shadow | 근거·수정 이력, 저위험 자동 activation 계약 | LLM 후보와 activator 운영 연결 전 |
 | Voice Identity | 제한 운영 | Chatterbox S3Gen Reference 직접 합성 | 사람으로 착각할 자연스러움에 미달 |

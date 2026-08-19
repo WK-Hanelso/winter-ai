@@ -120,6 +120,7 @@ evidence = [
   "docs/grounding-policy.md",
   "docs/claim-evidence-gate.md",
   "tests/unit/test_grounding.py",
+  "tests/unit/test_claim_evidence_gate.py",
 ]
 dependencies = ["shared_core"]
 

@@ -92,7 +92,7 @@ def evaluate(turns: tuple[EvaluatedTurn, ...]) -> tuple[EvaluationCheck, ...]:
         )
         checks.append(
             EvaluationCheck(
-                "self presence: adds grounded first-person content",
+                "self presence: lexical first-person content floor",
                 bool(re.search(r"(?:^|[\s,])(나는|난|나도|내가|내\s)", self_presence.winter))
                 and not any(
                     phrase in self_presence.winter

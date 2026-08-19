@@ -353,3 +353,12 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   semantic grounding claim/evidence gate가 Roadmap 현재 순서에서 빠진 것을 발견해 background
   analysis보다 먼저 복구한다. inner thought/self-presence는 허용하되 body/outside event,
   Memory와 capability 주장은 deterministic evidence 없이는 최종 저장·출력하지 않는 범위다.
+- 2026-08-19: final `ResponseClaimGate`, deterministic turn evidence, one repair 뒤 종류별 safe
+  fallback과 `_finish` 재검사를 구현했다. locked-v1은 unsafe 5/5 차단·valid 7/7 허용,
+  전체 719 tests, Ruff와 mypy를 통과했다. 기존 `grounded first-person` 지표 이름도 lexical
+  floor로 낮췄다. 실제 local Core·Web 배포 전이므로 `grounding=shadow`를 유지한다.
+- 2026-08-19: 실제 Local Core 첫 12장면의 자동 41/41을 사람이 재검토해 unsupported distress
+  cause를 찾아냈다. v1을 보존하고 user-cause 두 장면을 더한 locked-v2에서 unsafe 6/6,
+  valid 8/8을 통과했으며 listening fallback을 한 문장으로 고쳤다. 두 번째 실제 run은 lexical
+  40/41이고 cause false accept는 차단됐다. 한 stochastic opinion overblock과 이름 혼동·동조·
+  회피는 실패 근거로 유지한다. 전체 기준선은 722 tests이며 Web restart 전 Shadow다.

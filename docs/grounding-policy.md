@@ -22,6 +22,11 @@ companion이 **사실처럼 말해도 되는 것**의 제약이다. 말투와 �
 | 주어지지 않은 기억 주장 | 기억은 명시적 승인으로만 생긴다 (`memory.py`). 그 밖의 기억을 주장하면 승인 절차 자체가 무의미해진다 |
 | 모르는 것을 지어내 채우기 | 모르면 모른다고 짧게 말한다 |
 
+Issue #117부터 이 표는 prompt instruction만 뜻하지 않는다. 최종 응답은 별도의
+`ResponseClaimGate`에서 body action, outside event, Memory와 external capability claim으로
+분류되고, 현재 turn의 deterministic evidence와 대조된다. 한 번 repair해도 남은 고위험
+주장은 종류별 honest fallback으로 바뀐 뒤에만 저장·출력된다.
+
 두 번째가 가장 중요하다. `AGENTS.md`의 "안 한 일을 했다고 보고하지 않는다"와 같은
 성격이며, 없는 기억을 있다고 하는 것은 그보다 나쁘다.
 
@@ -66,8 +71,10 @@ Reference 말투 profile 적용 후(#92) 재현된 문제다. 로컬 Qwen3-4B-In
 
 ## 5. 알려진 한계
 
-- **프롬프트 제약은 보장이 아니다.** 확률적으로 줄일 뿐이며 모델·문맥에 따라 뚫린다.
-  보장이 필요하면 출력 검증 같은 별도 기구가 필요하다
+- prompt instruction 자체는 여전히 보장이 아니다. 다만 companion-specific high-risk class는
+  final output gate와 locked suite로 별도 검증한다
+- 현재 gate는 한국어 pattern과 deterministic evidence의 측정된 범위다. 모든 사실 문장의
+  semantic truth를 보장하지 않으며 새 활용형·간접 표현은 별도 held-out으로 확장해야 한다
 - 질문 3개, 모델 1개로만 확인했다. 정량 평가가 아니다
 - `오늘은 그냥 있었어` 같은 약한 존재 진술은 남는다. 완전히 제거되지 않았다
 - 정책을 끌 수 있게 열어두었다(`GroundingPolicy` 필드). 기본값은 전부 켜짐이며

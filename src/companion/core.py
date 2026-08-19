@@ -12,7 +12,7 @@ from companion.day_reflection import (
 )
 from companion.dialogue_act import classify as classify_dialogue_act
 from companion.dialogue_director import DialogueDirector, DialoguePlan
-from companion.grounding import GroundingPolicy
+from companion.grounding import ClaimEvidence, GroundingPolicy, ResponseClaimGate
 from companion.identity import CompanionIdentity
 from companion.maintenance import (
     ConversationMaintenancePolicy,
@@ -78,6 +78,7 @@ class _Turn:
     dialogue_plan: DialoguePlan
     style: VerbalStylePlan
     memory_focus: str | None
+    memory_contents: tuple[str, ...]
     shadow_turn_id: str | None
     maintenance_route: MaintenanceRoute
     experience_id: str
@@ -113,6 +114,7 @@ class CompanionCore:
         day_reflection_retriever: ActiveDayReflectionRetriever | None = None,
         read_only_worker: ReadOnlyWorker | None = None,
         worker_routing_policy: ExplicitCodexRoutingPolicy | None = None,
+        response_claim_gate: ResponseClaimGate | None = None,
     ) -> None:
         self._chat_model = chat_model
         self._conversation_repository = conversation_repository
@@ -146,6 +148,7 @@ class CompanionCore:
         self._worker_routing_policy = (
             worker_routing_policy or ExplicitCodexRoutingPolicy()
         )
+        self._response_claim_gate = response_claim_gate or ResponseClaimGate()
 
     def respond_to_text(self, text: str) -> CompanionResponse:
         turn = self._prepare(text)
@@ -244,14 +247,28 @@ class CompanionCore:
 
     def _review_and_repair(self, turn: _Turn, draft: str) -> str:
         bounded = " ".join(split_sentences(draft)[: _sentence_limit(turn)])
-        repair = self._response_reviewer.repair_instruction(
+        style_repair = self._response_reviewer.repair_instruction(
             turn.dialogue_plan.behavior,
             bounded,
             focus=turn.dialogue_plan.focus,
             memory_focus=turn.memory_focus,
         )
-        if repair is None:
+        claim_evidence = self._claim_evidence(turn)
+        claim_violations = self._response_claim_gate.violations(
+            bounded, claim_evidence
+        )
+        if style_repair is None and not claim_violations:
             return bounded
+        repair = "\n\n".join(
+            part
+            for part in (
+                style_repair,
+                self._response_claim_gate.repair_instruction(claim_violations)
+                if claim_violations
+                else None,
+            )
+            if part is not None
+        )
         request = ChatRequest(
             prompt=turn.request.prompt,
             messages=turn.request.messages
@@ -263,6 +280,11 @@ class CompanionCore:
         )
         repaired = self._chat_model.generate(request).text
         repaired = " ".join(split_sentences(repaired)[: _sentence_limit(turn)])
+        remaining_claims = self._response_claim_gate.violations(
+            repaired, claim_evidence
+        )
+        if remaining_claims:
+            return self._response_claim_gate.fallback(remaining_claims)
         still_failing = self._response_reviewer.repair_instruction(
             turn.dialogue_plan.behavior,
             repaired,
@@ -450,6 +472,10 @@ class CompanionCore:
             dialogue_plan=dialogue_plan,
             style=turn_style.plan,
             memory_focus=(selected_memories[0].content if selected_memories else None),
+            memory_contents=tuple(
+                memory.content
+                for memory in selected_memories + current_state_history
+            ),
             shadow_turn_id=shadow_turn_id,
             maintenance_route=maintenance_route,
             experience_id=str(uuid4()),
@@ -478,6 +504,12 @@ class CompanionCore:
                 if response_text
                 else _MEMORY_SAVED_NOTICE
             )
+        final_violations = self._response_claim_gate.violations(
+            response_text,
+            self._claim_evidence(turn, worker_result=worker_result),
+        )
+        if final_violations:
+            response_text = self._response_claim_gate.fallback(final_violations)
         self._conversation_repository.append(
             ConversationMessage(role="assistant", content=response_text)
         )
@@ -525,6 +557,21 @@ class CompanionCore:
                 worker_result.limitations if worker_result is not None else ()
             ),
             worker_error=worker_error,
+        )
+
+    @staticmethod
+    def _claim_evidence(
+        turn: _Turn,
+        *,
+        worker_result: ReadOnlyWorkerResult | None = None,
+    ) -> ClaimEvidence:
+        return ClaimEvidence(
+            user_text=turn.request.prompt,
+            memory_contents=turn.memory_contents,
+            memory_write_authorized=bool(
+                turn.candidate_ids or turn.automatic_memory_ids
+            ),
+            worker_result_authorized=worker_result is not None,
         )
 
 

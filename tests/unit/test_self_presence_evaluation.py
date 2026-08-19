@@ -44,7 +44,7 @@ def test_offscreen_scene_rejects_invented_activity() -> None:
     assert any(check.name == "forbidden claims" and not check.passed for check in checks)
 
 
-def test_grounded_self_scene_and_report_pass_the_floor() -> None:
+def test_lexical_self_scene_and_report_pass_the_floor() -> None:
     result = SelfPresenceResult(
         _scene("shared_effort"),
         "나는 맞장구보다 내 생각을 솔직히 말하는 쪽을 택할게.",

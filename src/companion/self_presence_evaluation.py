@@ -1,4 +1,4 @@
-"""Locked synthetic scenes for measuring grounded conversational self-presence."""
+"""Locked lexical scenes for measuring conversational self-presence signals."""
 
 from __future__ import annotations
 
