@@ -130,8 +130,11 @@ offline test로 검증했다. 2026-08-19에는 전용 CPU runtime과 user system
 - 운영 DB 복사본 migration 전후 집계는 completed 16·failed 8·pending 177로 동일했다.
 - 집중 37 tests, 전체 749 tests, Ruff 전체와 mypy 165 source files를 통과했다.
 
-운영 DB migration과 실제 timeout row 뒤의 다음 row 진행을 확인하기 전에는 배포 완료로
-판정하지 않는다.
+16:36 운영 service를 새 PID `691420`으로 재시작해 schema v3 migration을 적용했다. 첫 row는
+120.1초 뒤 pending·`defer_count=1`로 회전했고, 다음 row가 94.9초에 completed돼 aggregate가
+`completed 16→17 / failed 8 / pending 178→177`로 전진했다. maintenance restart는 0,
+analysis health는 정상, active Memory는 10건으로 불변이다. 따라서 head-of-line starvation
+수정은 운영 검증을 통과했다. 24시간 service 관찰과 분석 결과 품질 실패는 별개로 계속 남는다.
 
 개발자가 상태만 확인할 때:
 

@@ -427,3 +427,7 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   완료됐으며 재시작 뒤 audit가 유지됐다. 운영 DB 복사본 migration의 16/8/177 집계는 불변,
   집중 37·전체 749 tests, Ruff와 mypy 165 files를 통과했다. 운영 migration과 실제 진행은
   아직 남았다.
+- 2026-08-19 16:39: maintenance PID `691420`에 schema v3를 배포했다. 첫 timeout row는
+  120.1초 뒤 pending·defer count 1로 회전했고 다음 row가 94.9초에 completed돼 aggregate가
+  17/8/177로 전진했다. maintenance restart 0, analysis health 정상, active Memory 10건 불변으로
+  fairness 운영 gate를 통과했다. 24시간 안정성과 분석 내용 품질 gate 실패는 계속 남긴다.
