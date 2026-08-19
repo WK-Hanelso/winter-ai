@@ -80,6 +80,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args.conversation_db = DATA / "conversations.sqlite"
     args.memory_db = DATA / "memories.sqlite"
     args.capability_db = DATA / "capabilities.sqlite"
+    args.improvement_db = DATA / "improvements.sqlite"
     args.belief_db = DATA / "beliefs.sqlite"
     args.dialogue_state_db = DATA / "dialogue_state.sqlite"
     args.turn_understanding_db = DATA / "turn_understanding.sqlite"

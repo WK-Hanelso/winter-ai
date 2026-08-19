@@ -62,6 +62,11 @@ from companion.day_reflection import (
     SqliteDayReflectionRepository,
 )
 from companion.identity import IdentityRepositoryError, JsonIdentityRepository
+from companion.improvements import (
+    ImprovementLedgerError,
+    PersistentImprovementSnapshot,
+    SqliteImprovementLedger,
+)
 from companion.lived_continuity import (
     render_lived_continuity,
     summarize_lived_continuity,
@@ -242,6 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--identity-path", type=Path)
     parser.add_argument("--memory-db", type=Path)
+    parser.add_argument("--improvement-db", type=Path)
     parser.add_argument("--memory-kind", default="semantic")
     parser.add_argument("--current-state-topic")
     parser.add_argument("--belief-db", type=Path)
@@ -399,6 +405,16 @@ def run(
         )
     except CapabilityRegistryError as error:
         print(f"Capability registry unavailable: {error}", file=stdout)
+        return 1
+    try:
+        improvement_path = getattr(args, "improvement_db", None)
+        improvement_snapshot_provider = (
+            PersistentImprovementSnapshot(SqliteImprovementLedger(improvement_path))
+            if improvement_path
+            else None
+        )
+    except ImprovementLedgerError as error:
+        print(f"Improvement ledger unavailable: {error}", file=stdout)
         return 1
     try:
         belief_path = getattr(args, "belief_db", None)
@@ -599,6 +615,7 @@ def run(
         clock=SystemClock() if winter_event_repository is not None else None,
         day_reflection_retriever=day_reflection_retriever,
         self_model_provider=self_model_provider,
+        improvement_snapshot_provider=improvement_snapshot_provider,
         read_only_worker=(
             CodexReadOnlyWorker(
                 Path.cwd(),

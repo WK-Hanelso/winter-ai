@@ -405,3 +405,8 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   단일 active code scope로 전환했다. 이번 범위는 observed→discussing→versioned proposed→
   explicit implementation approval과 read-only Core snapshot까지다. 자동 improvement signal,
   Worker 실행, source 적용과 Capability 채택은 포함하지 않는다.
+- 2026-08-19: #120에 stable evidence 기반 observed→discussing→immutable versioned proposal→
+  explicit implementation approval lifecycle과 revision/reject history를 구현했다. 현재
+  proposal version/hash 불일치, 필수 proposal field 누락과 skipped transition은 fail-closed다.
+  구현 승인은 Worker 실행·채택·Capability 등록을 만들지 않으며 Shared Core snapshot도
+  읽기 전용이다. 집중 41 tests, 전체 746 tests, Ruff 전체와 mypy 165 source files를 통과했다.

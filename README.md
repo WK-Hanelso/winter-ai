@@ -16,7 +16,7 @@ Memory와 시간축을 공유한다.
 새 기능을 시작하거나 상태를 바꾸기 전후에 `./winter project-check`를 실행한다. 이 검사가
 실패하면 새 기능을 확장하지 않고 Issue·근거·문서 상태부터 바로잡는다.
 
-<!-- winter-project-state: capability_registry=operational, development_control_gate=operational, improvement_ledger=absent, self_model=operational, work_orchestration=shadow -->
+<!-- winter-project-state: capability_registry=operational, development_control_gate=operational, improvement_ledger=operational, self_model=operational, work_orchestration=shadow -->
 
 ## 1. 겨울이는 무엇인가
 
@@ -57,6 +57,7 @@ V1의 목표 자율성은 **Level 3 — 천우가 승인한 변경만 Worker가 
 | Grounded Self-Presence | 제한 운영 | 직접 초대받은 턴에서 겨울이 쪽 판단·가치·반응 표현 | 사람 판정 4/12, 완성된 자아가 아님 |
 | Response Claim Gate | 제한 운영 | 최종 답변의 신체 행동·바깥 사건·기억·외부 능력을 deterministic evidence와 대조 | locked-v2 14장면과 실제 Core 임시 평가 범위이며 범용 사실성 보장 아님 |
 | SelfModel / Capability Registry | 제한 운영 | Identity와 health·test 근거가 있는 실제 대화·Memory 능력을 매 turn 읽고, 등록되지 않은 기능 주장을 차단 | runtime 장애 자동 degraded 전이와 capability 채택 cycle은 아직 없음 |
+| Improvement Ledger | 기반 운영 | 문제 근거·토론·완전한 제안서 revision·정확한 구현 승인을 재시작 뒤에도 공유 | 자동 대화 추출·Worker 실행·검증·채택은 아직 미연결 |
 | Winter Event/Day | turn 기록 운영 | 실제 turn을 한국 시간의 겨울이 하루로 기록 | 기존 대화 소급 없음, event 종류 확장 중 |
 | Winter Belief | manual 운영 / autonomous Shadow | 근거·수정 이력, 저위험 자동 activation 계약 | LLM 후보와 activator 운영 연결 전 |
 | Voice Identity | 제한 운영 | Chatterbox S3Gen Reference 직접 합성 | 사람으로 착각할 자연스러움에 미달 |
@@ -75,12 +76,13 @@ V1의 목표 자율성은 **Level 3 — 천우가 승인한 변경만 Worker가 
 → 겨울이가 현재 대화·기억·미완성 이야기를 참고해 답한다
 → 대화와 실제 사건이 자동 저장된다
 → 매 turn 같은 Capability Registry에서 실제 가능·불가능을 읽는다
+→ 진행 중인 개선 안건은 읽기 전용 Improvement snapshot으로 이어진다
 → 응답과 분리된 Shadow 분석이 의도·결과·후보를 관찰한다
 → 확실한 직접 정보만 승인된 정책으로 최신화한다
 → 애매한 내용은 겨울이가 이후 대화에서 자연스럽게 확인한다
 ```
 
-`overview`, `reflect`, `memories`, `lived`, `capabilities` 같은 명령은 개발·audit·복구 도구다. 천우의
+`overview`, `reflect`, `memories`, `lived`, `capabilities`, `improvements` 같은 명령은 개발·audit·복구 도구다. 천우의
 일상 사용 조건이 아니다.
 
 ### Text CLI
@@ -277,6 +279,7 @@ CLI에 보이는 lexical response와 Voice가 말하는 문장은 동일해야 �
 | `day_reflections.sqlite` | 실제 하루를 다음 대화로 잇는 근거 기반 회고 |
 | `winter_events.sqlite` | 겨울이의 실제 사건과 날짜별 시간축 |
 | `capabilities.sqlite` | 실제 기능, limitation, health·test 근거와 lifecycle |
+| `improvements.sqlite` | 개선 문제·근거·proposal version/hash·구현 승인과 transition history |
 | `voice_latency-*.sqlite` | 원문 없는 Voice 구간 latency |
 
 ## 6. Memory가 동작하는 방식
@@ -408,11 +411,12 @@ PYTHONPATH=src python experiments/belief_safety_eval.py \
 [ADR-0011](docs/adr/0011-evidence-backed-lived-continuity.md),
 [ADR-0022](docs/adr/0022-evidence-gated-capability-registry.md)을 따른다.
 
-현재 capability 상태는 개발·audit가 필요할 때만 다음처럼 확인한다. 이 명령은 capability를
-추가하거나 활성화하지 않는다.
+현재 capability와 improvement 상태는 개발·audit가 필요할 때만 다음처럼 확인한다. 이
+명령들은 항목을 추가하거나 활성화하지 않는다.
 
 ```bash
 ./winter capabilities
+./winter improvements
 ```
 
 ## 8. 대화 행동과 자기 표현
@@ -600,7 +604,7 @@ docker compose run --rm dev mypy src
 
 1. 전용 CPU background maintenance 배포 — **초기 배포 완료, 24시간 Shadow 관찰 중**
 2. persistent Capability Registry와 read-only SelfModel — **#119 범위 완료, 제한 운영 검증 중**
-3. Improvement Ledger와 대화형 proposal state machine
+3. Improvement Ledger와 대화형 proposal state machine — **#120 기반 범위 완료**
 4. Work Orchestration V2.1 안전 계약과 기존 모델 baseline — **구현 완료, activation 실패**
 5. project 전체 stale 판정·process crash 복구·실제 Winter 검증 profile
 6. prompt-injection·path/network/write 격리 공격 suite
@@ -619,6 +623,7 @@ docker compose run --rm dev mypy src
 | 겨울이에게 계정 권한을 어떻게 위임하는가? | [Authority Delegation](docs/authority-delegation.md) |
 | 겨울이가 Worker를 어떻게 이해·지휘·검수하는가? | [Winter-owned Work Orchestration](docs/work-orchestration.md), [ADR-0015](docs/adr/0015-single-core-work-orchestration.md) |
 | 자아·관점·하루의 경계는? | [SelfModel Design](docs/self-model-design.md) |
+| 개선 문제와 구현 승인은 어떻게 이어지는가? | [ADR-0023 Improvement Ledger](docs/adr/0023-persistent-conversational-improvement-ledger.md) |
 | 왜 자동 Belief에 이런 gate가 있는가? | [ADR-0011](docs/adr/0011-evidence-backed-lived-continuity.md) |
 | LLM 관점 후보는 어떻게 검증하는가? | [Belief Reflection](docs/belief-reflection.md), [ADR-0012](docs/adr/0012-shadow-belief-semantic-review.md) |
 | 어제의 겨울이가 오늘로 어떻게 이어지는가? | [Day Reflection](docs/day-reflection.md), [ADR-0013](docs/adr/0013-daily-continuity-before-autonomous-analysis.md) |

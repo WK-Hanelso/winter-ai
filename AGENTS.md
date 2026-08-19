@@ -603,7 +603,8 @@ CapabilityRegistry`의 구현·운영 검증을 완료했다. 현재 단일 acti
 관찰 트랙에서 계속 실행하지만 결과 품질 gate는 실패 상태이며 새 소비자에 연결하지 않는다.
 #120은 문제·근거·대안·위험·scope·acceptance·rollback과 명시적 구현 승인까지만 지속하며,
 TurnUnderstanding 자동 등록, Worker 실행, Capability 채택, 권한 변경과 Shadow 결과
-activation은 금지한다. 아래 Work Orchestration 계약과 실패 기준선은 그대로 보존한다.
+activation은 금지한다. 해당 persistent lifecycle, version/hash 승인과 read-only Core snapshot은
+구현되어 운영 검증 중이다. 아래 Work Orchestration 계약과 실패 기준선은 그대로 보존한다.
 
 1. 현재 혼합 worktree의 사용자·Claude·Codex 변경을 보존한다.
 2. 하나의 Winter Core Model이 `IntentBrief`와 `WinterDecision`을 모두 생성한다. 두 개의

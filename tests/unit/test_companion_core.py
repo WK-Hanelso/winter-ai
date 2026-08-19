@@ -15,6 +15,10 @@ from companion.context import ConversationContextBuilder
 from companion.contracts import ChatRequest, ChatResult, ConversationMessage
 from companion.core import CompanionCore
 from companion.identity import CompanionIdentity
+from companion.improvements import (
+    PersistentImprovementSnapshot,
+    SqliteImprovementLedger,
+)
 from companion.memory import ActiveMemoryRetriever, SqliteMemoryRepository
 from companion.open_loops import ActiveOpenLoopRetriever, SqliteOpenLoopRepository
 from companion.verbal_style import VerbalStylePlanner, load_verbal_style
@@ -182,6 +186,33 @@ def test_core_injects_read_only_self_model_and_uses_same_claim_evidence(
     ]
     assert any("[검증된 SelfModel" in message for message in system)
     assert any("현재 대화에서 답변할 수 있다" in message for message in system)
+
+
+def test_core_injects_improvement_snapshot_without_advancing_state(tmp_path) -> None:
+    ledger = SqliteImprovementLedger(tmp_path / "improvements.sqlite")
+    item = ledger.observe(
+        title="대화 속도",
+        problem="첫 답변이 늦다",
+        evidence=("conversation:17",),
+    )
+    ledger.start_discussion(item.id)
+    model = CapturingChatModel()
+    core = CompanionCore(
+        model,
+        InMemoryConversationRepository(),
+        improvement_snapshot_provider=PersistentImprovementSnapshot(ledger),
+    )
+
+    core.respond_to_text("우리가 개선하던 건 어떻게 됐어?")
+
+    system = [
+        message.content
+        for message in model.requests[0].messages
+        if message.role == "system"
+    ]
+    assert any("지속 중인 개선 안건" in message for message in system)
+    assert any("대화 속도 [discussing" in message for message in system)
+    assert ledger.get(item.id).status == "discussing"
 
 
 def test_core_injects_selected_active_memory_as_distinct_system_message(tmp_path) -> None:

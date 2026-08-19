@@ -15,6 +15,7 @@ from companion.dialogue_act import classify as classify_dialogue_act
 from companion.dialogue_director import DialogueDirector, DialoguePlan
 from companion.grounding import ClaimEvidence, GroundingPolicy, ResponseClaimGate
 from companion.identity import CompanionIdentity
+from companion.improvements import ImprovementSnapshotProvider
 from companion.maintenance import (
     ConversationMaintenancePolicy,
     MaintenanceRoute,
@@ -118,6 +119,7 @@ class CompanionCore:
         worker_routing_policy: ExplicitCodexRoutingPolicy | None = None,
         response_claim_gate: ResponseClaimGate | None = None,
         self_model_provider: SelfModelProvider | None = None,
+        improvement_snapshot_provider: ImprovementSnapshotProvider | None = None,
     ) -> None:
         self._chat_model = chat_model
         self._conversation_repository = conversation_repository
@@ -153,6 +155,7 @@ class CompanionCore:
         )
         self._response_claim_gate = response_claim_gate or ResponseClaimGate()
         self._self_model_provider = self_model_provider
+        self._improvement_snapshot_provider = improvement_snapshot_provider
 
     def respond_to_text(self, text: str) -> CompanionResponse:
         turn = self._prepare(text)
@@ -419,6 +422,11 @@ class CompanionCore:
         if self_model_snapshot is not None:
             system_messages.append(
                 ConversationMessage("system", self_model_snapshot.system_message())
+            )
+        if self._improvement_snapshot_provider is not None:
+            improvement_snapshot = self._improvement_snapshot_provider.snapshot()
+            system_messages.append(
+                ConversationMessage("system", improvement_snapshot.system_message())
             )
         if self._day_reflection_retriever is not None and self._clock is not None:
             prior_days = self._day_reflection_retriever.retrieve(

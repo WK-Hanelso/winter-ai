@@ -69,6 +69,11 @@ from companion.day_reflection import (
 )
 from companion.dialogue_act import classify as classify_dialogue_act
 from companion.identity import IdentityRepositoryError, JsonIdentityRepository
+from companion.improvements import (
+    ImprovementLedgerError,
+    PersistentImprovementSnapshot,
+    SqliteImprovementLedger,
+)
 from companion.memory import (
     ActiveMemoryRetriever,
     MemoryRepositoryError,
@@ -108,6 +113,7 @@ DEFAULT_IDENTITY = DEFAULT_DATA / "identity.json"
 DEFAULT_CONVERSATION = DEFAULT_DATA / "conversations.sqlite"
 DEFAULT_MEMORIES = DEFAULT_DATA / "memories.sqlite"
 DEFAULT_CAPABILITIES = DEFAULT_DATA / "capabilities.sqlite"
+DEFAULT_IMPROVEMENTS = DEFAULT_DATA / "improvements.sqlite"
 DEFAULT_BELIEFS = DEFAULT_DATA / "beliefs.sqlite"
 DEFAULT_DIALOGUE_STATE = DEFAULT_DATA / "dialogue_state.sqlite"
 DEFAULT_TURN_UNDERSTANDING = DEFAULT_DATA / "turn_understanding.sqlite"
@@ -126,6 +132,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--memory-path", type=Path, default=DEFAULT_MEMORIES)
     parser.add_argument(
         "--capability-path", type=Path, default=DEFAULT_CAPABILITIES
+    )
+    parser.add_argument(
+        "--improvement-path", type=Path, default=DEFAULT_IMPROVEMENTS
     )
     parser.add_argument("--belief-path", type=Path, default=DEFAULT_BELIEFS)
     parser.add_argument(
@@ -384,6 +393,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"겨울이 능력 기록을 읽지 못했습니다: {error}", file=sys.stderr)
         return 1
     try:
+        improvement_snapshot_provider = PersistentImprovementSnapshot(
+            SqliteImprovementLedger(arguments.improvement_path)
+        )
+    except ImprovementLedgerError as error:
+        print(f"겨울이 개선 기록을 읽지 못했습니다: {error}", file=sys.stderr)
+        return 1
+    try:
         open_loop_repository = SqliteOpenLoopRepository(arguments.dialogue_state_path)
         open_loop_retriever = ActiveOpenLoopRetriever(open_loop_repository)
     except OpenLoopRepositoryError as error:
@@ -433,6 +449,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         clock=SystemClock(),
         day_reflection_retriever=day_reflection_retriever,
         self_model_provider=self_model_provider,
+        improvement_snapshot_provider=improvement_snapshot_provider,
     )
     tts: HttpSpeechModel | CosyVoiceSpeechModel
     if arguments.own_container:

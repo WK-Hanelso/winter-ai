@@ -189,8 +189,12 @@ sync_status = true
 
 [[features]]
 id = "improvement_ledger"
-maturity = "absent"
-evidence = []
+maturity = "operational"
+evidence = [
+  "src/companion/improvements.py",
+  "tests/unit/test_improvements.py",
+  "docs/adr/0023-persistent-conversational-improvement-ledger.md",
+]
 dependencies = ["self_model", "capability_registry"]
 sync_status = true
 
