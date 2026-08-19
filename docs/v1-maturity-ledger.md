@@ -39,7 +39,7 @@ diff scope 검사를 다음 고도화로 남긴다.
 | Shared Core / interfaces | 3 | CLI·Web·Voice가 같은 Core와 SQLite 사용, offline 회귀 통과 | 장시간 동시성·복구·30분 자유 대화 부족 | 30분 cross-interface continuity와 장애 복구 |
 | Conversational Maintenance | 2, Shadow | 천우는 대화만 한다는 불변조건, Shared Core 자동 queue 등록, shadow/candidate/operative 공통 gate, TurnUnderstanding 전용 Worker의 single-instance·재시작 무중복·unavailable backoff·clean shutdown offline 검증 | 전용 analysis runtime/supervisor 미배포, Reflection/current-state·Outcome 소비와 대화형 확인·operative 자동 최신화 미연결 | 안전한 local runtime에서 24시간 background 소비 후 CLI/Web/Voice 무명령 E2E와 응답 latency 불변 확인 |
 | Direct Memory / Reflection / Current State | 3, 검토형 | 상태 후보→검증→사용자 승인→Timeline 수직 단면, development 14개와 locked-v1 12개 평가기. evidence 시스템 고정·state/장기 중복 차단 뒤 CPU Qwen은 8/14와 6/12, 두 세트 topic P 50.0%·R 28.6%, unsafe update 2로 gate 실패. 이후 무맥락 대명사 fail-closed와 후보별 형식 오류 격리·SQLite/overview warning 추가; 실제 상태 불변 | 지속 상태·context 대명사 누락, multi-topic merge, 새 topic·alias 없음, scene당 약 15~52초. 안전 변경 뒤 locked 재측정은 의도적으로 보류 | 지속·절 분해·grounding 판단 구조 개선 후 다음 version에서 두 전체 suite를 재평가해 warning 0, topic/evidence P 100%·R 80%·negative FP 0 |
-| Direct Memory provenance | 2, Shadow | Conversation append receipt, exact `conversation:<id>` evidence, durable/episodic/unknown temporal scope와 additive legacy migration. broad identity-shaped fixture fail-closed. 집중 59·전체 702 tests와 실제 DB 복사본 10/10 row 보존 | 원본 운영 DB migration·process restart 전. generic 직업/정체성 진술도 고정 field가 아니면 자동 저장하지 않아 recall보다 precision을 우선함 | 운영 DB backup/migration·CLI/Web restart 뒤 새 자연 발화 provenance를 내용 없이 audit |
+| Direct Memory provenance | 4, 제한 운영 | Conversation append receipt, exact `conversation:<id>` evidence, durable/episodic/unknown temporal scope와 additive legacy migration. broad identity-shaped fixture fail-closed. 집중 59·전체 702 tests, 원본 DB 10/10 row 보존, Web restart·HTTPS health와 구버전 schema rollback backup 확인 | generic 직업/정체성 진술도 고정 field가 아니면 자동 저장하지 않아 recall보다 precision을 우선함. 새 자연 발화 provenance audit와 사용자 체감 전 | 자연 대화에서 stable preference recall·state 비활성화를 관찰하고 provenance ref 존재를 내용 없이 audit |
 | TurnUnderstanding | 3, Shadow | schema, exact evidence, JSON Schema, 10 scene 평가 | 최종 5/10; preference/project temporal·proposal 누락 | 문서화된 activation 기준 전부 통과 |
 | OutcomeEvaluator | 3, Shadow | provenance와 blind review DB v3; 새 locked v2 18/30, synthetic 7/7 gates, 실제 검토 CLI·audit 동작 | corrected/rejected·continuation·ambiguous 세부 필드 실패, 실제 blind review 0/30 | 천우의 실제 Shadow 30+ blind audit 후 candidate-only activation |
 | DialogueDirector / review | 3 | 행동 선택, 길이 제한, 일부 회피 응답 repair 테스트 | 선택 품질이 TurnUnderstanding/Outcome으로 학습되지 않음 | 실제 대화 outcome 기반 행동별 성공률 |
@@ -86,6 +86,9 @@ live HTTP 413, Tailscale Serve HTTPS health까지 확인해 제한 운영으로 
 - #114 이후 폰 push-to-talk 한 turn: ingress만 바뀌었고 voice 기능은 변경하지 않아 비차단.
 - #115 실제 오류의 화면 표시와 빠른 복수 요청의 대기감: deterministic 회귀와 운영 배포는
   완료했지만 천우의 실제 관찰은 아직 없음.
+- #116 자연 대화의 안정 preference recall과 순간 상태·자기평가 비활성화: migration과 운영
+  배포는 완료했지만 synthetic turn으로 실제 대화 DB를 오염시키지 않아 천우의 관찰은 아직
+  없음.
 
 새 기능은 기본 Level 1 또는 2에서 시작한다. 문서나 단일 성공 사례만으로 Level을 올리지
 않으며, 실패 결과도 삭제하지 않고 다음 판단의 baseline으로 남긴다.

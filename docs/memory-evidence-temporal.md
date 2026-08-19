@@ -57,6 +57,11 @@ user conversation row
   전후 동일했고 새 column만 추가됐다. 임시 복사본은 검증 직후 삭제했다.
 - 집중 59 tests와 전체 offline 702 tests, Ruff 전체, mypy 161 source files를 통과했다.
 
-원본 운영 DB에는 아직 migration을 적용하지 않았으므로 현재 maturity는 Shadow다. 구현
-commit 뒤 CLI와 Web process를 새 코드로 기동하고 원본 row 보존을 재확인한 뒤 제한 운영으로
-승격한다.
+구현 commit 뒤 Web service를 새 PID로 재시작하고 원본 운영 DB를 migration했다. 기존 10개
+row의 active/deprecated/supersedes 집계는 전후 동일했고, loopback과 Tailscale HTTPS health도
+통과해 제한 운영으로 승격했다. `data/backups/memories-pre-116-20260819.sqlite`에는 구버전
+11-column schema와 같은 10개 row를 보존해 code rollback 시 사용할 수 있다.
+
+새 자동 기억의 실제 provenance는 다음 자연 대화부터 생긴다. 검증을 위해 synthetic turn을
+운영 대화에 넣지 않았으며, 안정 preference recall과 순간 상태 비활성화는 사용자 관찰
+대기로 유지한다.
