@@ -390,3 +390,9 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   열지 않았다. 일반 Memory capability는 특정 기억 사실이나 저장 완료의 근거로 쓸 수 없게
   분리했고, 집중 60 tests, 전체 735 tests, Ruff 전체와 mypy 163 source files를 통과했다.
   운영 Core 검증은 남겼다.
+- 2026-08-19: commit `f9f56be`, Orin `/health`, Memory SQLite open을 근거로 운영 Registry에
+  `conversation`, `memory`만 `available`로 등록했다. Web을 새 PID `668893`으로 재시작해
+  loopback listener·local health와 Tailscale IP를 지정한 HTTPS health를 확인했다. 운영 대화
+  DB를 쓰지 않은 격리 Core 3턴에서 대화 가능, explicit Memory 가능, web search·project write
+  불가를 구분했다. 넓은 능력 질문에서 한계를 자발적으로 열거하지 않은 응답은 실제 사용
+  관찰 항목으로 남긴다.
