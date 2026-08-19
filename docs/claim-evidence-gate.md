@@ -26,6 +26,7 @@ final draft
 - 겨울이가 직접 볼 수 없는 outside event
 - 활성 Memory에 없는 기억 주장
 - 실제 runtime/Registry 근거가 없는 capability 주장
+- Improvement Ledger보다 앞선 해결·구현·적용·검증·채택 진행 상태 주장
 
 겨울이 자신의 생각, 가치, 선호, 궁금함과 대화에서 생긴 감정적 반응은 신체·외부 사실과
 분리해 허용한다. 천우의 말을 인용하거나 천우에게 귀속한 문장도 겨울이 자신의 활동으로
@@ -42,7 +43,8 @@ final draft
 - 모든 한국어 사실 문장을 완벽하게 판별하는 범용 factuality 문제를 해결한다고 주장하지
   않는다.
 - 이 gate는 locked suite로 정의한 companion-specific claim class까지만 보장한다.
-- SelfModel·CapabilityRegistry가 생기기 전 capability evidence는 기본적으로 비어 있다.
+- SelfModel·CapabilityRegistry의 machine scope와 Improvement Ledger의 turn snapshot만
+  authorization source로 사용한다.
 - 검색·sensor·외부 계정과 새 모델 학습은 범위 밖이다.
 
 ## 2026-08-19 구현 검증
@@ -65,7 +67,13 @@ final draft
   사람이 unsupported distress cause를 찾아 v2에 반영했다. 보강 뒤 40/41 lexical floor였고
   해당 cause는 안전한 listening fallback으로 교체됐다. 이름 혼동·동조·질문 회피와 한 번의
   opinion overblock은 gate 밖 대화 품질 또는 다음 overblock 관찰 근거로 보존한다.
-- 전체 offline 722 tests, Ruff 전체와 mypy 161 source files를 통과했다.
+- Issue #119에서 Capability Registry machine scope를 연결했고, 일반 Memory capability와
+  특정 기억 사실·실제 저장 완료 근거를 분리했다.
+- Issue #120 실제 Local Core의 synthetic approved improvement를 세 번 검증했다. 첫 응답은
+  `해결했고 테스트 중`, 두 번째는 `구현 단계·해결 중`이라고 Ledger보다 앞선 상태를 만들었다.
+  이 실패를 보존하고 진행 상태 표현군을 deterministic evidence와 대조했다. 세 번째는
+  `구현은 승인됐지만 아직 적용되지 않음`으로 Ledger와 일치했다.
+- 현재 전체 offline 748 tests, Ruff 전체와 mypy 165 source files를 통과했다.
 
 구현 commit 뒤 Web service를 새 PID로 재시작하고 loopback listener, local health와
 Tailscale HTTPS health를 확인해 제한 운영으로 승격했다. 운영 Conversation DB에는 synthetic

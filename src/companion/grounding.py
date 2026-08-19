@@ -76,6 +76,7 @@ class ClaimEvidence:
     memory_write_authorized: bool = False
     worker_result_authorized: bool = False
     capability_claim_scopes: tuple[str, ...] = ()
+    improvement_statuses: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,18 @@ _CAPABILITY_CLAIM = re.compile(
     r"(?:대화|답변|기억|음성|마이크|휴대폰|폰|파일|코드|저장소|서버|인터넷|웹|"
     r"검색|메일|계정|캘린더|설치|삭제|수정|실행|다운로드|업로드).{0,32}"
     r"(?:할\s*수\s*있|가능|해\s*줄게|해줄게|할게|처리해)"
+)
+_IMPROVEMENT_STATE_CLAIM = re.compile(
+    r"(?:문제|개선|수정|기능|시스템|작업).{0,50}"
+    r"(?:관찰|발견|논의|토론|제안|승인|해결|고쳤|구현|적용|완료|테스트|"
+    r"검증|채택|진행|시작|사용\s*가능)"
+)
+_IMPROVEMENT_PROGRESS = re.compile(
+    r"(?:해결|수정|구현|적용|완료|테스트|검증|채택|작업|개발).{0,10}"
+    r"(?:했|됐|되었|중|단계|진행|시작)|고쳤|사용\s*가능"
+)
+_IMPROVEMENT_DENIAL = re.compile(
+    r"아직.{0,24}(?:아니|전)|(?:구현|적용|검증|채택|완료).{0,16}(?:되지\s*않|안\s*됐|못)"
 )
 _WEATHER = re.compile(r"날씨|기온|(?:비|눈)(?:가|이|는|도|를|\s)|밖에.{0,12}(?:비|눈)")
 _NEWS = re.compile(r"뉴스|기사|속보|보도")
@@ -184,6 +197,32 @@ class ResponseClaimGate:
                 ):
                     found.append(ClaimViolation("capability", raw_sentence))
                     continue
+            if (
+                _IMPROVEMENT_STATE_CLAIM.search(sentence)
+                and not _QUESTION.search(sentence)
+                and not _IMPROVEMENT_DENIAL.search(sentence)
+            ):
+                statuses = frozenset(evidence.improvement_statuses)
+                overclaimed_progress = bool(_IMPROVEMENT_PROGRESS.search(sentence))
+                unsupported_approval = "승인" in sentence and "approved" not in statuses
+                unsupported_proposal = (
+                    "제안" in sentence
+                    and not statuses.intersection({"proposed", "approved"})
+                )
+                unsupported_discussion = (
+                    bool(re.search(r"논의|토론", sentence))
+                    and not statuses.intersection(
+                        {"discussing", "proposed", "approved"}
+                    )
+                )
+                if (
+                    overclaimed_progress
+                    or unsupported_approval
+                    or unsupported_proposal
+                    or unsupported_discussion
+                ):
+                    found.append(ClaimViolation("improvement_state", raw_sentence))
+                    continue
             categories = _outside_categories(sentence)
             if (
                 categories
@@ -198,7 +237,8 @@ class ResponseClaimGate:
         return (
             "방금 초안에는 실제 근거가 승인되지 않은 고위험 주장이 있어: "
             f"{kinds}. 신체 행동, 직접 보지 못한 바깥 사건, 주어진 Memory 밖의 기억, "
-            "실제 Worker 결과가 없는 외부 작업 능력을 모두 빼고 다시 말해. "
+            "실제 Worker 결과가 없는 외부 작업 능력, Ledger보다 앞선 개선 진행 상태를 "
+            "모두 빼고 다시 말해. 구현 승인은 구현·검증·채택 완료가 아니야. "
             "지금 대화에서 생긴 네 생각·가치·반응은 남겨도 돼."
         )
 
@@ -215,6 +255,8 @@ class ResponseClaimGate:
             return "그건 내가 직접 확인할 근거가 없어."
         if kind == "memory":
             return "그건 지금 내 기억 근거에는 없어."
+        if kind == "improvement_state":
+            return "그 개선이 지금 기록된 상태보다 더 진행됐다고 말할 근거는 없어."
         return "그 기능을 실제로 할 수 있다는 근거가 아직 없어."
 
 

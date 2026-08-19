@@ -410,3 +410,7 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   proposal version/hash 불일치, 필수 proposal field 누락과 skipped transition은 fail-closed다.
   구현 승인은 Worker 실행·채택·Capability 등록을 만들지 않으며 Shared Core snapshot도
   읽기 전용이다. 집중 41 tests, 전체 746 tests, Ruff 전체와 mypy 165 source files를 통과했다.
+- 2026-08-19: 실제 격리 Local Core가 approved improvement를 첫 두 번 `해결했고 테스트 중`,
+  `구현 단계·해결 중`으로 확대했다. prompt 성공으로 간주하지 않고 두 실패를 보존한 뒤 final
+  claim gate가 Ledger보다 앞선 진행 상태를 차단하게 했다. 세 번째는 `구현은 승인됐지만 아직
+  적용되지 않음`으로 일치했다. 보강 뒤 전체 748 tests, Ruff와 mypy 165 files를 통과했다.

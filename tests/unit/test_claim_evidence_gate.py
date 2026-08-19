@@ -208,6 +208,39 @@ def test_memory_capability_does_not_authorize_an_unperformed_write() -> None:
     assert violation[0].kind == "memory"
 
 
+def test_implementation_approval_does_not_authorize_progress_claims() -> None:
+    gate = ResponseClaimGate()
+    evidence = ClaimEvidence(
+        user_text="대화 속도 개선은 어디까지 했어?",
+        improvement_statuses=("approved",),
+    )
+
+    assert gate.violations("대화 속도 개선은 구현만 승인된 상태야.", evidence) == ()
+    assert gate.violations("아직 구현되거나 적용된 건 아니야.", evidence) == ()
+    violation = gate.violations(
+        "대화 속도 문제는 해결했고 전체 시스템은 테스트 중이야.", evidence
+    )
+
+    assert violation[0].kind == "improvement_state"
+    alternate = gate.violations(
+        "아직 구현 단계야. 첫 음성 답변이 늦는 문제는 해결 중이야.", evidence
+    )
+    assert {item.kind for item in alternate} == {"improvement_state"}
+    assert "구현 승인은 구현·검증·채택 완료가 아니야" in gate.repair_instruction(
+        violation
+    )
+
+
+def test_unrecorded_improvement_state_is_not_authorized() -> None:
+    gate = ResponseClaimGate()
+    evidence = ClaimEvidence(user_text="그 개선은 어떻게 됐어?")
+
+    assert gate.violations("그 개선은 아직 적용된 건 아니야.", evidence) == ()
+    violation = gate.violations("그 개선안은 구현 승인됐어.", evidence)
+
+    assert violation[0].kind == "improvement_state"
+
+
 class RepeatingUnsafeModel:
     def __init__(self) -> None:
         self.requests: list[ChatRequest] = []

@@ -36,6 +36,11 @@ proposed → discussing  # revision 요청 뒤 새 immutable proposal version
 바꾸지 않는다. snapshot에는 구현 승인을 Worker 실행으로 해석하지 말라는 경계를 함께 넣는다.
 CLI, Web, Voice는 같은 `data/improvements.sqlite`를 사용한다.
 
+모델 지시만으로는 `approved`를 “해결·구현 중·테스트 중”으로 확대하는 실제 실패가 발생했다.
+따라서 final claim gate가 snapshot status와 해결·수정·구현·적용·테스트·검증·채택 진행
+주장을 별도로 대조한다. 현재 Ledger가 표현할 수 없는 이후 상태는 honest repair/fallback으로
+교체한다.
+
 ## 의도적으로 하지 않는 것
 
 - 품질 gate에 실패한 TurnUnderstanding signal의 자동 등록

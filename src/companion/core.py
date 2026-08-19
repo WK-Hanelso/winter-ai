@@ -82,6 +82,7 @@ class _Turn:
     memory_focus: str | None
     memory_contents: tuple[str, ...]
     capability_claim_scopes: tuple[str, ...]
+    improvement_statuses: tuple[str, ...]
     shadow_turn_id: str | None
     maintenance_route: MaintenanceRoute
     experience_id: str
@@ -423,8 +424,12 @@ class CompanionCore:
             system_messages.append(
                 ConversationMessage("system", self_model_snapshot.system_message())
             )
-        if self._improvement_snapshot_provider is not None:
-            improvement_snapshot = self._improvement_snapshot_provider.snapshot()
+        improvement_snapshot = (
+            self._improvement_snapshot_provider.snapshot()
+            if self._improvement_snapshot_provider is not None
+            else None
+        )
+        if improvement_snapshot is not None:
             system_messages.append(
                 ConversationMessage("system", improvement_snapshot.system_message())
             )
@@ -500,6 +505,11 @@ class CompanionCore:
             capability_claim_scopes=(
                 self_model_snapshot.authorized_claim_scopes
                 if self_model_snapshot is not None
+                else ()
+            ),
+            improvement_statuses=(
+                tuple(item.status for item in improvement_snapshot.items)
+                if improvement_snapshot is not None
                 else ()
             ),
             shadow_turn_id=shadow_turn_id,
@@ -599,6 +609,7 @@ class CompanionCore:
             ),
             worker_result_authorized=worker_result is not None,
             capability_claim_scopes=turn.capability_claim_scopes,
+            improvement_statuses=turn.improvement_statuses,
         )
 
 
