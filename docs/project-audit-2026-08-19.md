@@ -349,3 +349,7 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   Memory row의 상태·link 집계 불변을 확인하며 migration했다. Web 새 PID, loopback listener,
   local/Tailscale HTTPS health를 확인해 `direct_memory_safety=operational`로 승격했다. 운영
   대화에는 synthetic turn을 넣지 않았고 자연 발화 recall/비활성화는 사용자 관찰 대기다.
+- 2026-08-19: #116을 완료하고 Issue #117을 active P0로 전환했다. 원래 remediation 순서의
+  semantic grounding claim/evidence gate가 Roadmap 현재 순서에서 빠진 것을 발견해 background
+  analysis보다 먼저 복구한다. inner thought/self-presence는 허용하되 body/outside event,
+  Memory와 capability 주장은 deterministic evidence 없이는 최종 저장·출력하지 않는 범위다.

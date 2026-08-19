@@ -14,9 +14,10 @@
 2026-08-19 전체 감사 결과에 따라 새 모델 탐색과 Worker 확장을 일시 중지했다. Issue #112
 `Development Control Gate V0`, Issue #113 `pre-audit baseline 보존`, Issue #114 `Web ingress와
 request body 제한`, Issue #115 `Web turn 실패 전파와 전체 turn 직렬화`를 완료했다. 현재
-active scope는 Issue #116 `자동 기억의 exact evidence와 temporal contract`다. 이후 순서는
-background analysis, SelfModel·CapabilityRegistry, ImprovementLedger, 기존 Worker Shadow
-재연결이다.
+Issue #116 `자동 기억의 exact evidence와 temporal contract`까지 완료했다. 현재 active
+scope는 감사에서 P0로 지정됐지만 이전 Roadmap 요약에서 누락됐던 Issue #117 `final response
+claim/evidence grounding gate`다. 이후 순서는 background analysis,
+SelfModel·CapabilityRegistry, ImprovementLedger, 기존 Worker Shadow 재연결이다.
 
 ## Current state
 

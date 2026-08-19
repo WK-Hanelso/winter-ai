@@ -1,7 +1,7 @@
 schema_version = 1
 current_phase = "foundation_recovery"
-active_issue = 116
-active_work = ["direct_memory_safety"]
+active_issue = 117
+active_work = ["grounding"]
 
 # These files define mission, current product target, maturity and the audit baseline.
 canonical_documents = [
@@ -118,6 +118,7 @@ id = "grounding"
 maturity = "shadow"
 evidence = [
   "docs/grounding-policy.md",
+  "docs/claim-evidence-gate.md",
   "tests/unit/test_grounding.py",
 ]
 dependencies = ["shared_core"]
