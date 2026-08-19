@@ -62,3 +62,25 @@ def test_recall_question_uses_active_memory_without_uncertainty() -> None:
 
     assert plan.behavior == "recall_memory"
     assert "불확실한 표현" in plan.instruction
+
+
+def test_inviting_winter_into_the_turn_requires_grounded_self_presence() -> None:
+    plan = DialogueDirector().plan(
+        "나도 열심히 할 테니까 너도 열심히 살아보자.", "answer", ()
+    )
+
+    assert plan.behavior == "self_reciprocate"
+    assert "대화의 한 사람" in plan.instruction
+    assert "대화 밖" in plan.instruction
+    assert "나도 열심히" in plan.instruction
+    assert plan.sentence_limit == 1
+    assert plan.focus == "나도 열심히 할 테니까 너도 열심히 살아보자."
+
+    how_are_you = DialogueDirector().plan("난 잘 지내. 넌 어때?", "answer", ())
+    assert how_are_you.behavior == "self_reciprocate"
+
+
+def test_explicit_opinion_keeps_the_stronger_stance_behavior() -> None:
+    plan = DialogueDirector().plan("너는 이 구조가 좋다고 생각해?", "answer", ())
+
+    assert plan.behavior == "state_view"

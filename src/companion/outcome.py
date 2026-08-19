@@ -10,10 +10,12 @@ import sqlite3
 from typing import Any, Protocol, cast
 from uuid import uuid4
 
+from companion.ports import Clock
 from companion.turn_understanding import (
     SqliteTurnUnderstandingRepository,
     TurnUnderstanding,
 )
+from companion.winter_events import SqliteWinterEventRepository
 
 SCHEMA_VERSION = 1
 OUTCOMES = frozenset(
@@ -658,10 +660,16 @@ class ShadowOutcomeService:
         outcome_repository: SqliteOutcomeRepository,
         turn_repository: SqliteTurnUnderstandingRepository,
         interpreter: OutcomeInterpreter,
+        winter_events: SqliteWinterEventRepository | None = None,
+        clock: Clock | None = None,
     ) -> None:
+        if winter_events is not None and clock is None:
+            raise ValueError("Winter outcome event recording requires an explicit Clock")
         self._outcomes = outcome_repository
         self._turns = turn_repository
         self._interpreter = interpreter
+        self._winter_events = winter_events
+        self._clock = clock
 
     def process_pending(self, *, limit: int = 10) -> OutcomeProcessingResult:
         pending = self._outcomes.list(status="pending", limit=limit)
@@ -696,8 +704,39 @@ class ShadowOutcomeService:
                 failed += 1
             else:
                 self._outcomes.complete(event.id, assessment)
+                self._record_winter_outcome(event, assessment)
                 completed += 1
         return OutcomeProcessingResult(len(pending), completed, failed, deferred)
+
+    def _record_winter_outcome(
+        self,
+        event: ShadowOutcomeEvent,
+        assessment: OutcomeAssessment,
+    ) -> None:
+        if self._winter_events is None or self._clock is None:
+            return
+        prior = self._winter_events.find_by_source_ref(event.prior_turn_id)
+        linked = prior is not None
+        subject = prior.subject if prior is not None else "outcome:unlinked"
+        supportive = (
+            linked
+            and assessment.outcome in {"accepted", "continued"}
+            and assessment.response_usefulness == "helpful"
+        )
+        self._winter_events.record(
+            event_key=f"outcome-observation:{event.id}",
+            kind="outcome_observation" if linked else "outcome_observation_unlinked",
+            subject=subject,
+            source="outcome_evaluator_shadow",
+            source_ref=event.id,
+            occurred_at=self._clock.now(),
+            metadata={
+                "confidence": assessment.confidence,
+                "outcome": assessment.outcome,
+                "response_usefulness": assessment.response_usefulness,
+                "supports_belief": supportive,
+            },
+        )
 
 
 _EVENT_SELECT = """

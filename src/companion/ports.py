@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
 from companion.contracts import (
@@ -21,10 +22,58 @@ if TYPE_CHECKING:
         ShadowTurnEvent,
         TurnInterpretationRequest,
     )
+    from companion.winter_events import EventValue, WinterEvent
+    from companion.work_orchestration import (
+        EvidenceReport,
+        IntentBrief,
+        WinterDecision,
+        WorkerTaskPacket,
+        WorkRequest,
+    )
+    from companion.worker import ReadOnlyWorkerRequest, ReadOnlyWorkerResult
+    from companion.worker_gateway import (
+        GatewayAuditEntry,
+        GatewayEvidence,
+        GatewayToolResult,
+        GatewayWorkerResult,
+        ProjectToolCall,
+    )
 
 
 class ChatModel(Protocol):
     def generate(self, request: ChatRequest) -> ChatResult: ...
+
+
+class ReadOnlyWorker(Protocol):
+    def execute(self, request: ReadOnlyWorkerRequest) -> ReadOnlyWorkerResult: ...
+
+
+class ProjectToolGateway(Protocol):
+    """Provider-independent tool boundary for read-only project inspection."""
+
+    @property
+    def audit_log(self) -> tuple[GatewayAuditEntry, ...]: ...
+
+    @property
+    def evidence_catalog(self) -> tuple[GatewayEvidence, ...]: ...
+
+    def execute(self, call: ProjectToolCall) -> GatewayToolResult: ...
+
+
+class EvidenceWorker(Protocol):
+    """A specialist that can only return a gateway-validated evidence report."""
+
+    def execute(self, packet: WorkerTaskPacket) -> GatewayWorkerResult: ...
+
+
+class WinterExecutive(Protocol):
+    """The single Core Model authority for work intent and final judgment."""
+
+    def create_brief(self, request: WorkRequest) -> IntentBrief: ...
+
+    def review(
+        self, brief: IntentBrief, report: EvidenceReport
+    ) -> WinterDecision: ...
 
 
 class SpeechToText(Protocol):
@@ -39,6 +88,26 @@ class ConversationRepository(Protocol):
     def append(self, message: ConversationMessage) -> None: ...
 
     def list_messages(self) -> Sequence[ConversationMessage]: ...
+
+
+class Clock(Protocol):
+    def now(self) -> datetime: ...
+
+
+class WinterEventRepository(Protocol):
+    """Append-only evidence for Winter's actual lived continuity."""
+
+    def record(
+        self,
+        *,
+        event_key: str,
+        kind: str,
+        subject: str,
+        source: str,
+        occurred_at: datetime,
+        source_ref: str | None = None,
+        metadata: Mapping[str, EventValue] | None = None,
+    ) -> WinterEvent: ...
 
 
 class MemoryCandidateRepository(Protocol):

@@ -15,61 +15,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-import mimetypes
-import subprocess
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-import uuid
 
+from companion.adapters.audio_upload import multipart, to_wav
 from companion.adapters.fake import AdapterUnavailableError
 from companion.contracts import AudioInput, Transcript
 
 DEFAULT_SERVER_URL = "http://127.0.0.1:8094"
-# What whisper.cpp reads. Mono because a phone's two channels carry the same
-# voice, and 16 kHz because that is what the model was trained on — sending more
-# is discarded inside it.
-SAMPLE_RATE = 16000
-
-
-def to_wav(audio: bytes) -> bytes:
-    """Whatever the browser recorded, as PCM whisper.cpp can read."""
-    try:
-        completed = subprocess.run(
-            ["ffmpeg", "-v", "error", "-i", "pipe:0", "-ac", "1",
-             "-ar", str(SAMPLE_RATE), "-f", "wav", "pipe:1"],
-            input=audio, capture_output=True, timeout=60, check=False,
-        )
-    except FileNotFoundError as error:
-        raise AdapterUnavailableError("ffmpeg가 없어 녹음을 변환할 수 없습니다") from error
-    if completed.returncode != 0 or not completed.stdout:
-        detail = completed.stderr.decode("utf-8", "replace").strip().splitlines()
-        raise AdapterUnavailableError(
-            f"녹음을 변환하지 못했습니다: {detail[-1] if detail else '출력 없음'}"
-        )
-    return completed.stdout
-
-
-def _multipart(field: str, filename: str, data: bytes, extra: dict[str, str]) -> tuple[bytes, str]:
-    """One file and some fields, encoded by hand.
-
-    Standard library only, like the rest of this project's HTTP: pulling in a
-    client library to build a form of two fields is not a trade worth making.
-    """
-    boundary = f"----winter{uuid.uuid4().hex}"
-    content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-    parts: list[bytes] = []
-    for name, value in extra.items():
-        parts.append(
-            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n'
-            f"{value}\r\n".encode()
-        )
-    parts.append(
-        f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; '
-        f'filename="{filename}"\r\nContent-Type: {content_type}\r\n\r\n'.encode()
-    )
-    parts.append(data)
-    parts.append(f"\r\n--{boundary}--\r\n".encode())
-    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
 
 
 @dataclass(frozen=True)
@@ -81,7 +34,7 @@ class WhisperCppSpeechToText:
     def transcribe(self, audio: AudioInput) -> Transcript:
         if not audio.data:
             raise ValueError("cannot transcribe empty audio")
-        body, content_type = _multipart(
+        body, content_type = multipart(
             "file", self.filename, to_wav(audio.data), {"response_format": "json"}
         )
         http_request = Request(

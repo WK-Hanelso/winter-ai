@@ -16,9 +16,26 @@ from companion.cli.__main__ import run
 DATA = Path(os.environ.get("WINTER_DATA_DIR", "data"))
 
 
+def _enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="겨울이와 대화합니다.")
     parser.add_argument("--backend", choices=("local", "fake"), default="local")
+    parser.add_argument(
+        "--codex-worker",
+        action="store_true",
+        default=_enabled("WINTER_CODEX_WORKER"),
+    )
+    parser.add_argument(
+        "--codex-executable",
+        default=os.environ.get("WINTER_CODEX_BIN", "codex"),
+    )
+    parser.add_argument(
+        "--codex-model",
+        default=os.environ.get("WINTER_CODEX_MODEL", "gpt-5.4"),
+    )
     parser.add_argument(
         "--model-url",
         default=os.environ.get("WINTER_LLM_URL", "http://127.0.0.1:18080"),
@@ -39,6 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reflect-history", action="store_true")
     parser.add_argument("--review-memory-candidates", action="store_true")
     parser.add_argument("--companion-overview", action="store_true")
+    parser.add_argument("--lived-continuity", action="store_true")
+    parser.add_argument("--analyze-belief-reflection", action="store_true")
+    parser.add_argument("--list-belief-reflection", action="store_true")
+    parser.add_argument("--close-winter-day", action="store_true")
+    parser.add_argument("--list-winter-days", action="store_true")
+    parser.add_argument("--winter-day")
     parser.add_argument("--analysis-limit", type=int, default=10)
     parser.add_argument("--review-limit", type=int, default=5)
     parser.add_argument("--reviewer", default="cheonu")
@@ -61,6 +84,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args.turn_understanding_db = DATA / "turn_understanding.sqlite"
     args.outcome_db = DATA / "outcomes.sqlite"
     args.reflection_db = DATA / "reflection.sqlite"
+    args.winter_event_db = DATA / "winter_events.sqlite"
+    args.belief_reflection_db = DATA / "belief_reflection.sqlite"
+    args.day_reflection_db = DATA / "day_reflections.sqlite"
     args.memory_kind = "semantic"
     args.context_max_messages = 12
     args.context_max_characters = 4000

@@ -27,6 +27,10 @@ def test_all_user_interfaces_default_to_the_same_persistent_state() -> None:
     )
     assert web_args.outcome_path == expected_data / "outcomes.sqlite"
     assert voice_args.outcome_path == expected_data / "outcomes.sqlite"
+    assert web_args.winter_event_path == expected_data / "winter_events.sqlite"
+    assert voice_args.winter_event_path == expected_data / "winter_events.sqlite"
+    assert web_args.day_reflection_path == expected_data / "day_reflections.sqlite"
+    assert voice_args.day_reflection_path == expected_data / "day_reflections.sqlite"
 
 
 def test_all_live_interfaces_default_to_the_orin_tunnel() -> None:
@@ -35,3 +39,11 @@ def test_all_live_interfaces_default_to_the_orin_tunnel() -> None:
     assert user_cli.build_parser().parse_args([]).model_url == expected
     assert web.build_parser().parse_args([]).model_url == expected
     assert voice_cli.build_parser().parse_args([]).model_url == expected
+
+
+def test_phone_stt_backend_is_explicit_and_defaults_to_existing_whisper() -> None:
+    arguments = web.build_parser().parse_args([])
+
+    assert arguments.stt_backend == "whisper"
+    assert arguments.stt_url is None
+    assert arguments.no_voice_conversion is False

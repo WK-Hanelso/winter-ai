@@ -1,5 +1,7 @@
+from datetime import datetime
 from pathlib import Path
 import sqlite3
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -22,6 +24,7 @@ from companion.turn_understanding import (
     SqliteTurnUnderstandingRepository,
     TurnInterpretationRequest,
 )
+from companion.winter_events import SqliteWinterEventRepository
 
 
 def _assessment(next_text: str) -> OutcomeAssessment:
@@ -47,6 +50,35 @@ def _assessment(next_text: str) -> OutcomeAssessment:
         },
         evidence_text=next_text,
     )
+
+
+def _supportive_assessment(next_text: str) -> OutcomeAssessment:
+    return OutcomeAssessment.from_dict(
+        {
+            "schema_version": 1,
+            "outcome": "accepted",
+            "confidence": 0.9,
+            "evidence": [next_text],
+            "intent_match": "confirmed",
+            "response_usefulness": "helpful",
+            "affect_shift": "unchanged",
+            "memory_confirmation": [],
+            "memory_contradiction": [],
+            "improvement_confirmation": [],
+            "uncertainties": [],
+        },
+        evidence_text=next_text,
+    )
+
+
+class SupportiveInterpreter:
+    def evaluate(self, request: OutcomeInterpretationRequest) -> OutcomeAssessment:
+        return _supportive_assessment(request.next_user_text)
+
+
+class FixedClock:
+    def now(self) -> datetime:
+        return datetime(2026, 8, 18, 9, tzinfo=ZoneInfo("Asia/Seoul"))
 
 
 def test_outcome_schema_requires_exact_next_turn_evidence() -> None:
@@ -332,6 +364,48 @@ def test_shadow_service_completes_after_prior_understanding_exists(
     assert completed.status == "completed"
     assert completed.assessment is not None
     assert completed.assessment.outcome == "unclear"
+
+
+def test_shadow_service_records_a_linked_privacy_minimal_winter_outcome(
+    tmp_path: Path,
+) -> None:
+    turns = SqliteTurnUnderstandingRepository(tmp_path / "turns.sqlite")
+    prior = turns.enqueue(TurnInterpretationRequest("첫 질문"), source="web")
+    turns.complete(prior.id, FakeTurnInterpreter().interpret(prior.request))
+    outcomes = SqliteOutcomeRepository(tmp_path / "outcomes.sqlite")
+    outcomes.observe_turn(prior.id, source="web", user_text="첫 질문")
+    outcomes.record_response(prior.id, "첫 답변")
+    current = turns.enqueue(TurnInterpretationRequest("응, 그게 좋았어"), source="web")
+    linked = outcomes.observe_turn(
+        current.id,
+        source="web",
+        user_text="응, 그게 좋았어",
+    )
+    assert linked is not None
+    winter_events = SqliteWinterEventRepository(tmp_path / "winter-events.sqlite")
+    winter_events.record(
+        event_key="conversation:first",
+        kind="conversation_turn",
+        subject="conversation:self_reciprocate",
+        source="web",
+        source_ref=prior.id,
+        occurred_at=datetime(2026, 8, 17, 20, tzinfo=ZoneInfo("Asia/Seoul")),
+    )
+
+    result = ShadowOutcomeService(
+        outcomes,
+        turns,
+        SupportiveInterpreter(),
+        winter_events,
+        FixedClock(),
+    ).process_pending()
+
+    assert result.completed == 1
+    event = winter_events.list_day("2026-08-18")[0]
+    assert event.kind == "outcome_observation"
+    assert event.subject == "conversation:self_reciprocate"
+    assert dict(event.metadata)["supports_belief"] is True
+    assert "text" not in " ".join(dict(event.metadata))
 
 
 def test_shadow_service_keeps_transient_outcome_failure_pending(

@@ -183,3 +183,15 @@ speech encoder 기반 유사도 평가도 singing-trained RVC에 불리할 수 �
 이 체크포인트는 Human Reference의 임시 비교 자료일 뿐 운영 기본값이나 최종 겨울이
 정체성으로 채택하지 않는다. 모델과 파생 음성은 로컬 ignored 경로에만 두며 외부
 서비스로 보내지 않는다.
+
+## Direct S3Gen 제한 운영 — 2026-08-17
+
+폰 실측에서 입력 STT를 0.35초 수준으로 줄인 뒤 첫 음성의 주 병목은 두 GPU 모델의
+직렬 실행으로 좁혀졌다. 같은 고정 문장은 Chatterbox 2.16초와 Seed-VC 2.66초, 합계
+4.82초였다. 기존 blind 결선에서 천우가 S3Gen Reference를 현재 Seed-VC보다 높게
+평가했으므로, 상대적으로 더 나았던 한 단계 경로를 제한 운영에 사용한다.
+
+S3Gen direct warm 고정 문장은 2.21초와 2.27초였고, 별도 DB를 쓴 실제 Core probe는
+첫 문장 0.95초, 첫 audio 2.4초였다. 이 결과는 속도 범위의 완료이지 최종 음질 합격이
+아니다. 실제 폰 20-turn, 반복·발음·질문 억양과 일상 청취가 남아 있다. 기존 30-step
+Seed-VC 컨테이너와 설정은 명시적 rollback으로 보존하며 자동 fallback은 두지 않는다.

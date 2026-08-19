@@ -57,6 +57,11 @@ from companion.beliefs import (
 from companion.context import ConversationContextBuilder
 from companion.contracts import AudioOutput, SpeechRequest
 from companion.core import CompanionCore
+from companion.day_reflection import (
+    ActiveDayReflectionRetriever,
+    DayReflectionRepositoryError,
+    SqliteDayReflectionRepository,
+)
 from companion.dialogue_act import classify as classify_dialogue_act
 from companion.identity import IdentityRepositoryError, JsonIdentityRepository
 from companion.memory import (
@@ -79,6 +84,11 @@ from companion.turn_understanding import (
 from companion.verbal_style import ALLOWED_PROFILES, VerbalStylePlanner, load_verbal_style
 from companion.voice_pipeline import stream
 from companion.voice_profile import ProsodyPlanner
+from companion.winter_events import (
+    SqliteWinterEventRepository,
+    SystemClock,
+    WinterEventRepositoryError,
+)
 
 DEFAULT_MODEL_URL = os.environ.get("WINTER_LLM_URL", "http://127.0.0.1:18080")
 DEFAULT_OUTPUT = Path("generated_audio") / "voice"
@@ -96,6 +106,8 @@ DEFAULT_BELIEFS = DEFAULT_DATA / "beliefs.sqlite"
 DEFAULT_DIALOGUE_STATE = DEFAULT_DATA / "dialogue_state.sqlite"
 DEFAULT_TURN_UNDERSTANDING = DEFAULT_DATA / "turn_understanding.sqlite"
 DEFAULT_OUTCOMES = DEFAULT_DATA / "outcomes.sqlite"
+DEFAULT_WINTER_EVENTS = DEFAULT_DATA / "winter_events.sqlite"
+DEFAULT_DAY_REFLECTIONS = DEFAULT_DATA / "day_reflections.sqlite"
 PROMPT = "천우> "
 
 
@@ -116,6 +128,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_TURN_UNDERSTANDING,
     )
     parser.add_argument("--outcome-path", type=Path, default=DEFAULT_OUTCOMES)
+    parser.add_argument(
+        "--winter-event-path", type=Path, default=DEFAULT_WINTER_EVENTS
+    )
+    parser.add_argument(
+        "--day-reflection-path", type=Path, default=DEFAULT_DAY_REFLECTIONS
+    )
     parser.add_argument("--style", choices=ALLOWED_PROFILES, default="reference_conversation")
     parser.add_argument(
         "--storage-root",
@@ -364,6 +382,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     except OutcomeRepositoryError as error:
         print(f"대화 결과 기록을 열지 못했습니다: {error}", file=sys.stderr)
         return 1
+    try:
+        winter_event_repository = SqliteWinterEventRepository(
+            arguments.winter_event_path
+        )
+    except WinterEventRepositoryError as error:
+        print(f"겨울이의 하루 기록을 열지 못했습니다: {error}", file=sys.stderr)
+        return 1
+    try:
+        day_reflection_retriever = ActiveDayReflectionRetriever(
+            SqliteDayReflectionRepository(arguments.day_reflection_path)
+        )
+    except DayReflectionRepositoryError as error:
+        print(f"겨울이의 지난날 회고를 읽지 못했습니다: {error}", file=sys.stderr)
+        return 1
     core = CompanionCore(
         LlamaCppHttpChatModel(base_url=arguments.model_url),
         conversation_repository,
@@ -378,6 +410,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         turn_understanding_repository=turn_understanding_repository,
         outcome_repository=outcome_repository,
         turn_source="voice",
+        winter_event_repository=winter_event_repository,
+        clock=SystemClock(),
+        day_reflection_retriever=day_reflection_retriever,
     )
     tts: HttpSpeechModel | CosyVoiceSpeechModel
     if arguments.own_container:

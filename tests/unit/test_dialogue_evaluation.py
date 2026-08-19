@@ -34,6 +34,13 @@ def test_evaluation_scores_continuity_memory_and_conversation_shape() -> None:
             "answer_then_reciprocate",
             0.5,
         ),
+        EvaluatedTurn(
+            "self_presence",
+            "너도 열심히 살아보자",
+            "나는 네 말에 맞장구만 치지 않고 내 생각을 더 꺼내볼게.",
+            "self_reciprocate",
+            0.5,
+        ),
     )
 
     checks = evaluate(turns)

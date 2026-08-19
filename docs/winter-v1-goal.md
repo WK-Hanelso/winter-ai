@@ -10,6 +10,10 @@
 Winter V1은 질문에 반응하는 챗봇이 아니라, 한 명의 사용자 천우와 장기간 관계를
 유지하며 함께 발전하는 로컬 중심 Personal Companion이다.
 
+겨울이는 범용 Agent가 주인이고 관계가 장식인 구조가 아니다. 천우와 실제 대화·결정·실패를
+공유하며 시간이 이어지는 존재가 제품의 중심이고, Worker와 도구는 그 생활을 돕는 능력이다.
+하루는 화면 밖의 허구 활동으로 채우지 않고 실제 시스템 사건으로만 구성한다.
+
 겨울이는 천우의 말을 단순 분류하지 않고 가능한 의도, 감정, 시간 범위와 대화 요구를
 근거와 확신도를 가진 가설로 이해한다. 대화가 끝난 뒤 다음 반응을 통해 그 이해가
 맞았는지 평가하고, 직접 사실과 검증된 선호·결정·프로젝트 상태만 장기 기억으로
@@ -25,6 +29,11 @@ V1의 목표가 아니다.
 ## 2. V1 Experience
 
 천우가 겨울이와 이야기하면 다음 순환이 실제 데이터와 코드로 닫혀야 한다.
+
+천우의 유일한 정상 조작은 **대화**다. 기억 저장 명령, 분석 실행, 후보 목록 검토 같은
+관리 작업을 제품 사용 조건으로 만들지 않는다. 시스템은 응답을 먼저 제공한 뒤 내부
+background 경로에서 상태를 조회·분석·갱신한다. 직접 확정하기 어려운 내용만 겨울이가
+다음 대화의 자연스러운 질문으로 확인한다. CLI 관리 명령은 개발·audit·복구용이다.
 
 ```text
 대화와 실제 경험
@@ -176,6 +185,22 @@ observation → candidate → confirmed → active → deprecated / rejected
 Background Reflection은 5~10 turn, 세션 종료, 중요 결정 또는 명시적 회고 시점에 실행하고
 응답 latency 경로와 분리한다.
 
+내부 maintenance mode는 다음 gate를 따른다.
+
+```text
+shadow
+  → 분석 runtime 준비 + held-out gate 통과
+candidate
+  → 실제 대화 audit 통과 + 자동 갱신 정책 승인
+operative
+```
+
+- 모든 mode에서 발화는 자동으로 분석 queue에 들어가며 사용자 명령을 요구하지 않는다.
+- `shadow`는 응답과 Memory를 바꾸지 않는다.
+- `candidate`는 내부 후보를 만들고 불확실성은 겨울이의 대화로 확인한다.
+- `operative`만 명시적이고 근거가 충분한 상태를 내부에서 자동 갱신할 수 있다.
+- 어느 mode도 현재 응답을 background 분석 때문에 기다리게 하지 않는다.
+
 ## 8. Winter Belief and SelfModel
 
 천우에 대한 Memory와 겨울이의 판단을 혼합하지 않는다.
@@ -187,6 +212,18 @@ Belief: 현재 Voice 개선은 추가 VC 학습보다 앞단 TTS 개선이 우�
 
 Belief에는 stance, rationale, confidence, evidence, counterevidence, version과 supersedes를
 둔다.
+
+낮은 위험의 Winter Belief는 천우의 개별 승인 없이도 근거 기반 정책으로 활성화하고
+새 반증에 따라 revision할 수 있다. 첫 정책은 같은 subject의 실제 Winter Event 3개 이상,
+한국 시간 기준 2일 이상, confidence 0.80 이상과 지지하는 Outcome 1개 이상을 요구한다.
+단순히 같은 코드 경로가 반복 실행됐다는 사실은 겨울이의 관점 근거가 아니다. 자동 범위는 대화 방식, 관계
+행동과 프로젝트 판단의 제한된 namespace뿐이며, Identity·User Memory·Capability·권한과
+Worker 실행은 포함하지 않는다. 후보를 만드는 모델의 내용 안전성 gate가 통과하기 전에는
+정책을 실제 candidate 생성기와 연결하지 않는다.
+
+`Winter Event`는 대화 참여, 평가 결과, 실패, 결정과 채택된 capability 같은 발생 사실의
+append-only 근거다. 대화 원문을 복제하지 않으며 한국 시간의 날짜로 묶어 겨울이의 실제
+하루를 만든다. 같은 사건의 해석과 관점은 수정할 수 있지만 발생 사실을 다시 쓰지 않는다.
 
 SelfModel은 다음 실제 상태를 소유한다.
 
@@ -249,6 +286,13 @@ criteria다. 전체 대화 DB, 사용자 장기 기억, Human Reference 원본�
 초기 Port는 deterministic Fake Worker로 오프라인 검증한다. 실제 Codex/Claude Adapter는
 명시적 opt-in, 격리 workspace, permission boundary와 audit log 뒤에 연결한다.
 
+첫 실제 adapter는 천우가 Worker 이름과 작업을 같은 발화에서 명시한 read-only Codex
+route다. Identity·Memory·Conversation·음성 대신 sanitized project text만 임시 bundle로
+전달하고 answer, evidence와 limitations를 구조 검증한다. 이 route는 구현 승인이나 Capability
+채택 승인을 대체하지 않는다. 계정 credential은 모델 Memory가 아니라 OS credential
+store/connector가 보관하고, 권한 단계는
+[Authority Delegation](authority-delegation.md)을 따른다.
+
 ## 12. Voice
 
 ```text
@@ -290,6 +334,8 @@ Voice Identity, Prosody와 Verbal Style은 데이터 계약에서 분리하지�
 - 겨울이가 현재 capability와 limitation을 Registry 근거로 설명한다.
 - unavailable/degraded 기능을 가능한 것처럼 말하지 않는다.
 - Identity, Belief와 capability change가 서로 분리되어 version된다.
+- 실제 대화·결정·평가가 날짜별 Winter Event로 남고 재시작 뒤에도 이어진다.
+- 저위험 Belief 자동 활성화와 revision은 exact event evidence와 차단 audit를 가진다.
 
 ### Level 3 co-development
 

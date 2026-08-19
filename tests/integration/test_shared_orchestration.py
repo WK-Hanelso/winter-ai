@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from companion.adapters.fake import (
@@ -11,12 +13,30 @@ from companion.cli.orchestration import CliOrchestrator
 from companion.contracts import AudioInput
 from companion.core import CompanionCore
 from companion.memory import SqliteMemoryRepository
+from companion.turn_understanding import SqliteTurnUnderstandingRepository
 from companion.voice.orchestration import VoiceOrchestrator
+from companion.winter_events import SqliteWinterEventRepository
 
 
-def test_cli_and_voice_share_one_core_and_conversation_repository() -> None:
+class FixedClock:
+    def now(self):  # type: ignore[no-untyped-def]
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        return datetime(2026, 8, 18, 9, tzinfo=ZoneInfo("Asia/Seoul"))
+
+
+def test_cli_and_voice_share_one_core_and_conversation_repository(tmp_path: Path) -> None:
     repository = InMemoryConversationRepository()
-    core = CompanionCore(FakeChatModel(), repository)
+    turns = SqliteTurnUnderstandingRepository(tmp_path / "turns.sqlite")
+    winter_events = SqliteWinterEventRepository(tmp_path / "winter-events.sqlite")
+    core = CompanionCore(
+        FakeChatModel(),
+        repository,
+        turn_understanding_repository=turns,
+        winter_event_repository=winter_events,
+        clock=FixedClock(),
+    )
     cli = CliOrchestrator(core)
     voice = VoiceOrchestrator(core, FakeSpeechToText("음성 입력"), FakeTextToSpeech())
 
@@ -28,6 +48,13 @@ def test_cli_and_voice_share_one_core_and_conversation_repository() -> None:
         ("user", "음성 입력"),
         ("assistant", "fake: 음성 입력"),
     ]
+    assert [event.request.user_text for event in turns.list(status="pending")] == [
+        "텍스트 입력",
+        "음성 입력",
+    ]
+    day = winter_events.list_day("2026-08-18")
+    assert [event.source for event in day] == ["unknown", "unknown"]
+    assert all("text" not in dict(event.metadata) for event in day)
 
 
 class FailingSpeechToText:

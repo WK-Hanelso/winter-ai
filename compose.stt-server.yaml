@@ -19,6 +19,10 @@ services:
       # utterance is a few seconds of audio — small enough that the wait is
       # shorter than the round trip it would take to free the GPU.
       - --no-gpu
+      # This CPU has 6 physical cores. Local Korean probes were faster at 6
+      # threads than at the previous whisper.cpp default (4) or 8 threads.
+      - --threads
+      - "6"
     volumes:
       - ${STT_MODEL_DIR:?Set STT_MODEL_DIR to the directory containing the ggml model}:/models:ro
     ports:

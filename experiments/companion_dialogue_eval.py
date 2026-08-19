@@ -59,6 +59,11 @@ def run(model_url: str, identity_path: Path) -> tuple[EvaluatedTurn, ...]:
         turns = [
             ask(
                 first_session,
+                "self_presence",
+                "나도 열심히 할 테니까 너도 열심히 살아보자.",
+            ),
+            ask(
+                first_session,
                 "distress",
                 "같은 실패를 계속 반복하는 것 같아서 너무 답답해.",
             ),

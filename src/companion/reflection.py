@@ -24,6 +24,7 @@ from companion.turn_understanding import (
 )
 
 REFLECTION_STATUSES = frozenset({"candidate", "active", "approved", "rejected"})
+CURRENT_STATE_CANDIDATE_KIND = "current_state"
 OPERATIVE_MEMORY_KINDS = frozenset(
     {"semantic", "preference", "decision", "project", "procedural"}
 )
@@ -43,10 +44,25 @@ class ReflectionInterpreterUnavailableError(ReflectionInterpretationError):
 
 
 @dataclass(frozen=True)
+class CurrentStateSnapshot:
+    topic: str
+    memory_id: str
+    content: str
+
+    def __post_init__(self) -> None:
+        if not self.topic.strip() or not self.memory_id.strip() or not self.content.strip():
+            raise ReflectionInterpretationError(
+                "current-state topic, memory id and content are required"
+            )
+
+
+@dataclass(frozen=True)
 class ReflectionExtractionRequest:
     message_id: int
     user_text: str
     recent_context: tuple[ConversationMessage, ...] = ()
+    current_states: tuple[CurrentStateSnapshot, ...] = ()
+    allow_current_state_updates: bool = False
 
     def __post_init__(self) -> None:
         if self.message_id < 1 or not self.user_text.strip():
@@ -58,6 +74,17 @@ class ReflectionExtractionRequest:
 @dataclass(frozen=True)
 class ReflectionExtraction:
     proposals: tuple[MemoryProposal, ...]
+    current_state_updates: tuple[CurrentStateProposal, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class CurrentStateProposal:
+    topic: str
+    content: str
+    confidence: float
+    evidence: tuple[str, ...]
+    supersedes_memory_id: str
 
 
 class ReflectionInterpreter(Protocol):
@@ -84,6 +111,12 @@ class ReflectionEvidence:
 
 
 @dataclass(frozen=True)
+class ReflectionExtractionWarning:
+    message_id: int
+    detail: str
+
+
+@dataclass(frozen=True)
 class ReflectionCandidate:
     id: str
     kind: str
@@ -95,9 +128,17 @@ class ReflectionCandidate:
     memory_id: str | None
     created_at: str
     updated_at: str
+    state_topic: str | None = None
+    supersedes_memory_id: str | None = None
+
+    @property
+    def is_current_state(self) -> bool:
+        return self.kind == CURRENT_STATE_CANDIDATE_KIND
 
     @property
     def can_activate_as_memory(self) -> bool:
+        if self.is_current_state:
+            return bool(self.state_topic and self.supersedes_memory_id)
         return (
             self.kind in OPERATIVE_MEMORY_KINDS
             and self.temporal_scope in OPERATIVE_TEMPORAL_SCOPES
@@ -125,6 +166,7 @@ class ReflectionProcessingResult:
     completed: int
     failed: int
     deferred: int
+    warnings: int
     created_candidates: int
     updated_candidates: int
 
@@ -231,7 +273,7 @@ class ConversationHistoryBackfill:
 
 
 class SqliteReflectionRepository:
-    _SCHEMA_VERSION = 1
+    _SCHEMA_VERSION = 2
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -257,8 +299,8 @@ class SqliteReflectionRepository:
                     temporal_scope=proposal.temporal_scope,
                     evidence=evidence,
                 )
-                created += int(was_created)
-                updated += int(not was_created)
+                created += int(was_created is True)
+                updated += int(was_created is False)
             self._mark_processed(event.id)
             processed += 1
         return ReflectionHarvestResult(processed, created, updated)
@@ -302,10 +344,74 @@ class SqliteReflectionRepository:
                 temporal_scope=proposal.temporal_scope,
                 evidence=evidence,
             )
-            created += int(was_created)
-            updated += int(not was_created)
-        self._record_extraction_status(request.message_id, "completed", None)
+            created += int(was_created is True)
+            updated += int(was_created is False)
+        for state_proposal in extraction.current_state_updates:
+            states_by_topic = {state.topic: state for state in request.current_states}
+            previous = states_by_topic.get(state_proposal.topic)
+            if not request.allow_current_state_updates:
+                raise ReflectionRepositoryError(
+                    "current-state updates are disabled for this conversation turn"
+                )
+            if (
+                previous is None
+                or previous.memory_id != state_proposal.supersedes_memory_id
+            ):
+                raise ReflectionRepositoryError(
+                    "current-state proposal does not match the captured active state"
+                )
+            if (
+                len(state_proposal.evidence) != 1
+                or state_proposal.content != state_proposal.evidence[0]
+                or any(
+                    quote not in request.user_text
+                    for quote in state_proposal.evidence
+                )
+            ):
+                raise ReflectionRepositoryError(
+                    "current-state evidence must be an exact user-message substring"
+                )
+            evidence = tuple(
+                ReflectionEvidence(source_id, quote)
+                for quote in state_proposal.evidence
+            )
+            was_created = self._upsert_candidate(
+                kind=CURRENT_STATE_CANDIDATE_KIND,
+                content=state_proposal.content,
+                confidence=state_proposal.confidence,
+                temporal_scope="episodic",
+                evidence=evidence,
+                state_topic=state_proposal.topic,
+                supersedes_memory_id=state_proposal.supersedes_memory_id,
+            )
+            created += int(was_created is True)
+            updated += int(was_created is False)
+        warning = "; ".join(extraction.warnings) or None
+        self._record_extraction_status(request.message_id, "completed", warning)
         return created, updated
+
+    def allows_current_state_updates(self, conversation_created_at: str) -> bool:
+        """Exclude the pre-migration backlog from present-state interpretation."""
+        try:
+            with self._connect() as connection:
+                row = connection.execute(
+                    "SELECT value FROM reflection_settings WHERE key = ?",
+                    ("current_state_updates_after",),
+                ).fetchone()
+        except sqlite3.Error as error:
+            raise ReflectionRepositoryError(
+                f"could not read current-state analysis cutoff: {error}"
+            ) from error
+        if row is None:
+            raise ReflectionRepositoryError("current-state analysis cutoff is missing")
+        created_at = _timestamp(conversation_created_at)
+        cutoff = _timestamp(row["value"])
+        if created_at is None or cutoff is None:
+            return False
+        # conversation_messages uses SQLite CURRENT_TIMESTAMP (second precision).
+        # Compare at that same precision so a first post-migration turn is not
+        # accidentally classified as backlog merely because it shares the second.
+        return created_at >= cutoff.replace(microsecond=0)
 
     def record_extraction_failure(self, message_id: int, error: str) -> None:
         self._record_extraction_status(
@@ -315,7 +421,12 @@ class SqliteReflectionRepository:
         )
 
     def extraction_counts(self, *, user_messages: int) -> dict[str, int]:
-        counts = {"completed": 0, "failed": 0, "pending": user_messages}
+        counts = {
+            "completed": 0,
+            "failed": 0,
+            "pending": user_messages,
+            "warnings": 0,
+        }
         try:
             with self._connect() as connection:
                 rows = connection.execute(
@@ -324,14 +435,46 @@ class SqliteReflectionRepository:
                     FROM reflection_extractions GROUP BY status
                     """
                 ).fetchall()
+                warning_row = connection.execute(
+                    """
+                    SELECT COUNT(*) AS count FROM reflection_extractions
+                    WHERE status = 'completed' AND error IS NOT NULL
+                    """
+                ).fetchone()
         except sqlite3.Error as error:
             raise ReflectionRepositoryError(
                 f"could not count reflection extractions: {error}"
             ) from error
         for row in rows:
             counts[row["status"]] = row["count"]
+        if warning_row is not None:
+            counts["warnings"] = warning_row["count"]
         counts["pending"] = max(0, user_messages - counts["completed"])
         return counts
+
+    def list_extraction_warnings(
+        self, *, limit: int = 5
+    ) -> tuple[ReflectionExtractionWarning, ...]:
+        if limit < 1:
+            raise ReflectionRepositoryError("warning limit must be at least 1")
+        try:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT message_id, error FROM reflection_extractions
+                    WHERE status = 'completed' AND error IS NOT NULL
+                    ORDER BY updated_at DESC, message_id DESC LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+        except sqlite3.Error as error:
+            raise ReflectionRepositoryError(
+                f"could not list reflection extraction warnings: {error}"
+            ) from error
+        return tuple(
+            ReflectionExtractionWarning(row["message_id"], row["error"])
+            for row in rows
+        )
 
     def get(self, candidate_id: str) -> ReflectionCandidate:
         try:
@@ -394,7 +537,17 @@ class SqliteReflectionRepository:
             raise ReflectionRepositoryError("approved memory content is required")
         memory: Memory | None = None
         target_status = "approved"
-        if candidate.can_activate_as_memory:
+        if candidate.is_current_state:
+            if not candidate.state_topic:
+                raise ReflectionRepositoryError(
+                    "current-state candidate is missing its topic"
+                )
+            memory = memories.remember_current_state(
+                topic=candidate.state_topic,
+                content=content,
+            )
+            target_status = "active"
+        elif candidate.can_activate_as_memory:
             memory = memories.remember_reviewed(
                 kind=candidate.kind,
                 content=content,
@@ -471,7 +624,21 @@ class SqliteReflectionRepository:
         confidence: float,
         temporal_scope: str,
         evidence: tuple[ReflectionEvidence, ...],
-    ) -> bool:
+        state_topic: str | None = None,
+        supersedes_memory_id: str | None = None,
+    ) -> bool | None:
+        if kind == CURRENT_STATE_CANDIDATE_KIND:
+            if not state_topic or not supersedes_memory_id:
+                raise ReflectionRepositoryError(
+                    "current-state candidate requires topic and previous memory"
+                )
+            return self._upsert_current_state_candidate(
+                content=content,
+                confidence=confidence,
+                evidence=evidence,
+                state_topic=state_topic,
+                supersedes_memory_id=supersedes_memory_id,
+            )
         fingerprint = _fingerprint(kind, content)
         now = _now()
         try:
@@ -488,8 +655,9 @@ class SqliteReflectionRepository:
                         """
                         INSERT INTO reflection_candidates
                         (id, fingerprint, kind, content, confidence, temporal_scope,
-                         status, evidence_json, memory_id, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, 'candidate', ?, NULL, ?, ?)
+                         status, evidence_json, memory_id, created_at, updated_at,
+                         state_topic, supersedes_memory_id)
+                        VALUES (?, ?, ?, ?, ?, ?, 'candidate', ?, NULL, ?, ?, ?, ?)
                         """,
                         (
                             str(uuid4()),
@@ -501,6 +669,8 @@ class SqliteReflectionRepository:
                             _evidence_json(evidence),
                             now,
                             now,
+                            state_topic,
+                            supersedes_memory_id,
                         ),
                     )
                     return True
@@ -510,13 +680,17 @@ class SqliteReflectionRepository:
                 connection.execute(
                     """
                     UPDATE reflection_candidates
-                    SET confidence = ?, evidence_json = ?, updated_at = ?
+                    SET confidence = ?, evidence_json = ?, updated_at = ?,
+                        state_topic = COALESCE(?, state_topic),
+                        supersedes_memory_id = COALESCE(?, supersedes_memory_id)
                     WHERE id = ?
                     """,
                     (
                         max(float(row["confidence"]), confidence),
                         _evidence_json(merged),
                         now,
+                        state_topic,
+                        supersedes_memory_id,
                         row["id"],
                     ),
                 )
@@ -524,6 +698,87 @@ class SqliteReflectionRepository:
         except sqlite3.Error as error:
             raise ReflectionRepositoryError(
                 f"could not save reflection candidate: {error}"
+            ) from error
+
+    def _upsert_current_state_candidate(
+        self,
+        *,
+        content: str,
+        confidence: float,
+        evidence: tuple[ReflectionEvidence, ...],
+        state_topic: str,
+        supersedes_memory_id: str,
+    ) -> bool | None:
+        """Keep only the newest unreviewed observation for one state topic."""
+        incoming_message_id = _latest_conversation_message_id(evidence)
+        fingerprint = _fingerprint(
+            CURRENT_STATE_CANDIDATE_KIND,
+            content,
+            state_topic=state_topic,
+            source_id=incoming_message_id,
+        )
+        now = _now()
+        try:
+            with self._connect() as connection:
+                row = connection.execute(
+                    """
+                    SELECT id, evidence_json FROM reflection_candidates
+                    WHERE kind = ? AND state_topic = ? AND status = 'candidate'
+                    ORDER BY updated_at DESC, id DESC LIMIT 1
+                    """,
+                    (CURRENT_STATE_CANDIDATE_KIND, state_topic),
+                ).fetchone()
+                if row is not None:
+                    existing_message_id = _latest_conversation_message_id(
+                        _evidence_from_json(row["evidence_json"])
+                    )
+                    if incoming_message_id <= existing_message_id:
+                        return None
+                    connection.execute(
+                        """
+                        UPDATE reflection_candidates
+                        SET fingerprint = ?, content = ?, confidence = ?,
+                            temporal_scope = 'episodic', evidence_json = ?,
+                            updated_at = ?, supersedes_memory_id = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            fingerprint,
+                            content,
+                            confidence,
+                            _evidence_json(evidence),
+                            now,
+                            supersedes_memory_id,
+                            row["id"],
+                        ),
+                    )
+                    return False
+                connection.execute(
+                    """
+                    INSERT INTO reflection_candidates
+                    (id, fingerprint, kind, content, confidence, temporal_scope,
+                     status, evidence_json, memory_id, created_at, updated_at,
+                     state_topic, supersedes_memory_id)
+                    VALUES (?, ?, ?, ?, ?, 'episodic', 'candidate', ?, NULL,
+                            ?, ?, ?, ?)
+                    """,
+                    (
+                        str(uuid4()),
+                        fingerprint,
+                        CURRENT_STATE_CANDIDATE_KIND,
+                        content,
+                        confidence,
+                        _evidence_json(evidence),
+                        now,
+                        now,
+                        state_topic,
+                        supersedes_memory_id,
+                    ),
+                )
+                return True
+        except sqlite3.Error as error:
+            raise ReflectionRepositoryError(
+                f"could not save current-state candidate: {error}"
             ) from error
 
     def _is_processed(self, turn_id: str) -> bool:
@@ -625,7 +880,9 @@ class SqliteReflectionRepository:
                         evidence_json TEXT NOT NULL,
                         memory_id TEXT,
                         created_at TEXT NOT NULL,
-                        updated_at TEXT NOT NULL
+                        updated_at TEXT NOT NULL,
+                        state_topic TEXT,
+                        supersedes_memory_id TEXT
                     )
                     """
                 )
@@ -647,9 +904,41 @@ class SqliteReflectionRepository:
                     )
                     """
                 )
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS reflection_settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    )
+                    """
+                )
+                columns = {
+                    row["name"]
+                    for row in connection.execute(
+                        "PRAGMA table_info(reflection_candidates)"
+                    ).fetchall()
+                }
+                if "state_topic" not in columns:
+                    connection.execute(
+                        "ALTER TABLE reflection_candidates ADD COLUMN state_topic TEXT"
+                    )
+                if "supersedes_memory_id" not in columns:
+                    connection.execute(
+                        "ALTER TABLE reflection_candidates "
+                        "ADD COLUMN supersedes_memory_id TEXT"
+                    )
+                connection.execute(
+                    "INSERT OR IGNORE INTO reflection_settings VALUES (?, ?)",
+                    ("current_state_updates_after", _now()),
+                )
                 if version is None:
                     connection.execute(
                         "INSERT INTO reflection_schema VALUES (?)",
+                        (self._SCHEMA_VERSION,),
+                    )
+                elif version["version"] < self._SCHEMA_VERSION:
+                    connection.execute(
+                        "UPDATE reflection_schema SET version = ?",
                         (self._SCHEMA_VERSION,),
                     )
         except ReflectionRepositoryError:
@@ -673,10 +962,12 @@ class ConversationReflectionService:
         history: SqliteConversationHistoryReader,
         repository: SqliteReflectionRepository,
         interpreter: ReflectionInterpreter,
+        memories: SqliteMemoryRepository | None = None,
     ) -> None:
         self._history = history
         self._repository = repository
         self._interpreter = interpreter
+        self._memories = memories
 
     def process_pending(
         self,
@@ -696,6 +987,7 @@ class ConversationReflectionService:
         completed = 0
         failed = 0
         deferred = 0
+        warnings = 0
         created = 0
         updated = 0
         for index, record in enumerate(pending, start=1):
@@ -705,10 +997,16 @@ class ConversationReflectionService:
                 ConversationMessage(item.role, item.content)
                 for item in records[context_start:record_index]
             )
+            current_states = self._current_states()
             request = ReflectionExtractionRequest(
                 record.id,
                 record.content,
                 recent_context,
+                current_states,
+                bool(current_states)
+                and self._repository.allows_current_state_updates(
+                    record.created_at
+                ),
             )
             try:
                 extraction = self._interpreter.extract(request)
@@ -722,6 +1020,7 @@ class ConversationReflectionService:
                     request, extraction
                 )
                 completed += 1
+                warnings += len(extraction.warnings)
                 created += new
                 updated += changed
             if progress is not None:
@@ -731,8 +1030,22 @@ class ConversationReflectionService:
             completed=completed,
             failed=failed,
             deferred=deferred,
+            warnings=warnings,
             created_candidates=created,
             updated_candidates=updated,
+        )
+
+    def _current_states(self) -> tuple[CurrentStateSnapshot, ...]:
+        if self._memories is None:
+            return ()
+        return tuple(
+            CurrentStateSnapshot(
+                topic=memory.kind.removeprefix("current_state:"),
+                memory_id=memory.id,
+                content=memory.content,
+            )
+            for memory in self._memories.list_active()
+            if memory.kind.startswith("current_state:")
         )
 
 
@@ -740,8 +1053,14 @@ def _candidate_from_row(row: sqlite3.Row) -> ReflectionCandidate:
     kind = row["kind"]
     temporal_scope = row["temporal_scope"]
     status = row["status"]
-    if kind not in MEMORY_KINDS:
+    if kind not in MEMORY_KINDS | {CURRENT_STATE_CANDIDATE_KIND}:
         raise ReflectionRepositoryError(f"stored candidate has invalid kind: {kind}")
+    if kind == CURRENT_STATE_CANDIDATE_KIND and (
+        not row["state_topic"] or not row["supersedes_memory_id"]
+    ):
+        raise ReflectionRepositoryError(
+            "stored current-state candidate is missing its state link"
+        )
     if temporal_scope not in TEMPORAL_SCOPES:
         raise ReflectionRepositoryError(
             f"stored candidate has invalid temporal scope: {temporal_scope}"
@@ -764,6 +1083,8 @@ def _candidate_from_row(row: sqlite3.Row) -> ReflectionCandidate:
         memory_id=row["memory_id"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        state_topic=row["state_topic"],
+        supersedes_memory_id=row["supersedes_memory_id"],
     )
 
 
@@ -812,9 +1133,44 @@ def _merge_evidence(
     return tuple(merged)
 
 
-def _fingerprint(kind: str, content: str) -> str:
+def _fingerprint(
+    kind: str,
+    content: str,
+    *,
+    state_topic: str | None = None,
+    source_id: int | None = None,
+) -> str:
     normalized = " ".join(content.lower().split())
-    return hashlib.sha256(f"{kind}\0{normalized}".encode()).hexdigest()
+    return hashlib.sha256(
+        f"{kind}\0{state_topic or ''}\0{source_id or ''}\0{normalized}".encode()
+    ).hexdigest()
+
+
+def _latest_conversation_message_id(
+    evidence: tuple[ReflectionEvidence, ...],
+) -> int:
+    message_ids: list[int] = []
+    for item in evidence:
+        prefix, separator, raw_id = item.turn_id.partition(":")
+        if prefix != "conversation" or separator != ":" or not raw_id.isdigit():
+            raise ReflectionRepositoryError(
+                "current-state evidence must reference a conversation message"
+            )
+        message_ids.append(int(raw_id))
+    if not message_ids:
+        raise ReflectionRepositoryError("current-state evidence is required")
+    return max(message_ids)
+
+
+def _timestamp(value: str) -> datetime | None:
+    normalized = value.strip().replace(" ", "T")
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _second(value: str) -> str:

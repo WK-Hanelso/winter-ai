@@ -1,14 +1,23 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from uuid import uuid4
 
 from companion.beliefs import belief_context
 from companion.context import ConversationContextBuilder
 from companion.contracts import ChatRequest, ConversationMessage
 from companion.conversation_recall import ConversationRecallRetriever, recall_context
+from companion.day_reflection import (
+    ActiveDayReflectionRetriever,
+    day_reflection_context,
+)
 from companion.dialogue_act import classify as classify_dialogue_act
 from companion.dialogue_director import DialogueDirector, DialoguePlan
 from companion.grounding import GroundingPolicy
 from companion.identity import CompanionIdentity
+from companion.maintenance import (
+    ConversationMaintenancePolicy,
+    MaintenanceRoute,
+)
 from companion.memory import (
     ActiveMemoryRetriever,
     classify_explicit_memory_kind,
@@ -27,10 +36,13 @@ from companion.outcome import OutcomeMemoryClaim
 from companion.ports import (
     BeliefRetriever,
     ChatModel,
+    Clock,
     ConversationRepository,
     MemoryCandidateRepository,
     OutcomeRepository,
+    ReadOnlyWorker,
     TurnUnderstandingRepository,
+    WinterEventRepository,
 )
 from companion.response import CompanionResponse, VerbalStylePlan
 from companion.response_review import ResponseReviewer
@@ -38,6 +50,12 @@ from companion.speech_segments import split_sentences
 from companion.turn_understanding import TurnInterpretationRequest
 from companion.verbal_style import VerbalStylePlanner
 from companion.voice_profile import ProsodyPlanner
+from companion.worker import (
+    ExplicitCodexRoutingPolicy,
+    ReadOnlyWorkerRequest,
+    ReadOnlyWorkerResult,
+    WorkerUnavailableError,
+)
 
 _MEMORY_SAVED_NOTICE = "기억해둘게."
 
@@ -61,6 +79,9 @@ class _Turn:
     style: VerbalStylePlan
     memory_focus: str | None
     shadow_turn_id: str | None
+    maintenance_route: MaintenanceRoute
+    experience_id: str
+    worker_request: ReadOnlyWorkerRequest | None
 
 
 class CompanionCore:
@@ -86,6 +107,12 @@ class CompanionCore:
         turn_understanding_repository: TurnUnderstandingRepository | None = None,
         outcome_repository: OutcomeRepository | None = None,
         turn_source: str = "unknown",
+        maintenance_policy: ConversationMaintenancePolicy | None = None,
+        winter_event_repository: WinterEventRepository | None = None,
+        clock: Clock | None = None,
+        day_reflection_retriever: ActiveDayReflectionRetriever | None = None,
+        read_only_worker: ReadOnlyWorker | None = None,
+        worker_routing_policy: ExplicitCodexRoutingPolicy | None = None,
     ) -> None:
         self._chat_model = chat_model
         self._conversation_repository = conversation_repository
@@ -107,9 +134,23 @@ class CompanionCore:
         self._turn_understanding_repository = turn_understanding_repository
         self._outcome_repository = outcome_repository
         self._turn_source = turn_source
+        self._maintenance_policy = (
+            maintenance_policy or ConversationMaintenancePolicy()
+        )
+        if winter_event_repository is not None and clock is None:
+            raise ValueError("Winter event recording requires an explicit Clock")
+        self._winter_event_repository = winter_event_repository
+        self._clock = clock
+        self._day_reflection_retriever = day_reflection_retriever
+        self._read_only_worker = read_only_worker
+        self._worker_routing_policy = (
+            worker_routing_policy or ExplicitCodexRoutingPolicy()
+        )
 
     def respond_to_text(self, text: str) -> CompanionResponse:
         turn = self._prepare(text)
+        if turn.worker_request is not None:
+            return self._respond_with_worker(turn)
         if turn.dialogue_plan.behavior == "acknowledge_memory":
             return self._finish(turn, "")
         result = self._chat_model.generate(turn.request)
@@ -117,7 +158,10 @@ class CompanionCore:
         return self._finish(turn, answer)
 
     def respond_to_text_streaming(
-        self, text: str, on_sentence: Callable[[str], None]
+        self,
+        text: str,
+        on_sentence: Callable[[str], None],
+        on_status: Callable[[str], None] | None = None,
     ) -> CompanionResponse:
         """Answer, handing each finished sentence over as it is written.
 
@@ -131,6 +175,13 @@ class CompanionCore:
         once and every sentence is handed over then.
         """
         turn = self._prepare(text)
+        if turn.worker_request is not None:
+            if on_status is not None:
+                on_status("코덱스로 확인하고 있어.")
+            response = self._respond_with_worker(turn)
+            for sentence in split_sentences(response.text):
+                on_sentence(sentence)
+            return response
         if turn.dialogue_plan.behavior == "acknowledge_memory":
             on_sentence(_MEMORY_SAVED_NOTICE)
             return self._finish(turn, "")
@@ -158,6 +209,38 @@ class CompanionCore:
         for sentence in split_sentences(answer)[: _sentence_limit(turn)]:
             on_sentence(sentence)
         return self._finish(turn, answer)
+
+    def _respond_with_worker(self, turn: _Turn) -> CompanionResponse:
+        if self._read_only_worker is None:
+            return self._finish(
+                turn,
+                "지금은 Codex Worker가 연결되어 있지 않아. 로컬 답변으로 한 척하지 않을게.",
+                preserve_full=True,
+                worker_name="codex",
+                worker_error=True,
+            )
+        worker_request = turn.worker_request
+        if worker_request is None:
+            raise RuntimeError("worker response requires a routed request")
+        try:
+            result = self._read_only_worker.execute(worker_request)
+        except WorkerUnavailableError:
+            return self._finish(
+                turn,
+                "지금은 Codex Worker를 사용할 수 없어. 로컬 답변으로 한 척하지 않을게.",
+                preserve_full=True,
+                worker_name="codex",
+                worker_error=True,
+            )
+        answer = f"코덱스로 확인했어. {result.answer.strip()}"
+        if result.limitations:
+            answer += " 다만 " + " ".join(result.limitations)
+        return self._finish(
+            turn,
+            answer,
+            preserve_full=True,
+            worker_result=result,
+        )
 
     def _review_and_repair(self, turn: _Turn, draft: str) -> str:
         bounded = " ".join(split_sentences(draft)[: _sentence_limit(turn)])
@@ -198,6 +281,7 @@ class CompanionCore:
         return repaired
 
     def _prepare(self, text: str) -> _Turn:
+        maintenance_route = self._maintenance_policy.route()
         self._conversation_repository.append(ConversationMessage(role="user", content=text))
         candidate_ids: tuple[str, ...] = ()
         candidate_content = extract_explicit_memory_content(text)
@@ -264,7 +348,10 @@ class CompanionCore:
         if self._context_builder is not None:
             messages = self._context_builder.build(all_messages)
         shadow_turn_id = None
-        if self._turn_understanding_repository is not None:
+        if (
+            maintenance_route.enqueue_turn_analysis
+            and self._turn_understanding_repository is not None
+        ):
             shadow_event = self._turn_understanding_repository.enqueue(
                 TurnInterpretationRequest(user_text=text, context=messages),
                 source=self._turn_source,
@@ -290,6 +377,17 @@ class CompanionCore:
             system_messages.append(
                 ConversationMessage("system", self._identity.system_message())
             )
+        if self._day_reflection_retriever is not None and self._clock is not None:
+            prior_days = self._day_reflection_retriever.retrieve(
+                before_date=self._clock.now().date().isoformat()
+            )
+            if prior_days:
+                system_messages.append(
+                    ConversationMessage(
+                        "system",
+                        day_reflection_context(prior_days),
+                    )
+                )
         if selected_memories:
             system_messages.append(
                 ConversationMessage("system", memory_context(selected_memories))
@@ -345,10 +443,26 @@ class CompanionCore:
             style=turn_style.plan,
             memory_focus=(selected_memories[0].content if selected_memories else None),
             shadow_turn_id=shadow_turn_id,
+            maintenance_route=maintenance_route,
+            experience_id=str(uuid4()),
+            worker_request=self._worker_routing_policy.route(text),
         )
 
-    def _finish(self, turn: _Turn, answer: str) -> CompanionResponse:
-        bounded = " ".join(split_sentences(answer)[: _sentence_limit(turn)])
+    def _finish(
+        self,
+        turn: _Turn,
+        answer: str,
+        *,
+        preserve_full: bool = False,
+        worker_result: ReadOnlyWorkerResult | None = None,
+        worker_name: str | None = None,
+        worker_error: bool = False,
+    ) -> CompanionResponse:
+        bounded = (
+            " ".join(split_sentences(answer))
+            if preserve_full
+            else " ".join(split_sentences(answer)[: _sentence_limit(turn)])
+        )
         response_text = bounded
         if turn.candidate_ids:
             response_text = (
@@ -363,6 +477,25 @@ class CompanionCore:
             self._outcome_repository.record_response(
                 turn.shadow_turn_id, response_text
             )
+        if self._winter_event_repository is not None and self._clock is not None:
+            self._winter_event_repository.record(
+                event_key=f"conversation-turn:{turn.experience_id}",
+                kind="conversation_turn",
+                subject=f"conversation:{turn.dialogue_plan.behavior}",
+                source=self._turn_source,
+                source_ref=turn.shadow_turn_id,
+                occurred_at=self._clock.now(),
+                metadata={
+                    "dialogue_act": turn.dialogue_act,
+                    "dialogue_behavior": turn.dialogue_plan.behavior,
+                    "has_response": bool(response_text),
+                    "maintenance_mode": turn.maintenance_route.mode.value,
+                    "worker_name": (
+                        worker_result.worker if worker_result is not None else worker_name
+                    ),
+                    "worker_error": worker_error,
+                },
+            )
         return CompanionResponse(
             text=response_text,
             dialogue_act=turn.dialogue_act,
@@ -374,6 +507,16 @@ class CompanionCore:
             opened_loop_ids=turn.opened_loop_ids,
             recalled_loop_ids=turn.recalled_loop_ids,
             shadow_turn_id=turn.shadow_turn_id,
+            maintenance_mode=turn.maintenance_route.mode,
+            worker_name=(
+                worker_result.worker if worker_result is not None else worker_name
+            ),
+            worker_model=(worker_result.model if worker_result is not None else None),
+            worker_evidence=(worker_result.evidence if worker_result is not None else ()),
+            worker_limitations=(
+                worker_result.limitations if worker_result is not None else ()
+            ),
+            worker_error=worker_error,
         )
 
 

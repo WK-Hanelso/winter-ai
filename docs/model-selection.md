@@ -107,6 +107,128 @@ interface 기본값을 Orin tunnel로 통일했다.
 검증되지 않았다. 개인 local runtime 사용과 별개로, checkpoint를 재배포하거나 결과를
 최종 모델 선택 근거로 확정하기 전에는 provenance와 license를 반드시 추가 확인한다.
 
+## Winter Executive 후보 재검토 — 2026-08-18
+
+Worker를 직접 답변자로 쓰지 않고 Winter가 `IntentBrief`와 `WinterDecision`을 소유하기
+위해 단일 Core Model의 역할을 확장한다. 일반 benchmark가 아니라
+[Work Orchestration](work-orchestration.md)의 동일한 held-out scene으로 비교한다.
+
+실제 Orin을 읽기 전용 조사한 결과 Jetson AGX Orin Developer Kit 32GB, aarch64,
+available memory 약 24.8GB, available disk 약 119GB다. 현재 llama.cpp는
+version 문자열은 `0.1.0-dev build 1`이지만 source는 2026-08-13의 commit
+`8e7f22b67ef4667b4ddd50230771287f328cfb3f`다. 초기에는 version 문자열만 보고 오래된
+runtime으로 오판했으나 실제 commit 날짜를 확인해 철회했다. 최신 source `01818e4`의 CUDA
+configure도 별도 경로에서 성공했지만 기존 runtime이 5일 전 source임을 확인한 뒤 중복
+build는 중단했다.
+
+실행 순서는 Qwen3-14B Q4, Gemma 3 12B IT Q4, Qwen3-30B-A3B-Instruct-2507 Q4,
+Gemma 3 27B Q4였고 모두 평가를 완료했다.
+Qwen3.5-9B는 최신성이 아니라 실제 aarch64/llama.cpp 안정성 때문에 보류한다. 모델별
+공식 source, license, runtime 위험과 activation gate는 Work Orchestration 문서에 기록했다.
+첫 artifact는 Qwen 공식 `Qwen/Qwen3-14B-GGUF`의 9GB
+`Qwen3-14B-Q4_K_M.gguf`이며, 운영 server를 교체하지 않고 별도 port에서 평가한다.
+
+### Executed Winter Executive probe — 2026-08-18
+
+| Model | Structured checks | Mean call latency | Generation | 판정 |
+| --- | ---: | ---: | ---: | --- |
+| Qwen3-14B Q4_K_M, non-thinking V2.1 | 38/47 | 11.6초 | 미재측 | 8/8 schema, 안전 경계 통과, ambiguity·review 의미 실패 |
+| A.X-4.0-Light Q4_K_M, non-thinking V2.1 | 27/47 | 7.7초 | 미재측 | 6/8 schema, 안전 경계 통과, provenance·review 의미 실패 |
+
+Qwen3 기본 thinking은 첫 scene을 150초 이상 완료하지 못해 중단했다. V2.1
+non-thinking은 intent+review 직렬 overhead가 약 23.1초로 줄었지만 실시간 대화에는 아직
+느리다. deterministic 계약은 private leak·권한 초과·불완전 report answer를 막았다.
+모델 선택은 Qwen > A.X지만 Qwen도 ambiguity와 Worker report 평가 gate에 실패했다. 상세는
+[Work Orchestration Evaluation](work-orchestration-evaluation.md)에 있다.
+
+### Expanded semantic-v2 probe — 2026-08-18
+
+Qwen3-14B에 새 Intent 6개·Review 6개를 prompt 수정 없이 추가했다. 46/66,
+schema 11/12, 평균 10.7초였고 ambiguity 0/3, network scope 0/1, review assessment
+3/6으로 의미 gate에 다시 실패했다.
+
+공식 Google [`gemma-3-12b-it-qat-q4_0-gguf`](https://huggingface.co/google/gemma-3-12b-it-qat-q4_0-gguf)는
+QAT Q4_0·12B·약 8.07GB이며 파일 접근 전
+[Gemma 사용 약관](https://ai.google.dev/gemma/terms) 수락이 필요하다. llama.cpp 공식
+조직의 [`ggml-org/gemma-3-12b-it-GGUF`](https://huggingface.co/ggml-org/gemma-3-12b-it-GGUF)
+Q4_K_M은 public resolve가 가능하고
+7,300,574,976 bytes이며 license는 동일한 Gemma다.
+
+천우는 2026-08-18 개인 로컬 평가를 위해 Gemma Terms에 명시적으로 동의했다. 비교
+quant를 Qwen과 맞추기 위해 llama.cpp 공식 조직의 Q4_K_M을 내려받았고 SHA-256
+`7bb69bff3f48a7b642355d64a90e481182a7794707b3133890646b1efa778ff5`를 확인했다.
+Hugging Face repository revision은 `ec0cbabd8dbff316f659876a50202295c3c4a314`다.
+운영 `:8080`과 분리된 `:8081`에서 smoke와 동일 semantic-v2를 실행한 뒤 서버를 종료했다.
+
+| Model | Score | Schema | Mean | Ambiguity | Read-only ready | Network blocked | Review assessment | Action | Evidence IDs |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen3-14B Q4_K_M | 46/66 | 11/12 | 10.7초 | 0/3 | 2/2 | 0/1 | 3/6 | 5/6 | 6/6 |
+| Gemma 3 12B IT Q4_K_M | 40/66 | 11/12 | 15.2초 | 0/3 | 0/2 | 1/1 | 3/6 | 4/6 | 6/6 |
+| Qwen3-30B-A3B Instruct 2507 Q4_K_M | 46/66 | 12/12 | 5.5초 | 0/3 | 1/2 | 0/1 | 3/6 | 5/6 | 6/6 |
+| Gemma 3 27B IT Q4_K_M | 44/66 | 11/12 | 27.0초 | 0/3 | 1/2 | 0/1 | 3/6 | 5/6 | 6/6 |
+
+Gemma는 인터넷 요청을 차단했지만 `network.access`가 아니라 모든 Intent의 resource를
+`account`로 잘못 분류해 우연히 차단했다. 모호한 세 요청을 하나도 되묻지 않았고 명확한
+읽기 요청도 두 건 모두 실행 가능하게 만들지 못했다. Review에서는 Qwen과 마찬가지로
+회귀 실패와 사용자 선택을 `supported`로 오판했다. 따라서 현재 계약의 상대 우위는
+Qwen3-14B지만 **두 모델 모두 activation 실패**다.
+
+이는 Gemma를 별도 prompt·sampling으로 최적화한 절대 성능 비교가 아니다. 현재 겨울이
+계약을 수정하지 않고 같은 adapter·seed·scene에 투입했을 때의 교체 가능성 평가다.
+모델마다 contract를 다시 맞추면 held-out 비교가 오염되므로 이번 선택에는 동일 조건
+결과를 사용한다.
+
+### Qwen3-30B-A3B Instruct 2507 probe — 2026-08-19
+
+Orin에 이미 있던
+[`unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF`](https://huggingface.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF)의
+`Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf`를 새로 다운로드하지 않고 검증했다. 원본
+Qwen model은 Apache-2.0이고 GGUF는 third-party conversion이다. 실제 크기
+18,556,686,752 bytes와 SHA-256
+`6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0`가 공개 artifact와
+일치했다.
+
+운영 A.X `:8080`을 유지한 채 같은 llama.cpp commit `8e7f22b`에서 `-ngl 99 -c 4096
+-np 1`, loopback `:8081`로 기동했다. 24.7초에 load를 마쳤고 두 모델 동시 실행 중
+available memory는 약 4.5GiB까지 줄었지만 OOM은 없었다. 평가 뒤 임시 server와 tunnel을
+종료했고 A.X health와 available memory 약 19GiB를 재확인했다.
+
+semantic-v2는 46/66·schema 12/12·평균 5.5초로 Qwen3-14B보다 빨랐지만 의미 gate는
+나아지지 않았다. ambiguity 0/3, 올바른 network scope 0/1, review assessment 3/6이었다.
+여섯 Intent 중 다섯 개의 resource를 `account`로 골라 명확한 read-only도 1/2만 ready가
+됐다. 이는 안전한 차단이 아니라 과다 차단과 의미 오분류다.
+
+실제 Winter Core의 Identity·Memory·재시작 7턴은 기존 자동 check 14/14를 통과했지만 사람
+검토에서 교체 근거가 없었다. Qwen은 화면 밖에서 차를 마시겠다는 몸의 행동을 만들고,
+목소리와 대화 기억의 우선순위 질문을 `네 목소리`로 바꿔 답했다. 같은 경로의 평균은 Qwen
+1.81초, 운영 A.X 1.47초였고 A.X가 질문 의미와 grounding을 더 잘 보존했다. 따라서 자동
+14/14는 grounding과 의미 보존을 보장하지 않으며 Qwen3-30B-A3B를 대화 또는 Worker 지휘
+Core로 activation하지 않는다.
+
+### Gemma 3 27B probe — 2026-08-19
+
+Google 공식 QAT Q4_0 artifact는 Hugging Face token이 필요한 gated file이라 자동
+다운로드하지 않았다. 천우의 기존 Gemma Terms 동의 범위에서, 12B 비교와 같은 llama.cpp
+공식 조직의 [`ggml-org/gemma-3-27b-it-GGUF`](https://huggingface.co/ggml-org/gemma-3-27b-it-GGUF)
+Q4_K_M을 평가했다. 실제 크기 16,546,404,736 bytes와 SHA-256
+`edc9aff4d811a285b9157618130b08688b0768d94ee5355b02dc0cb713012e15`가 공개 artifact와
+일치했다.
+
+운영 A.X와 동시에 약 24.3초에 load됐고 available memory는 약 4.7GiB였다. semantic-v2는
+44/66·schema 11/12·평균 27.0초였다. ambiguity 0/3, read-only ready 1/2, 올바른 network
+scope 0/1, review assessment 3/6으로 12B의 핵심 실패를 해결하지 못했다. 회귀 `fail`, 천우의
+최종 선택과 2개 표본 한계를 다시 `supported`로 오판했다.
+
+실제 Winter Core 대화 평가는 첫 턴부터 HTTP 400으로 중단됐다. 현재 Core의 연속 role
+message를 Gemma chat template이 `user/assistant` 교대 위반으로 거절했다. adapter에서
+message를 합칠 수는 있지만 Worker 의미 gate와 latency가 이미 실패했으므로 모델별 호환
+코드를 추가하지 않았다. 평가 artifact는 Orin에 보존하고 운영 설정에는 연결하지 않는다.
+
+이번 두 대형 후보로 **같은 12~30B급 drop-in을 계속 순회하는 전략은 중단**한다. parameter
+수 증가는 모호성 판단, grounding이나 Worker 검수를 자동으로 해결하지 않았고 Gemma dense
+27B는 실시간 latency도 만족하지 못했다. 다음 후보는 새 모델 계열 또는 runtime 변경이 이
+실패 축을 해결한다는 근거가 있을 때만 같은 locked suite로 평가한다.
+
 ## Probe order and acceptance
 
 ### 1. LLM
@@ -150,6 +272,34 @@ python3 experiments/stt_probe.py \
 
 Use `--device cuda` only to request the CUDA image. It does not fall back to
 CPU if Docker GPU initialization fails.
+
+#### Phone runtime update — 2026-08-17
+
+Three real phone turns showed that the warmed Whisper service still spent a
+median 3.79 seconds inside STT. Thread tuning from 4 to the CPU's 6 physical
+cores improved synthetic throughput, but did not approach the interaction gate.
+The official whisper.cpp stream example is a repeated microphone-window demo,
+not a streaming upload endpoint for the current HTTP server.
+
+SenseVoiceSmall Q8 GGUF was therefore evaluated as a separate CPU runtime. The
+official AVX2 binary needs a newer glibc than the Host, so it runs inside Ubuntu
+24.04 and remains behind the existing `SpeechToText` port.
+
+| Item | Verified value |
+| --- | --- |
+| Runtime | [SenseVoice llama.cpp runtime v0.1.9](https://github.com/QwenAudio/SenseVoice/releases/tag/runtime-llamacpp-v0.1.9), AVX2 CPU binary |
+| Model | [SenseVoiceSmall-GGUF Q8](https://huggingface.co/FunAudioLLM/SenseVoiceSmall-GGUF), repository declares Apache-2.0 |
+| Short synthetic | 2.36–2.56 s audio, 0.12–0.13 s model time |
+| Zeroth-Korean fixture | 10.4535 s, 0.49 s, exact reference-text match |
+| Full Web STT | 0.347 s including ffmpeg, HTTP and model for 2.36 s WAV |
+| GPU use | none; preserves the nearly full 6 GB GPU for TTS and Voice Conversion |
+
+This activates SenseVoice only for limited phone operation. It does not claim
+general Korean superiority from four utterances. A new 20-turn phone baseline
+and held-out names, technical terms, noise and spontaneous speech remain the
+quality gate. Whisper stays available only through explicit backend selection;
+there is no silent fallback. Artifact hashes and the operational decision are
+recorded in [ADR-0008](adr/0008-sensevoice-phone-stt.md).
 
 ### 3. TTS
 

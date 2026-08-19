@@ -9,6 +9,7 @@ from companion.outcome import SqliteOutcomeRepository
 from companion.reflection import (
     ConversationHistoryBackfill,
     ConversationReflectionService,
+    CurrentStateProposal,
     FakeReflectionInterpreter,
     ReflectionExtraction,
     ReflectionExtractionRequest,
@@ -260,7 +261,61 @@ def test_malformed_reflection_is_retried_and_can_complete(tmp_path: Path) -> Non
         "completed": 1,
         "failed": 0,
         "pending": 0,
+        "warnings": 0,
     }
+
+
+def test_completed_reflection_warning_is_visible_without_retrying_turn(
+    tmp_path: Path,
+) -> None:
+    class WarningInterpreter:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def extract(self, request: ReflectionExtractionRequest) -> ReflectionExtraction:
+            self.calls += 1
+            return ReflectionExtraction(
+                (),
+                warnings=(
+                    "current-state update 2 ignored: confidence must be between 0 and 1",
+                ),
+            )
+
+    conversations_path = tmp_path / "conversations.sqlite"
+    conversations = SqliteConversationRepository(conversations_path)
+    conversations.append(ConversationMessage("user", "마음은 나아졌는데 일은 힘들어"))
+    reflections = SqliteReflectionRepository(tmp_path / "reflection.sqlite")
+    interpreter = WarningInterpreter()
+    service = ConversationReflectionService(
+        SqliteConversationHistoryReader(conversations_path),
+        reflections,
+        interpreter,
+    )
+
+    first = service.process_pending()
+    second = service.process_pending()
+
+    assert (first.completed, first.warnings) == (1, 1)
+    assert second.processed == 0
+    assert interpreter.calls == 1
+    assert reflections.extraction_counts(user_messages=1) == {
+        "completed": 1,
+        "failed": 0,
+        "pending": 0,
+        "warnings": 1,
+    }
+    output = StringIO()
+    print_companion_overview(
+        SqliteConversationHistoryReader(conversations_path),
+        SqliteTurnUnderstandingRepository(tmp_path / "turns.sqlite"),
+        SqliteOutcomeRepository(tmp_path / "outcomes.sqlite"),
+        reflections,
+        SqliteMemoryRepository(tmp_path / "memories.sqlite"),
+        output,
+    )
+    overview = output.getvalue()
+    assert "후보 제외 경고 1" in overview
+    assert "발화 1: current-state update 2 ignored" in overview
 
 
 def test_compact_reflection_receives_recent_conversation_context(tmp_path: Path) -> None:
@@ -310,3 +365,186 @@ def test_compact_reflection_reports_batch_progress(tmp_path: Path) -> None:
     ).process_pending(limit=2, progress=lambda done, total: progress.append((done, total)))
 
     assert progress == [(1, 2), (2, 2)]
+
+
+def test_new_state_statement_becomes_review_candidate_then_updates_timeline(
+    tmp_path: Path,
+) -> None:
+    class StateInterpreter:
+        def extract(self, request: ReflectionExtractionRequest) -> ReflectionExtraction:
+            assert request.allow_current_state_updates
+            state = request.current_states[0]
+            evidence = "마음이 많이 괜찮아졌어"
+            return ReflectionExtraction(
+                (),
+                (
+                    CurrentStateProposal(
+                        topic=state.topic,
+                        content=evidence,
+                        confidence=0.94,
+                        evidence=(evidence,),
+                        supersedes_memory_id=state.memory_id,
+                    ),
+                ),
+            )
+
+    reflections = SqliteReflectionRepository(tmp_path / "reflection.sqlite")
+    conversations_path = tmp_path / "conversations.sqlite"
+    conversations = SqliteConversationRepository(conversations_path)
+    text = "요즘은 운동 덕분에 마음이 많이 괜찮아졌어"
+    conversations.append(ConversationMessage("user", text))
+    memories = SqliteMemoryRepository(tmp_path / "memories.sqlite")
+    previous = memories.remember_current_state(
+        topic="wellbeing",
+        content="요즘 마음이 힘들어 운동하며 회복 중이다.",
+    )
+
+    result = ConversationReflectionService(
+        SqliteConversationHistoryReader(conversations_path),
+        reflections,
+        StateInterpreter(),
+        memories,
+    ).process_pending()
+
+    assert result.created_candidates == 1
+    candidate = reflections.list(status="candidate")[0]
+    assert candidate.is_current_state
+    assert candidate.state_topic == "wellbeing"
+    assert candidate.supersedes_memory_id == previous.id
+    assert memories.list_current_state_history(topic="wellbeing") == (previous,)
+
+    output = StringIO()
+    assert run_memory_candidate_review(
+        reflections,
+        memories,
+        limit=10,
+        stdin=StringIO("1\n"),
+        stdout=output,
+    ) == 0
+
+    history = memories.list_current_state_history(topic="wellbeing")
+    assert [memory.status for memory in history] == ["deprecated", "active"]
+    assert history[1].content == "마음이 많이 괜찮아졌어"
+    assert history[1].supersedes == previous.id
+    assert "기존 상태" in output.getvalue()
+    assert "History에 남고" in output.getvalue()
+
+
+def test_pre_migration_backlog_cannot_be_reinterpreted_as_current_state(
+    tmp_path: Path,
+) -> None:
+    class CapturingInterpreter:
+        def __init__(self) -> None:
+            self.requests: list[ReflectionExtractionRequest] = []
+
+        def extract(self, request: ReflectionExtractionRequest) -> ReflectionExtraction:
+            self.requests.append(request)
+            return ReflectionExtraction(())
+
+    conversations_path = tmp_path / "conversations.sqlite"
+    SqliteConversationRepository(conversations_path)
+    with sqlite3.connect(conversations_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO conversation_messages (role, content, created_at)
+            VALUES ('user', '예전에는 마음이 힘들었어', '2026-08-01 00:00:00')
+            """
+        )
+    reflections = SqliteReflectionRepository(tmp_path / "reflection.sqlite")
+    memories = SqliteMemoryRepository(tmp_path / "memories.sqlite")
+    memories.remember_current_state(topic="wellbeing", content="지금은 회복 중이다")
+    interpreter = CapturingInterpreter()
+
+    ConversationReflectionService(
+        SqliteConversationHistoryReader(conversations_path),
+        reflections,
+        interpreter,
+        memories,
+    ).process_pending()
+
+    assert interpreter.requests[0].current_states
+    assert not interpreter.requests[0].allow_current_state_updates
+
+
+def test_only_newest_unreviewed_state_update_is_kept_per_topic(
+    tmp_path: Path,
+) -> None:
+    class StateInterpreter:
+        def extract(self, request: ReflectionExtractionRequest) -> ReflectionExtraction:
+            state = request.current_states[0]
+            return ReflectionExtraction(
+                (),
+                (
+                    CurrentStateProposal(
+                        topic=state.topic,
+                        content=request.user_text,
+                        confidence=0.9,
+                        evidence=(request.user_text,),
+                        supersedes_memory_id=state.memory_id,
+                    ),
+                ),
+            )
+
+    reflections = SqliteReflectionRepository(tmp_path / "reflection.sqlite")
+    conversations_path = tmp_path / "conversations.sqlite"
+    conversations = SqliteConversationRepository(conversations_path)
+    conversations.append(ConversationMessage("user", "마음이 조금 괜찮아졌어"))
+    conversations.append(ConversationMessage("user", "지금은 마음이 아주 편안해"))
+    memories = SqliteMemoryRepository(tmp_path / "memories.sqlite")
+    memories.remember_current_state(topic="wellbeing", content="마음이 힘들다")
+
+    result = ConversationReflectionService(
+        SqliteConversationHistoryReader(conversations_path),
+        reflections,
+        StateInterpreter(),
+        memories,
+    ).process_pending(limit=2)
+
+    assert result.created_candidates == 1
+    assert result.updated_candidates == 0
+    candidates = reflections.list(status="candidate")
+    assert len(candidates) == 1
+    assert candidates[0].content == "지금은 마음이 아주 편안해"
+    assert candidates[0].evidence[0].turn_id == "conversation:2"
+
+
+def test_reflection_schema_v1_migrates_without_changing_existing_candidate(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "reflection.sqlite"
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE reflection_schema (version INTEGER NOT NULL)")
+        connection.execute("INSERT INTO reflection_schema VALUES (1)")
+        connection.execute(
+            """
+            CREATE TABLE reflection_candidates (
+                id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL UNIQUE,
+                kind TEXT NOT NULL, content TEXT NOT NULL, confidence REAL NOT NULL,
+                temporal_scope TEXT NOT NULL, status TEXT NOT NULL,
+                evidence_json TEXT NOT NULL, memory_id TEXT,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO reflection_candidates VALUES
+            ('candidate-1', 'fingerprint-1', 'semantic', '나는 개발자야', 0.9,
+             'stable', 'candidate',
+             '[{"turn_id":"conversation:1","quote":"나는 개발자야"}]',
+             NULL, '2026-08-15T00:00:00+00:00', '2026-08-15T00:00:00+00:00')
+            """
+        )
+
+    repository = SqliteReflectionRepository(database)
+
+    candidate = repository.get("candidate-1")
+    assert candidate.content == "나는 개발자야"
+    assert candidate.state_topic is None
+    assert not repository.allows_current_state_updates(
+        "2026-08-15T00:00:00+00:00"
+    )
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT version FROM reflection_schema").fetchone() == (
+            2,
+        )

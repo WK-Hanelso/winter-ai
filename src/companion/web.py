@@ -42,10 +42,13 @@ import sys
 import threading
 import time
 
+from companion.adapters.codex_worker import CodexReadOnlyWorker
 from companion.adapters.http_speech import STAGE_ONE_URLS, HttpSpeechModel
 from companion.adapters.llama_cpp import LlamaCppHttpChatModel
 from companion.adapters.seedvc import DEFAULT_SERVER_URL as DEFAULT_VC_URL
 from companion.adapters.seedvc import SeedVcVoiceConverter
+from companion.adapters.sensevoice import DEFAULT_SERVER_URL as DEFAULT_SENSEVOICE_URL
+from companion.adapters.sensevoice import SenseVoiceSpeechToText
 from companion.adapters.sqlite_repository import (
     ConversationRepositoryError,
     SqliteConversationRepository,
@@ -60,6 +63,11 @@ from companion.beliefs import (
 from companion.context import ConversationContextBuilder
 from companion.contracts import AudioInput, SpeechRequest
 from companion.core import CompanionCore
+from companion.day_reflection import (
+    ActiveDayReflectionRetriever,
+    DayReflectionRepositoryError,
+    SqliteDayReflectionRepository,
+)
 from companion.dialogue_act import classify as classify_dialogue_act
 from companion.identity import IdentityRepositoryError, JsonIdentityRepository
 from companion.memory import (
@@ -73,17 +81,29 @@ from companion.open_loops import (
     SqliteOpenLoopRepository,
 )
 from companion.outcome import OutcomeRepositoryError, SqliteOutcomeRepository
+from companion.ports import SpeechToText
 from companion.turn_understanding import (
     SqliteTurnUnderstandingRepository,
     TurnUnderstandingRepositoryError,
 )
 from companion.verbal_style import ALLOWED_PROFILES, VerbalStylePlanner, load_verbal_style
+from companion.voice_latency import (
+    SqliteVoiceLatencyRepository,
+    VoiceLatencyError,
+    VoiceLatencyRepositoryError,
+    VoiceLatencySample,
+)
 from companion.voice_pipeline import stream
 from companion.voice_profile import ProsodyPlanner
+from companion.winter_events import (
+    SqliteWinterEventRepository,
+    SystemClock,
+    WinterEventRepositoryError,
+)
 
 # What the handler hands the companion so it can report progress while the
 # connection is still open: an event name and a payload of strings.
-Emit = Callable[[str, dict[str, str]], None]
+Emit = Callable[[str, dict[str, str | float]], None]
 
 DEFAULT_PORT = 8000
 DEFAULT_MODEL_URL = os.environ.get("WINTER_LLM_URL", "http://127.0.0.1:18080")
@@ -94,7 +114,10 @@ DEFAULT_MEMORIES = DEFAULT_DATA / "memories.sqlite"
 DEFAULT_BELIEFS = DEFAULT_DATA / "beliefs.sqlite"
 DEFAULT_DIALOGUE_STATE = DEFAULT_DATA / "dialogue_state.sqlite"
 DEFAULT_TURN_UNDERSTANDING = DEFAULT_DATA / "turn_understanding.sqlite"
+DEFAULT_DAY_REFLECTIONS = DEFAULT_DATA / "day_reflections.sqlite"
 DEFAULT_OUTCOMES = DEFAULT_DATA / "outcomes.sqlite"
+DEFAULT_WINTER_EVENTS = DEFAULT_DATA / "winter_events.sqlite"
+DEFAULT_VOICE_METRICS = DEFAULT_DATA / "voice_latency.sqlite"
 PAGE = Path(__file__).resolve().parent / "static" / "index.html"
 
 
@@ -110,8 +133,8 @@ class Companion:
         self,
         core: CompanionCore,
         tts: HttpSpeechModel,
-        converter: SeedVcVoiceConverter,
-        stt: WhisperCppSpeechToText,
+        converter: SeedVcVoiceConverter | None,
+        stt: SpeechToText,
     ) -> None:
         self._core = core
         self._tts = tts
@@ -124,6 +147,7 @@ class Companion:
 
     def answer(self, text: str, emit: Emit) -> None:
         """Answer once, emitting each sentence and then its audio."""
+        started = time.perf_counter()
         prosody = ProsodyPlanner().plan(classify_dialogue_act(text))
         written: list[str] = []
         pending: list[str] = []
@@ -131,7 +155,17 @@ class Companion:
 
         def think() -> None:
             try:
-                self._core.respond_to_text_streaming(text, pending.append)
+                self._core.respond_to_text_streaming(
+                    text,
+                    pending.append,
+                    on_status=lambda message: emit(
+                        "status",
+                        {
+                            "message": message,
+                            "server_elapsed_ms": _elapsed_ms(started),
+                        },
+                    ),
+                )
             finally:
                 done.set()
 
@@ -142,7 +176,13 @@ class Companion:
                     sentence = pending[index]
                     index += 1
                     written.append(sentence)
-                    emit("sentence", {"text": sentence})
+                    emit(
+                        "sentence",
+                        {
+                            "text": sentence,
+                            "server_elapsed_ms": _elapsed_ms(started),
+                        },
+                    )
                     yield sentence
                 elif done.is_set() and index >= len(pending):
                     return
@@ -151,7 +191,6 @@ class Companion:
 
         thinking = threading.Thread(target=think, daemon=True)
         thinking.start()
-        started = time.perf_counter()
         first = True
         with self._lock:
             for piece in stream(
@@ -165,17 +204,28 @@ class Companion:
                         pitch_offset=prosody.pitch_offset,
                     )
                 ),
-                self._converter.convert,
+                (lambda audio: audio)
+                if self._converter is None
+                else self._converter.convert,
             ):
                 if first:
                     print(f"  첫 소리까지 {time.perf_counter() - started:.1f}초", flush=True)
                     first = False
-                emit("audio", {"wav": base64.b64encode(piece.data).decode()})
+                emit(
+                    "audio",
+                    {
+                        "wav": base64.b64encode(piece.data).decode(),
+                        "server_elapsed_ms": _elapsed_ms(started),
+                    },
+                )
         thinking.join()
         emit("done", {"text": " ".join(written)})
 
 
-def make_handler(companion: Companion) -> type[BaseHTTPRequestHandler]:
+def make_handler(
+    companion: Companion,
+    voice_latency_repository: SqliteVoiceLatencyRepository,
+) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -183,6 +233,10 @@ def make_handler(companion: Companion) -> type[BaseHTTPRequestHandler]:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
+            # The page changes during local iteration and JSON responses may
+            # contain private conversation data. Do not let a phone reuse an
+            # old client or retain these responses in its HTTP cache.
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 
@@ -193,12 +247,29 @@ def make_handler(companion: Companion) -> type[BaseHTTPRequestHandler]:
             if self.path == "/health":
                 self._send(200, b"ok", "text/plain")
                 return
+            if self.path == "/voice-metrics":
+                try:
+                    summary = voice_latency_repository.summarize().to_dict()
+                except VoiceLatencyRepositoryError as error:
+                    self._send(
+                        500,
+                        json.dumps({"error": str(error)}).encode(),
+                        "application/json",
+                    )
+                    return
+                self._send(
+                    200,
+                    json.dumps(summary).encode(),
+                    "application/json",
+                )
+                return
             self.send_error(404)
 
         def do_POST(self) -> None:  # noqa: N802
             length = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(length) if length else b""
             if self.path == "/listen":
+                started = time.perf_counter()
                 try:
                     text = companion.hear(body, "speech.webm")
                 except Exception as error:  # noqa: BLE001 - reported to the caller
@@ -210,14 +281,55 @@ def make_handler(companion: Companion) -> type[BaseHTTPRequestHandler]:
                     return
                 self._send(
                     200,
-                    json.dumps({"text": text}, ensure_ascii=False).encode(),
+                    json.dumps(
+                        {"text": text, "server_stt_ms": _elapsed_ms(started)},
+                        ensure_ascii=False,
+                    ).encode(),
                     "application/json",
                 )
                 return
             if self.path == "/turn":
                 self._turn(body)
                 return
+            if self.path == "/voice-metric":
+                self._voice_metric(body)
+                return
             self.send_error(404)
+
+        def _voice_metric(self, body: bytes) -> None:
+            try:
+                payload = json.loads(body or b"{}")
+                if not isinstance(payload, dict):
+                    raise VoiceLatencyError("voice latency payload must be an object")
+                sample = VoiceLatencySample.from_payload(payload)
+                voice_latency_repository.record(sample)
+                summary = voice_latency_repository.summarize()
+            except (json.JSONDecodeError, VoiceLatencyError) as error:
+                self._send(
+                    400,
+                    json.dumps({"error": str(error)}).encode(),
+                    "application/json",
+                )
+                return
+            except VoiceLatencyRepositoryError as error:
+                self._send(
+                    500,
+                    json.dumps({"error": str(error)}).encode(),
+                    "application/json",
+                )
+                return
+            print(
+                "  Voice 실측: "
+                f"{summary.sample_size}/{summary.target_sample_size} turn, "
+                f"재생 p50={_seconds(summary.release_to_play_p50_ms)} "
+                f"p95={_seconds(summary.release_to_play_p95_ms)}",
+                flush=True,
+            )
+            self._send(
+                200,
+                json.dumps(summary.to_dict()).encode(),
+                "application/json",
+            )
 
         def _turn(self, body: bytes) -> None:
             try:
@@ -238,7 +350,7 @@ def make_handler(companion: Companion) -> type[BaseHTTPRequestHandler]:
             self.send_header("Connection", "close")
             self.end_headers()
 
-            def emit(event: str, payload: dict[str, str]) -> None:
+            def emit(event: str, payload: dict[str, str | float]) -> None:
                 data = json.dumps(payload, ensure_ascii=False)
                 self.wfile.write(f"event: {event}\ndata: {data}\n\n".encode())
                 self.wfile.flush()
@@ -268,9 +380,32 @@ def build_parser() -> argparse.ArgumentParser:
     # private is the network it is on, not the interface it binds to.
     parser.add_argument("--host", default="0.0.0.0")  # noqa: S104
     parser.add_argument("--model-url", default=DEFAULT_MODEL_URL)
+    parser.add_argument(
+        "--codex-worker",
+        action="store_true",
+        default=os.environ.get("WINTER_CODEX_WORKER", "").strip().lower()
+        in {"1", "true", "yes", "on"},
+    )
+    parser.add_argument(
+        "--codex-executable",
+        default=os.environ.get("WINTER_CODEX_BIN", "codex"),
+    )
+    parser.add_argument(
+        "--codex-model",
+        default=os.environ.get("WINTER_CODEX_MODEL", "gpt-5.4"),
+    )
     parser.add_argument("--stage-one", choices=sorted(STAGE_ONE_URLS), default="chatterbox")
     parser.add_argument("--vc-url", default=DEFAULT_VC_URL)
-    parser.add_argument("--stt-url", default=DEFAULT_STT_URL)
+    parser.add_argument(
+        "--no-voice-conversion",
+        action="store_true",
+        help="stage 1 already carries the selected voice identity",
+    )
+    parser.add_argument("--stt-backend", choices=("whisper", "sensevoice"), default="whisper")
+    parser.add_argument(
+        "--stt-url",
+        help="STT service URL; defaults to the selected backend's local port",
+    )
     parser.add_argument("--identity-path", type=Path, default=DEFAULT_IDENTITY)
     parser.add_argument("--conversation-path", type=Path, default=DEFAULT_CONVERSATION)
     parser.add_argument("--memory-path", type=Path, default=DEFAULT_MEMORIES)
@@ -284,6 +419,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_TURN_UNDERSTANDING,
     )
     parser.add_argument("--outcome-path", type=Path, default=DEFAULT_OUTCOMES)
+    parser.add_argument(
+        "--winter-event-path", type=Path, default=DEFAULT_WINTER_EVENTS
+    )
+    parser.add_argument(
+        "--day-reflection-path", type=Path, default=DEFAULT_DAY_REFLECTIONS
+    )
+    parser.add_argument(
+        "--voice-metrics-path",
+        type=Path,
+        default=DEFAULT_VOICE_METRICS,
+    )
     parser.add_argument("--style", choices=ALLOWED_PROFILES, default="reference_conversation")
     return parser
 
@@ -332,6 +478,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     except OutcomeRepositoryError as error:
         print(f"대화 결과 기록을 열지 못했습니다: {error}", file=sys.stderr)
         return 1
+    try:
+        winter_event_repository = SqliteWinterEventRepository(
+            arguments.winter_event_path
+        )
+    except WinterEventRepositoryError as error:
+        print(f"겨울이의 하루 기록을 열지 못했습니다: {error}", file=sys.stderr)
+        return 1
+    try:
+        day_reflection_retriever = ActiveDayReflectionRetriever(
+            SqliteDayReflectionRepository(arguments.day_reflection_path)
+        )
+    except DayReflectionRepositoryError as error:
+        print(f"겨울이의 지난날 회고를 읽지 못했습니다: {error}", file=sys.stderr)
+        return 1
+    try:
+        voice_latency_repository = SqliteVoiceLatencyRepository(
+            arguments.voice_metrics_path
+        )
+    except VoiceLatencyRepositoryError as error:
+        print(f"Voice 성능 기록을 열지 못했습니다: {error}", file=sys.stderr)
+        return 1
     core = CompanionCore(
         LlamaCppHttpChatModel(base_url=arguments.model_url),
         conversation_repository,
@@ -346,18 +513,49 @@ def main(argv: Sequence[str] | None = None) -> int:
         turn_understanding_repository=turn_understanding_repository,
         outcome_repository=outcome_repository,
         turn_source="web",
+        winter_event_repository=winter_event_repository,
+        clock=SystemClock(),
+        day_reflection_retriever=day_reflection_retriever,
+        read_only_worker=(
+            CodexReadOnlyWorker(
+                Path.cwd(),
+                executable=arguments.codex_executable,
+                model=arguments.codex_model,
+            )
+            if arguments.codex_worker
+            else None
+        ),
     )
+    if arguments.stt_backend == "sensevoice":
+        stt: SpeechToText = SenseVoiceSpeechToText(
+            base_url=arguments.stt_url or DEFAULT_SENSEVOICE_URL
+        )
+    else:
+        stt = WhisperCppSpeechToText(base_url=arguments.stt_url or DEFAULT_STT_URL)
     companion = Companion(
         core,
         HttpSpeechModel(base_url=STAGE_ONE_URLS[arguments.stage_one]),
-        SeedVcVoiceConverter(base_url=arguments.vc_url),
-        WhisperCppSpeechToText(base_url=arguments.stt_url),
+        None
+        if arguments.no_voice_conversion
+        else SeedVcVoiceConverter(base_url=arguments.vc_url),
+        stt,
     )
-    server = ThreadingHTTPServer((arguments.host, arguments.port), make_handler(companion))
+    server = ThreadingHTTPServer(
+        (arguments.host, arguments.port),
+        make_handler(companion, voice_latency_repository),
+    )
     started = datetime.now(UTC).strftime("%H:%M")
     print(f"[{started}] 겨울이 대기 중: http://{arguments.host}:{arguments.port}/", flush=True)
     server.serve_forever()
     return 0
+
+
+def _elapsed_ms(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000, 3)
+
+
+def _seconds(milliseconds: float | None) -> str:
+    return "-" if milliseconds is None else f"{milliseconds / 1000:.2f}s"
 
 
 if __name__ == "__main__":

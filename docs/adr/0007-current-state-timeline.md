@@ -20,9 +20,15 @@
 - 상태 변화 질문에만 active/deprecated Timeline을 함께 전달한다.
 - Timeline에는 인과 추측 금지 지시를 포함한다.
 - CLI의 `./winter state`에서 모델 없이 전체 이력을 확인할 수 있다.
+- 자연어 상태 변경은 기존 active topic과 이전 Memory ID가 붙은 review-only 후보로 만든다.
+- migration cutoff 이전 발화는 현재 상태 후보로 분석하지 않는다.
+- 후보는 exact user evidence와 별도 현재성/topic 검증을 통과해도 자동 반영하지 않는다.
+- 같은 topic의 미검토 후보는 가장 최근 발화 하나만 유지한다.
+- 천우의 승인 뒤에만 `remember_current_state`를 호출한다.
 
 ## 결과와 한계
 
 최신 상태와 과거 상태를 모두 보존하면서 일상 응답에 오래된 상태가 섞이는 것을 막는다.
-현재 자연어에서 새 상태와 topic을 자동 추출하는 기능은 아직 연결하지 않는다. 검증된
-추출·사용자 확인 경로가 추가될 때 이 Timeline의 update API를 사용한다.
+기존 topic의 자연어 상태 변경을 검토 후보로 연결하는 경로는 구현됐다. 기존 backlog를
+현재로 오인하는 문제와 승인 전 자동 변경은 차단했다. 새 topic 생성, 복합 topic 분할과
+실제 local LLM held-out 품질 평가는 별도 고도화로 남긴다.

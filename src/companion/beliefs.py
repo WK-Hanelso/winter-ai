@@ -34,6 +34,18 @@ CREATE TABLE IF NOT EXISTS beliefs (
 )
 """
 
+_CREATE_ACTIVATION_DECISIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS belief_activation_decisions (
+    id TEXT PRIMARY KEY,
+    candidate_id TEXT NOT NULL UNIQUE,
+    activated INTEGER NOT NULL,
+    reasons TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(candidate_id) REFERENCES beliefs(id)
+)
+"""
+
 
 class BeliefRepositoryError(RuntimeError):
     pass
@@ -52,6 +64,16 @@ class Belief:
     created_at: str
     updated_at: str
     supersedes: str | None
+
+
+@dataclass(frozen=True)
+class BeliefActivationDecision:
+    id: str
+    candidate_id: str
+    activated: bool
+    reasons: tuple[str, ...]
+    occurred_at: str
+    created_at: str
 
 
 class SqliteBeliefRepository:
@@ -206,11 +228,138 @@ class SqliteBeliefRepository:
     def list_active(self) -> tuple[Belief, ...]:
         return tuple(belief for belief in self.list() if belief.status == "active")
 
+    def decide_activation(
+        self,
+        belief_id: str,
+        *,
+        reasons: tuple[str, ...],
+        occurred_at: datetime,
+    ) -> tuple[Belief, BeliefActivationDecision]:
+        """Atomically preserve the decision and its resulting belief state."""
+        if occurred_at.tzinfo is None or occurred_at.utcoffset() is None:
+            raise BeliefRepositoryError("activation occurred_at must be timezone-aware")
+        reasons = tuple(dict.fromkeys(reason.strip() for reason in reasons if reason.strip()))
+        activated = not reasons
+        try:
+            with self._connect() as connection:
+                existing_row = connection.execute(
+                    "SELECT * FROM belief_activation_decisions WHERE candidate_id = ?",
+                    (belief_id,),
+                ).fetchone()
+                if existing_row is not None:
+                    decision = _decision_from_row(existing_row)
+                    if decision.activated != activated or decision.reasons != reasons:
+                        raise BeliefRepositoryError(
+                            "stored activation decision conflicts with retry"
+                        )
+                    belief_row = connection.execute(
+                        "SELECT * FROM beliefs WHERE id = ?", (belief_id,)
+                    ).fetchone()
+                    if belief_row is None:
+                        raise BeliefRepositoryError(f"belief not found: {belief_id}")
+                    return _from_row(belief_row), decision
+
+                belief_row = connection.execute(
+                    "SELECT * FROM beliefs WHERE id = ?", (belief_id,)
+                ).fetchone()
+                if belief_row is None:
+                    raise BeliefRepositoryError(f"belief not found: {belief_id}")
+                candidate = _from_row(belief_row)
+                if candidate.status != "candidate":
+                    raise BeliefRepositoryError(
+                        f"activation requires candidate status, got {candidate.status}"
+                    )
+                now = _now()
+                if activated:
+                    competing = connection.execute(
+                        """
+                        SELECT id FROM beliefs
+                        WHERE subject = ? AND status = 'active' AND id != ?
+                        LIMIT 1
+                        """,
+                        (candidate.subject, candidate.supersedes or ""),
+                    ).fetchone()
+                    if competing is not None:
+                        raise BeliefRepositoryError(
+                            "active belief already exists for subject "
+                            f"{candidate.subject!r}: revise {competing['id']} instead"
+                        )
+                    connection.execute(
+                        "UPDATE beliefs SET status = 'active', updated_at = ? WHERE id = ?",
+                        (now, belief_id),
+                    )
+                    if candidate.supersedes:
+                        connection.execute(
+                            """
+                            UPDATE beliefs SET status = 'deprecated', updated_at = ?
+                            WHERE id = ? AND status = 'active'
+                            """,
+                            (now, candidate.supersedes),
+                        )
+                decision = BeliefActivationDecision(
+                    id=str(uuid4()),
+                    candidate_id=belief_id,
+                    activated=activated,
+                    reasons=reasons,
+                    occurred_at=occurred_at.isoformat(),
+                    created_at=now,
+                )
+                connection.execute(
+                    "INSERT INTO belief_activation_decisions VALUES (?, ?, ?, ?, ?, ?)",
+                    _decision_values(decision),
+                )
+                updated_row = connection.execute(
+                    "SELECT * FROM beliefs WHERE id = ?", (belief_id,)
+                ).fetchone()
+                if updated_row is None:
+                    raise BeliefRepositoryError(f"belief not found: {belief_id}")
+        except BeliefRepositoryError:
+            raise
+        except sqlite3.Error as error:
+            raise BeliefRepositoryError(
+                f"could not decide belief activation: {error}"
+            ) from error
+        return _from_row(updated_row), decision
+
+    def get_activation_decision(
+        self, belief_id: str
+    ) -> BeliefActivationDecision | None:
+        try:
+            with self._connect() as connection:
+                row = connection.execute(
+                    "SELECT * FROM belief_activation_decisions WHERE candidate_id = ?",
+                    (belief_id,),
+                ).fetchone()
+        except sqlite3.Error as error:
+            raise BeliefRepositoryError(
+                f"could not read belief activation decision: {error}"
+            ) from error
+        return _decision_from_row(row) if row is not None else None
+
+    def list_activation_decisions(
+        self, *, limit: int = 50
+    ) -> tuple[BeliefActivationDecision, ...]:
+        if limit < 1:
+            raise BeliefRepositoryError("activation decision limit must be positive")
+        try:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    "SELECT * FROM belief_activation_decisions "
+                    "ORDER BY created_at DESC, id DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        except sqlite3.Error as error:
+            raise BeliefRepositoryError(
+                f"could not list belief activation decisions: {error}"
+            ) from error
+        return tuple(_decision_from_row(row) for row in rows)
+
     def _initialize(self) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             with self._connect() as connection:
                 connection.execute(_CREATE_BELIEFS_TABLE)
+                connection.execute(_CREATE_ACTIVATION_DECISIONS_TABLE)
         except (OSError, sqlite3.Error) as error:
             raise BeliefRepositoryError(f"could not initialize belief storage: {error}") from error
 
@@ -224,6 +373,7 @@ class SqliteBeliefRepository:
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._path)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
 
@@ -305,6 +455,39 @@ def _from_row(row: sqlite3.Row) -> Belief:
     if not isinstance(evidence, list) or not all(isinstance(item, str) for item in evidence):
         raise BeliefRepositoryError("belief evidence must be a JSON string list")
     return Belief(evidence=tuple(evidence), **raw)
+
+
+def _decision_values(decision: BeliefActivationDecision) -> tuple[object, ...]:
+    return (
+        decision.id,
+        decision.candidate_id,
+        int(decision.activated),
+        json.dumps(decision.reasons, ensure_ascii=False),
+        decision.occurred_at,
+        decision.created_at,
+    )
+
+
+def _decision_from_row(row: sqlite3.Row) -> BeliefActivationDecision:
+    raw = dict(row)
+    try:
+        reasons = json.loads(raw.pop("reasons"))
+    except (TypeError, json.JSONDecodeError) as error:
+        raise BeliefRepositoryError(
+            "belief activation reasons are not valid JSON"
+        ) from error
+    if not isinstance(reasons, list) or not all(
+        isinstance(reason, str) for reason in reasons
+    ):
+        raise BeliefRepositoryError("belief activation reasons must be strings")
+    activated = raw.pop("activated")
+    if activated not in (0, 1):
+        raise BeliefRepositoryError("belief activation decision is invalid")
+    return BeliefActivationDecision(
+        activated=bool(activated),
+        reasons=tuple(reasons),
+        **raw,
+    )
 
 
 def _terms(text: str) -> set[str]:

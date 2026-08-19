@@ -1,0 +1,171 @@
+schema_version = 1
+current_phase = "foundation_recovery"
+active_issue = 113
+active_work = ["baseline_consolidation"]
+
+# These files define mission, current product target, maturity and the audit baseline.
+canonical_documents = [
+  "AGENTS.md",
+  "README.md",
+  "docs/winter-v1-goal.md",
+  "docs/v1-maturity-ledger.md",
+  "docs/roadmap.md",
+  "docs/project-audit-2026-08-19.md",
+]
+
+# The synchronized HTML comment in these documents is intentionally machine checked.
+# Free-form prose still requires human review in V0.
+status_documents = [
+  "README.md",
+  "docs/roadmap.md",
+  "docs/v1-maturity-ledger.md",
+]
+
+[[features]]
+id = "development_control_gate"
+maturity = "operational"
+evidence = [
+  "src/companion/project_control.py",
+  "tests/unit/test_project_control.py",
+  "docs/project-audit-2026-08-19.md",
+]
+dependencies = []
+sync_status = true
+
+[[features]]
+id = "baseline_consolidation"
+maturity = "contract"
+evidence = [
+  "docs/project-audit-2026-08-19.md",
+]
+dependencies = ["development_control_gate"]
+
+[[features]]
+id = "shared_core"
+maturity = "operational"
+evidence = [
+  "src/companion/core.py",
+  "tests/integration/test_shared_orchestration.py",
+]
+dependencies = []
+
+[[features]]
+id = "persistent_memory"
+maturity = "operational"
+evidence = [
+  "src/companion/memory.py",
+  "tests/unit/test_memory.py",
+]
+dependencies = ["shared_core"]
+
+[[features]]
+id = "phone_voice"
+maturity = "operational"
+evidence = [
+  "src/companion/web.py",
+  "tests/unit/test_web_voice_path.py",
+]
+dependencies = ["shared_core"]
+
+[[features]]
+id = "voice_identity"
+maturity = "operational"
+evidence = [
+  "docs/voice-path-decision.md",
+  "tests/unit/test_chatterbox_reference_compare.py",
+]
+dependencies = ["phone_voice"]
+
+[[features]]
+id = "codex_read_only_worker"
+maturity = "operational"
+evidence = [
+  "docs/adr/0014-explicit-read-only-codex-worker.md",
+  "tests/unit/test_worker_core.py",
+]
+dependencies = ["shared_core"]
+
+[[features]]
+id = "grounding"
+maturity = "shadow"
+evidence = [
+  "docs/grounding-policy.md",
+  "tests/unit/test_grounding.py",
+]
+dependencies = ["shared_core"]
+
+[[features]]
+id = "turn_understanding"
+maturity = "shadow"
+evidence = [
+  "docs/turn-understanding.md",
+  "tests/unit/test_turn_understanding.py",
+]
+dependencies = ["shared_core"]
+
+[[features]]
+id = "outcome_evaluator"
+maturity = "shadow"
+evidence = [
+  "docs/outcome-evaluator.md",
+  "tests/unit/test_outcome.py",
+]
+dependencies = ["turn_understanding"]
+
+[[features]]
+id = "background_maintenance"
+maturity = "shadow"
+evidence = [
+  "docs/maintenance-worker.md",
+  "tests/unit/test_maintenance_worker.py",
+]
+dependencies = ["turn_understanding", "outcome_evaluator"]
+
+[[features]]
+id = "lived_continuity"
+maturity = "shadow"
+evidence = [
+  "docs/day-reflection.md",
+  "tests/unit/test_lived_continuity.py",
+]
+dependencies = ["shared_core", "persistent_memory"]
+
+[[features]]
+id = "self_model"
+maturity = "contract"
+evidence = ["docs/self-model-design.md"]
+dependencies = ["shared_core"]
+sync_status = true
+
+[[features]]
+id = "capability_registry"
+maturity = "absent"
+evidence = []
+dependencies = ["self_model"]
+sync_status = true
+
+[[features]]
+id = "improvement_ledger"
+maturity = "absent"
+evidence = []
+dependencies = ["self_model", "capability_registry"]
+sync_status = true
+
+[[features]]
+id = "work_orchestration"
+maturity = "shadow"
+evidence = [
+  "docs/work-orchestration.md",
+  "tests/unit/test_work_orchestration.py",
+]
+dependencies = ["self_model", "capability_registry", "improvement_ledger"]
+sync_status = true
+
+[[features]]
+id = "worker_write"
+maturity = "shadow"
+evidence = [
+  "docs/adr/0020-fail-closed-change-adoption-and-rollback.md",
+  "tests/unit/test_change_adoption.py",
+]
+dependencies = ["work_orchestration", "capability_registry", "improvement_ledger"]

@@ -46,10 +46,10 @@ run_chat() {
   local needs_analysis_llm=0
   for argument in "$@"; do
     case "$argument" in
-      --review-outcomes|--outcome-audit|--review-memory-candidates|--companion-overview|--list-current-state-history)
+      --review-outcomes|--outcome-audit|--review-memory-candidates|--companion-overview|--list-current-state-history|--lived-continuity|--list-belief-reflection|--list-winter-days)
         needs_llm=0
         ;;
-      --analyze-pending-turns|--analyze-pending-outcomes|--reflect-history)
+      --analyze-pending-turns|--analyze-pending-outcomes|--reflect-history|--analyze-belief-reflection)
         needs_analysis_llm=1
         ;;
     esac
@@ -109,6 +109,36 @@ case "${1:-start}" in
     shift
     run_chat --list-current-state-history "$@"
     ;;
+  lived)
+    shift
+    run_chat --lived-continuity "$@"
+    ;;
+  viewpoints)
+    shift
+    run_chat --list-belief-reflection "$@"
+    ;;
+  viewpoint-shadow)
+    shift
+    run_chat --analyze-belief-reflection "$@"
+    ;;
+  days)
+    shift
+    run_chat --list-winter-days "$@"
+    ;;
+  day-close)
+    shift
+    run_chat --close-winter-day "$@"
+    ;;
+  project-check)
+    shift
+    find_python
+    exec env \
+      PYTHONPATH="$ROOT_DIR/src" \
+      "$PYTHON_BIN" -m companion.project_control \
+      --root "$ROOT_DIR" \
+      --state "$ROOT_DIR/project-state.toml" \
+      "$@"
+    ;;
   status)
     if curl -fsS --max-time 2 "${MODEL_URL%/}/health" >/dev/null; then
       echo "Orin LLM: ready ($MODEL_URL)"
@@ -121,7 +151,7 @@ case "${1:-start}" in
     "${COMPOSE[@]}" stop llm
     ;;
   *)
-    echo "Usage: ./winter {start|chat|voice|reflect|memories|overview|state|status|stop}" >&2
+    echo "Usage: ./winter {start|chat|voice|reflect|memories|overview|state|lived|days|day-close|viewpoints|viewpoint-shadow|project-check|status|stop}" >&2
     exit 2
     ;;
 esac

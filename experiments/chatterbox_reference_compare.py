@@ -21,14 +21,14 @@ import re
 import time
 from typing import Any
 
+from companion.chatterbox_conditioning import select_conditioning
+
 LANGUAGE = "ko"
 MODEL_VERSION = "v3"
 DEFAULT_CFG_WEIGHT = 0.3
 DEFAULT_EXAGGERATION = 0.5
 BASE_SEED = 240814
 VALID_ID = re.compile(r"^[a-z][a-z0-9_-]*$")
-
-
 def load_sentences(path: Path) -> list[tuple[str, str]]:
     sentences: list[tuple[str, str]] = []
     seen: set[str] = set()
@@ -144,9 +144,9 @@ def main() -> None:
         model, sentences, options.out, "__혼합-t3", options.cfg_weight, options.exaggeration
     )
 
-    gen_only = copy.deepcopy(default_conditions)
-    gen_only.gen = reference_conditions.gen
-    model.conds = gen_only
+    model.conds = select_conditioning(
+        default_conditions, reference_conditions, "s3gen-reference"
+    )
     print("[E] 기본 억양 + Reference S3Gen 음향 조건", flush=True)
     synthesize_set(
         model, sentences, options.out, "__혼합-gen", options.cfg_weight, options.exaggeration

@@ -1,0 +1,27 @@
+services:
+  sensevoice:
+    build:
+      context: .
+      dockerfile: Dockerfile.sensevoice
+    image: winter/sensevoice-server:0.1
+    restart: unless-stopped
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    command:
+      - --binary
+      - /runtime/llama-funasr-sensevoice
+      - --model
+      - /models/${SENSEVOICE_MODEL:-sensevoice-small-q8.gguf}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8095"
+    volumes:
+      - ${SENSEVOICE_RUNTIME_DIR:-./.cache/sensevoice/runtime}:/runtime:ro
+      - ${SENSEVOICE_MODEL_DIR:-./.cache/sensevoice}:/models:ro
+    ports:
+      - "127.0.0.1:8095:8095"
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,11 +1,21 @@
 from argparse import Namespace
+from datetime import datetime
 from io import StringIO
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from companion.adapters.sqlite_repository import SqliteConversationRepository
+from companion.belief_reflection import (
+    BeliefProposal,
+    SqliteBeliefProposalRepository,
+)
 from companion.beliefs import SqliteBeliefRepository
 from companion.cli.__main__ import run
 from companion.contracts import ConversationMessage
+from companion.day_reflection import (
+    DayReflectionPoint,
+    SqliteDayReflectionRepository,
+)
 from companion.memory import SqliteMemoryRepository
 from companion.outcome import OutcomeAssessment, SqliteOutcomeRepository
 from companion.reflection import SqliteReflectionRepository
@@ -14,6 +24,7 @@ from companion.turn_understanding import (
     SqliteTurnUnderstandingRepository,
     TurnInterpretationRequest,
 )
+from companion.winter_events import SqliteWinterEventRepository
 
 
 def test_cli_fake_backend_runs_one_turn() -> None:
@@ -26,6 +37,150 @@ def test_cli_fake_backend_runs_one_turn() -> None:
 
     assert exit_code == 0
     assert output.getvalue() == "Companion> fake: 안녕\n"
+
+
+def test_cli_shows_lived_continuity_without_loading_chat_model(
+    tmp_path: Path,
+) -> None:
+    events_path = tmp_path / "winter-events.sqlite"
+    beliefs_path = tmp_path / "beliefs.sqlite"
+    SqliteWinterEventRepository(events_path).record(
+        event_key="turn:one",
+        kind="conversation_turn",
+        subject="conversation:reciprocal_presence",
+        source="web",
+        occurred_at=datetime(2026, 8, 18, 8, tzinfo=ZoneInfo("Asia/Seoul")),
+    )
+    output = StringIO()
+
+    exit_code = run(
+        Namespace(
+            backend="local",
+            model_url="http://must-not-be-called",
+            prompt=None,
+            belief_db=beliefs_path,
+            winter_event_db=events_path,
+            lived_continuity=True,
+            winter_day="2026-08-18",
+        ),
+        stdout=output,
+    )
+
+    assert exit_code == 0
+    assert "겨울이의 2026-08-18" in output.getvalue()
+    assert "실제 사건: 1" in output.getvalue()
+
+
+def test_cli_never_writes_fake_viewpoint_analysis_to_real_store(
+    tmp_path: Path,
+) -> None:
+    output = StringIO()
+    database = tmp_path / "belief-reflection.sqlite"
+
+    exit_code = run(
+        Namespace(
+            backend="fake",
+            model_url="http://unused",
+            prompt=None,
+            belief_reflection_db=database,
+            analyze_belief_reflection=True,
+        ),
+        stdout=output,
+    )
+
+    assert exit_code == 2
+    assert "fake 결과는 실사용 DB에 기록하지 않습니다" in output.getvalue()
+    assert SqliteBeliefProposalRepository(database).list() == ()
+
+
+def test_cli_lists_shadow_viewpoint_without_loading_chat_model(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "belief-reflection.sqlite"
+    repository = SqliteBeliefProposalRepository(database)
+    repository.record(
+        window_id="window:one",
+        proposal=BeliefProposal(
+            subject="conversation:self_reciprocate",
+            stance="내 판단을 구체적으로 말한다",
+            rationale="후속 반응이 지지했다",
+            confidence=0.81,
+            evidence_event_ids=("event:one",),
+        ),
+        safe=True,
+        reason_codes=(),
+    )
+    output = StringIO()
+
+    exit_code = run(
+        Namespace(
+            backend="local",
+            model_url="http://must-not-be-called",
+            prompt=None,
+            belief_reflection_db=database,
+            list_belief_reflection=True,
+        ),
+        stdout=output,
+    )
+
+    assert exit_code == 0
+    assert "통과(Shadow)" in output.getvalue()
+    assert "내 판단을 구체적으로 말한다" in output.getvalue()
+
+
+def test_cli_lists_closed_winter_days_without_loading_chat_model(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "day-reflections.sqlite"
+    SqliteDayReflectionRepository(database).save(
+        local_date="2026-08-17",
+        input_fingerprint="fingerprint",
+        event_ids=("event-1",),
+        message_ids=(1, 2),
+        points=(
+            DayReflectionPoint(
+                "winter_reflection",
+                "해결을 서두르지 않고 먼저 들으려 했다.",
+                (1, 2),
+            ),
+        ),
+    )
+    output = StringIO()
+
+    exit_code = run(
+        Namespace(
+            backend="local",
+            model_url="http://must-not-be-called",
+            prompt=None,
+            day_reflection_db=database,
+            list_winter_days=True,
+        ),
+        stdout=output,
+    )
+
+    assert exit_code == 0
+    assert "겨울이의 2026-08-17" in output.getvalue()
+    assert "겨울이의 생각" in output.getvalue()
+
+
+def test_cli_never_closes_real_winter_day_with_fake_model(tmp_path: Path) -> None:
+    output = StringIO()
+    database = tmp_path / "day-reflections.sqlite"
+
+    exit_code = run(
+        Namespace(
+            backend="fake",
+            model_url="http://unused",
+            prompt=None,
+            day_reflection_db=database,
+            close_winter_day=True,
+        ),
+        stdout=output,
+    )
+
+    assert exit_code == 2
+    assert "fake 결과는 실사용 DB에 기록하지 않습니다" in output.getvalue()
+    assert SqliteDayReflectionRepository(database).list() == ()
 
 
 def test_cli_lists_current_state_history_without_a_model(tmp_path: Path) -> None:

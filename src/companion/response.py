@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from companion.maintenance import MaintenanceMode
+
 
 @dataclass(frozen=True)
 class ProsodyPlan:
@@ -35,3 +37,13 @@ class CompanionResponse:
     # The observer is deliberately non-operative. This id only makes a raw turn
     # traceable to its later Shadow analysis; no analysis field affects text.
     shadow_turn_id: str | None = None
+    # Internal maintenance never changes the visible reply in this turn. The
+    # marker makes the active safety gate auditable across every interface.
+    maintenance_mode: MaintenanceMode = MaintenanceMode.SHADOW
+    # Specialist output is visible and attributable. Winter never presents a
+    # failed or unrequested Worker call as her own successful work.
+    worker_name: str | None = None
+    worker_model: str | None = None
+    worker_evidence: tuple[str, ...] = ()
+    worker_limitations: tuple[str, ...] = ()
+    worker_error: bool = False

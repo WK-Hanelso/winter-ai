@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from companion.speech_segments import split_sentences
 
@@ -80,6 +81,37 @@ def evaluate(turns: tuple[EvaluatedTurn, ...]) -> tuple[EvaluationCheck, ...]:
             recall,
         )
     )
+    self_presence = by_label.get("self_presence")
+    if self_presence is not None:
+        checks.append(
+            EvaluationCheck(
+                "self presence: selected reciprocal behavior",
+                self_presence.behavior == "self_reciprocate",
+                self_presence.behavior,
+            )
+        )
+        checks.append(
+            EvaluationCheck(
+                "self presence: adds grounded first-person content",
+                bool(re.search(r"(?:^|[\s,])(나는|난|나도|내가|내\s)", self_presence.winter))
+                and not any(
+                    phrase in self_presence.winter
+                    for phrase in (
+                        "서로 힘내",
+                        "같이 힘내",
+                        "잘 지내자",
+                        "언제든지 말해",
+                        "힘든 걸",
+                        "어떻게 지내",
+                        "얘기해줄래",
+                        "말에 동의",
+                        "대단",
+                    )
+                )
+                and "?" not in self_presence.winter,
+                self_presence.winter,
+            )
+        )
     return tuple(checks)
 
 

@@ -1,591 +1,626 @@
 # winter-ai
 
-로컬 중심 Personal Companion을 만드는 프로젝트입니다. 같은 사용자의 대화,
-기억, 선호와 관계 맥락을 장기간 유지하면서 CLI와 Voice에서 하나의 정체성으로
-동작하는 것을 목표로 합니다.
+`winter-ai`는 한 명의 사용자 **천우**와 장기간 생활의 맥락을 이어 가는 로컬 중심
+Personal Companion, **겨울이**를 만드는 프로젝트다.
 
-Winter V1의 최상위 목표는 천우와의 대화에서 의도와 결과를 이해하고, 근거 있는 기억과
-자기 상태를 유지하며, 자신의 실제 한계와 개선 방향을 천우와 토론한 뒤 승인된 변경만
-격리된 Worker로 구현·검증·채택하는 **Level 3 공동 자기발전 Companion**입니다. 전체
-제품 계약과 완료 조건은 [Winter V1 Product Goal](docs/winter-v1-goal.md)을 따릅니다.
-각 기능의 현재 성숙도·검증 근거·남은 고도화 항목은
-[V1 Maturity Ledger](docs/v1-maturity-ledger.md)에 지속적으로 기록합니다.
+겨울이는 범용 Agent에 캐릭터를 씌운 제품이 아니다. 대화, 기억, 관계, 실제로 함께 겪은
+사건과 시간이 제품의 중심이고, 검색·개발·자동화 Worker는 그 관계를 지원하는 하위
+capability다. CLI와 폰 Voice는 서로 다른 겨울이가 아니라 같은 `CompanionCore`, Identity,
+Memory와 시간축을 공유한다.
 
-## 현재 상태
+최상위 제품 계약은 [Winter V1 목표](docs/winter-v1-goal.md), 개발·안전 규칙은
+[AGENTS.md](AGENTS.md), 기능별 실제 성숙도는
+[V1 Maturity Ledger](docs/v1-maturity-ledger.md)를 기준으로 한다.
 
-Milestone 0~2의 기반 구조, Identity와 명시적 Memory lifecycle에 더해 실제 local
-voice 수직 단면이 동작합니다. CLI와 폰 브라우저는 같은 `CompanionCore`, Identity와
-SQLite 대화를 사용합니다. 폰의 push-to-talk 녹음은 whisper.cpp STT를 거쳐 Qwen에
-전달되고, 답은 Chatterbox와 Seed-VC가 문장 단위 WAV로 만들어 SSE로 돌려줍니다.
-대화 모델은 Orin의 local llama-server를 SSH loopback tunnel로 사용하며 외부 상용
-모델 API를 호출하지 않습니다.
+개발 단계와 선행조건의 기계 판독 기준은 [`project-state.toml`](project-state.toml)이다.
+새 기능을 시작하거나 상태를 바꾸기 전후에 `./winter project-check`를 실행한다. 이 검사가
+실패하면 새 기능을 확장하지 않고 Issue·근거·문서 상태부터 바로잡는다.
 
-`나는 … 좋아해`, `내 생일은 …이야`처럼 사용자가 직접 단정한 안정적인 진술은
-`기억해`가 없어도 즉시 active Memory가 됩니다. 명시적 `기억해` 요청도 저장과 승인을
-함께 한 것으로 처리합니다. 순간 상태·질문·추측·제3자 사실과 모델이 추론한 내용은
-자동 활성화하지 않습니다. 수정 이력, 논리적 폐기, 명시적 물리 삭제를 지원합니다.
-M2의 수직 단면 검증 결과와 알려진 한계는
-[M2 검증 문서](docs/milestone-2-validation.md)에 기록합니다.
+<!-- winter-project-state: capability_registry=absent, development_control_gate=operational, improvement_ledger=absent, self_model=contract, work_orchestration=shadow -->
 
-Voice Identity 0.1은 Python config의 `neutral`, `calm`, `warm`, `serious` Prosody
-profile로 시작합니다. 이는 실제 음색 모델과 분리된 말하기 계획이며, 설계 초안은
-[Voice 설계 문서](docs/voice-design.md)에 기록합니다.
+## 1. 겨울이는 무엇인가
 
-V1의 `TurnUnderstanding Shadow Mode` 수직 단면이 구현되어, 응답과 Memory를 바꾸지
-않고 의도·감정·시간 범위·기억 및 개선 신호를 별도 SQLite에 구조화해 기록하고 Orin
-local LLM으로 사후 분석할 수 있습니다. 10개 held-out 장면의 첫 평가는 5/10으로
-activation gate를 통과하지 못했으므로 결과는 여전히 답변·Memory에 주입하지 않습니다.
-설계와 사용법은 [TurnUnderstanding 문서](docs/turn-understanding.md), 측정 결과는
-[held-out evaluation](docs/turn-understanding-evaluation.md)을 따릅니다. Voice 연구
-track의 현재 단계는 [Milestone 4 — Human Reference Baseline](https://github.com/WK-Hanelso/winter-ai/issues/66)입니다.
-실제 한 사람의 대화 맥락, 말투, 분위기와 목소리를 같은 시간축에 정렬하고, CLI와 Voice가
-공유할 수 있는 행동 기준선을 먼저 검증합니다. CLI는 shared lexical response를 표시하고,
-Voice는 동일한 text와 delivery plan을 local TTS로 실현합니다. 결합 기준 설계 #67은
-완료됐고 Reference 선정 기준 #69와
-[외장 storage 계약 #71](https://github.com/WK-Hanelso/winter-ai/issues/71)도 확정했습니다.
-멀티모달 장면 schema #73도 완료해 맥락·전후 분위기·원문/정규화 문장·음성 전달을
-source-relative 시간축에 정렬하고 검증할 수 있습니다. Reference 원본과 파생 데이터는
-승인된 외장 storage에만 있으며 Git에서 제외됩니다. 실제 corpus 채굴과 정제를 거쳐
-89.4분의 Seed-VC 학습까지 완료했지만, F0 없는 변환이 억양을 누르는 것으로 측정되어
-추가 학습은 중단했습니다. 현재 voice 경로의 비교와 다음 결정은
-[Voice path decision gate](docs/voice-path-decision.md)에 기록합니다.
-구조, 데이터 경계와 학습 decision gate는
-[Human Reference 설계](docs/human-reference-design.md), [ADR-0002](docs/adr/0002-coupled-human-reference-baseline.md),
-[선정 기준](docs/reference-human-selection.md), [외장 storage](docs/reference-data-storage.md),
-[장면 schema](docs/reference-scene-schema.md), [roadmap](docs/roadmap.md)에 기록합니다.
+겨울이가 제공하려는 경험은 다음과 같다.
 
-## 겨울이 시작하기
+- 프로그램을 껐다 켜도 같은 존재와 대화하는 느낌이 유지된다.
+- 천우가 별도 관리 작업을 하지 않아도 평소 대화가 기록과 내부 분석으로 이어진다.
+- 천우에 대한 사실과 겨울이 자신의 관점을 구분한다.
+- 지금 가능한 능력과 불가능한 능력을 실제 runtime 근거로 설명한다.
+- 과거 결정, 실패, 정정과 미완성 이야기를 다음 날에도 이어 간다.
+- 음성은 단순 낭독이 아니라 동일한 정체성과 말하기 행동의 출력이다.
+- 반복되는 한계는 천우와 토론하고, 승인된 변경만 Worker가 격리 구현한다.
 
-Orin의 llama-server와 `scripts/orin-tunnel.sh`가 실행 중이면 아래 명령으로
-시작합니다. 대화·기억·Identity는 모두 Host의 `data/`에 지속 저장됩니다. `start`는
-기본 터널 주소 `http://127.0.0.1:18080`의 health 확인을 마친 뒤 겨울이 CLI를
-엽니다.
+다음은 겨울이가 아니다.
+
+- 모든 요청을 수행하는 범용 자율 Agent
+- system prompt 한 장으로 흉내 낸 캐릭터
+- 모든 대화를 사실로 저장하는 Vector DB 챗봇
+- 화면 밖에서 보내지 않은 하루나 감정을 꾸며 내는 역할극
+- 사용자 승인 없이 자기 코드·Identity·권한을 바꾸는 시스템
+
+V1의 목표 자율성은 **Level 3 — 천우가 승인한 변경만 Worker가 구현하고, 검증과 별도 채택
+승인을 거쳐 실제 능력이 되는 수준**이다.
+
+## 2. 지금 실제로 가능한 것
+
+| 영역 | 현재 상태 | 실제 가능한 범위 | 핵심 한계 |
+| --- | --- | --- | --- |
+| CLI 대화 | 운영 | Local LLM과 지속 대화, 모든 SQLite 상태 공유 | 장시간 자유 대화 평가는 부족 |
+| Phone Web/Voice | 제한 운영 | push-to-talk → STT → Core → 문장 단위 음성 재생 | VAD·barge-in 없음, STT와 음질 미성숙 |
+| Conversation | 운영 | CLI·Web·Voice 원문을 하나의 DB에 순서대로 보존 | 전체 원문을 매 turn prompt에 넣지 않음 |
+| Direct Memory | 운영 | 명시적 `기억해`, 안정적인 직접 진술 저장·수정 이력 | 추론형 자동 기억은 gate 실패로 미연결 |
+| Current State | 검토형 | 현재 상태와 과거 상태 Timeline 유지 | Local 분석 정확도가 activation gate 미달 |
+| Open Loop | 운영 | 나중에 이어갈 주제와 재시작 callback | 간접 약속·자동 완료 판정 부족 |
+| TurnUnderstanding | Shadow | 의도·감정·시간 범위·제안 구조 기록 | held-out 5/10, 응답과 Memory에 미연결 |
+| OutcomeEvaluator | Shadow | 이전 답변과 다음 천우 반응을 연결해 평가 | locked 18/30, background 운영 미배포 |
+| Grounded Self-Presence | 제한 운영 | 직접 초대받은 턴에서 겨울이 쪽 판단·가치·반응 표현 | 사람 판정 4/12, 완성된 자아가 아님 |
+| Winter Event/Day | turn 기록 운영 | 실제 turn을 한국 시간의 겨울이 하루로 기록 | 기존 대화 소급 없음, event 종류 확장 중 |
+| Winter Belief | manual 운영 / autonomous Shadow | 근거·수정 이력, 저위험 자동 activation 계약 | LLM 후보와 activator 운영 연결 전 |
+| Voice Identity | 제한 운영 | Chatterbox S3Gen Reference 직접 합성 | 사람으로 착각할 자연스러움에 미달 |
+| Worker | read-only 제한 운영 + write Shadow | 명시적으로 부른 Codex 분석. 별도 합성 경로에서는 승인 파일만 격리 수정·독립 검증하고, exact patch 설명·채택·실제 적용·rollback 상태를 SQLite에 보존 | write Shadow는 대화·실제 Winter 검증 profile에 미연결, 실제 작업 평가 없음 |
+| Winter Work Orchestration | Shadow, semantic activation 실패 | V2.1 계약, Qwen 14B·30B-A3B와 Gemma 12B·27B semantic-v2, typed Codex provider. shell/web 없는 MCP로 목록·검색·텍스트 읽기만 허용하고 stable evidence/audit 검증 | 네 후보 모두 ambiguity 0/3·review assessment 3/6. Qwen 30B 46/66, Gemma 27B 44/66·27초로 크기 확대도 실패. synthetic live 1건뿐이며 기존 Codex V0와 현재 답변에는 미연결 |
+
+“구현됨”과 “완성됨”은 다르다. 단일 테스트나 한 번의 성공으로 성숙도를 올리지 않으며,
+실패한 평가도 [Maturity Ledger](docs/v1-maturity-ledger.md)에 기준선으로 남긴다.
+
+## 3. 천우가 사용하는 방식
+
+정상 사용에서 천우가 하는 일은 **겨울이와 대화하는 것뿐**이다.
+
+```text
+천우가 말한다
+→ 겨울이가 현재 대화·기억·미완성 이야기를 참고해 답한다
+→ 대화와 실제 사건이 자동 저장된다
+→ 응답과 분리된 Shadow 분석이 의도·결과·후보를 관찰한다
+→ 확실한 직접 정보만 승인된 정책으로 최신화한다
+→ 애매한 내용은 겨울이가 이후 대화에서 자연스럽게 확인한다
+```
+
+`overview`, `reflect`, `memories`, `lived` 같은 명령은 개발·audit·복구 도구다. 천우의
+일상 사용 조건이 아니다.
+
+### Text CLI
+
+Orin llama-server와 SSH tunnel이 실행 중일 때:
 
 ```bash
 ./winter start
 ```
 
-다른 local llama-server를 의도적으로 시험할 때만 `.env`의
-`WINTER_LLM_URL`을 바꿉니다. Host에서 Python 3.11을 자동으로 찾지 못하면
-`WINTER_PYTHON`에 실행 파일 경로를 지정합니다. Compose로 띄우는 구형 로컬
-llama-server의 모델 경로 설정은 `.env.example`에 별도로 남겨 두었습니다.
-
-개발 중 모델 없이 화면 흐름만 확인하려면 `--backend fake`를 명시합니다.
+이미 실행 환경이 준비된 상태에서 다시 대화하려면:
 
 ```bash
-docker compose run --rm dev python -m companion.user_cli --backend fake
+./winter chat
 ```
 
-이미 실행 중인 겨울이에 다시 연결하려면 `./winter chat`, 상태 확인은
-`./winter status`를 사용합니다. `./winter stop`은 비교용 legacy PC llama-server만
-멈추며, 실제 Orin server와 SSH tunnel은 각 Host의 service로 관리합니다.
-
-겨울이의 대답을 소리로 들으려면 `./winter voice`를 사용합니다. 타자로 묻고
-음성으로 듣는 디버그 경로입니다. 마이크 입력은 폰 브라우저의 push-to-talk 웹
-인터페이스에 구현되어 있으며 whisper.cpp 서버와 동일한 Core를 사용합니다.
+Codex 읽기 전용 Worker를 함께 켜려면 다음처럼 시작한다. 일반 대화는 외부로 보내지 않으며,
+`코덱스로 이 코드 원인을 분석해줘`처럼 Worker 이름과 작업을 함께 말한 턴만 위임된다.
 
 ```bash
-./winter voice                      # 대화
-./winter voice --say "안녕" --no-play  # 한 문장만, 재생 없이 wav로
+./winter chat \
+  --codex-worker \
+  --codex-executable /home/hanelso/.nvm/versions/node/v20.20.2/bin/codex
 ```
 
-`voice`만은 다른 명령과 달리 dev container가 아닌 **Host에서** 실행됩니다.
-합성이 `docker run`을, 재생이 Host 사운드 장치를 필요로 하기 때문입니다. text CLI와
-마찬가지로 기본 `WINTER_LLM_URL=http://127.0.0.1:18080`의 Orin SSH tunnel을 사용하고,
-대화·기억·Open Loop·TurnUnderstanding도 같은 Host `data/`를 사용합니다.
-자세한 구조와 시행착오는 [음성 출력 경로](docs/voice-path.md)에 있습니다.
+Codex 결과는 `answer / evidence / limitations`로 검증되고 겨울이가 출처를 밝힌 뒤
+Conversation DB에 같은 응답으로 저장한다. 실패하면 Local LLM으로 몰래 바꾸지 않는다.
 
-## 과거 대화를 실제 기억으로 정리하기
+현재 이 Codex 경로는 V0다. Worker 결과를 겨울이 말투로 직접 전달하는 수준을 넘어서기 위해
+다음 Shadow 경로를 구현했지만 아직 운영 답변에는 연결하지 않았다.
 
-대화 원문 저장과 장기 기억은 서로 다른 단계입니다. 모든 CLI·Web 대화 원문은
-`conversations.sqlite`에 보존하지만, 겨울이가 다음 대화에 사용할 장기 기억은 별도의
-검토를 통과해야 합니다.
+```text
+천우의 말
+→ 같은 Winter Core Model이 목적·완료 기준·비공개 경계를 정리
+→ Worker에는 필요한 작업 문서만 전달
+→ Worker의 주장·근거·검사 결과를 보고서로 수신
+→ 같은 Winter Core Model이 완료/재작업/천우 확인을 판단
+→ 겨울이의 결론으로 대화
+```
+
+Worker 이름을 고르고 보고서를 그대로 중계하는 주체는 천우가 아니라 겨울이다. 다만 V0의
+권한은 계속 project read-only이며, 모델별 held-out 평가를 통과하기 전에는 실제 요청을 이
+경로로 자동 전환하지 않는다. 상세 계약과 gate는
+[Winter-owned Work Orchestration](docs/work-orchestration.md)에 있다.
+
+새 Orchestration용 typed gateway는 arbitrary shell을 주지 않고 `list_files`,
+`search_text`, `read_text`만 제공하며 network/write와 project 밖 경로를 구조적으로
+거부한다. 새 Shadow provider adapter는 Codex 부모의 인증/API 통신과 모델이 보는 MCP
+도구를 분리하고, MCP를 빈 environment로 시작한다. synthetic gpt-5.4 1건에서 목록·읽기와
+발급 근거 검증까지 성공했지만 공격 suite·실제 20 task 전이므로 기존 사용자-facing Codex
+route에는 연결하지 않았다.
+
+실제 수정 능력의 첫 Shadow 수직 단면도 분리해서 구현했다.
+
+```text
+구현 승인 + 정확한 파일/line 범위
+→ 개인정보 없는 baseline과 writable copy
+→ Codex가 copy 안에서 수정·로컬 테스트
+→ Winter가 network·HOME 없는 sandbox에서 독립 unittest·Python 구조를 재검증
+→ 실제 diff·검증 범위·한계를 Winter 설명으로 구성
+→ source는 건드리지 않고 patch와 설명을 SQLite에 보존
+→ 천우의 채택/재작업 결정을 exact patch hash에 묶어 기록
+→ 채택 뒤 대상 파일이 그대로일 때만 임시 파일 교체로 적용
+→ 적용 전 bytes를 보존하고, 실패 또는 rollback 때 복원
+```
+
+합성 산술 버그에서 한 줄 교체, Codex 내부 unittest 2개, host 재검증 2개와 중복 정의 검사를
+통과했고 원본은 그대로였다. process 재시작 뒤에도 같은 patch·설명·상태가 남으며, 천우의
+`적용해`/`다시 고쳐줘` 결정도 기록할 수 있다. 채택된 patch는 대상 파일의 exact baseline이
+같을 때 실제 적용되고, 적용 후 새 편집이 없으면 재시작 뒤에도 rollback할 수 있다. 합성
+실제 probe에서 적용과 원본 복원을 완주했다. 다만 아직 일반 대화에서 이 경로를 호출하지
+않고 실제 Winter 전체 검증 profile도 없다. 따라서 현재 폰에서 “고쳐줘”라고 말하면 이
+경로가 실행되는 상태는 아니다. 격리 경계는 [ADR-0018](docs/adr/0018-isolated-codex-implementation-proposal.md),
+설명·영속화는 [ADR-0019](docs/adr/0019-persist-and-explain-change-proposals.md), 적용·rollback은
+[ADR-0020](docs/adr/0020-fail-closed-change-adoption-and-rollback.md)을 따른다.
+
+기본 Local LLM 주소는 `http://127.0.0.1:18080`이다. 다른 주소는 `.env`의
+`WINTER_LLM_URL`로 명시한다. Local 모델이 실패해도 fake 답변으로 몰래 전환하지 않는다.
+
+### Phone Web/Voice
+
+폰 브라우저에서 버튼을 누르고 말하면 다음 경로가 동작한다.
+
+```text
+이어폰/폰 마이크
+→ Browser MediaRecorder
+→ WebM/Opus upload
+→ 16 kHz mono WAV 변환
+→ SenseVoice STT
+→ 같은 CompanionCore
+→ Local LLM streaming response
+→ Chatterbox S3Gen direct voice
+→ SSE 문장 단위 전송
+→ 폰/이어폰 재생
+```
+
+Web은 user systemd service로 실행한다.
 
 ```bash
-./winter overview   # 원문, 분석 대기, 기억 후보와 활성 기억 수 확인
-./winter memories   # 실제 원문 근거를 읽고 승인·수정·거절
+systemctl --user status winter-web.service
+curl http://127.0.0.1:8000/health
 ```
 
-과거 대화 정리는 최근 맥락과 현재 사용자 발화를 local LLM으로 읽고, 몇 주 뒤 다른
-대화에서도 유효한 사실·선호·결정·프로젝트·지원 방식만 후보로 제안합니다. 후보 본문은
-모델이 다시 써낸 요약이 아니라 사용자가 실제로 말한 원문입니다. 따라서 모델이 없는
-사실을 기억 문장에 끼워 넣을 수 없고, 후보는 사용자가 승인하기 전까지 답변에
-주입되지 않습니다.
+서비스 기준 파일은 [deploy/systemd/winter-web.service](deploy/systemd/winter-web.service)다.
+폰 외부 접속의 HTTPS는 Tailscale 경로를 사용하며 공개 인터넷에 인증 없는 포트를 열지
+않는다.
 
-승인된 정보 중 `current_state:*`는 안정적인 프로필과 분리됩니다. 예를 들어 현재의
-멘탈, 건강, 업무 스트레스는 겨울이가 대화에서 참고하지만 천우의 영구 성격으로
-취급하지 않습니다. 같은 topic의 새 상태를 확인하면 이전 값은 `deprecated`가 되고
-최신 값 하나만 사용됩니다.
+## 4. 전체 동작 구조
 
-현재 상태와 이전 상태의 Timeline은 모델 없이 확인할 수 있습니다.
+```text
+┌──────────────── Interfaces ────────────────┐
+│ CLI                 Phone Web / Voice      │
+│ text                 mic, transcript, SSE  │
+└───────────────┬───────────────┬────────────┘
+                └───────┬───────┘
+                        ▼
+                ┌ CompanionCore ┐
+                │ Identity      │
+                │ Context       │
+                │ Memory recall │
+                │ Dialogue plan │
+                │ Local LLM     │
+                │ Review/repair │
+                │ Worker route  │
+                └───────┬───────┘
+                        │
+     ┌────────────┬────────────┬────────────┬────────────┐
+     ▼            ▼            ▼            ▼
+ SQLite state  Shadow       Voice        Read-only Worker
+ Conversation  Turn         Prosody      explicit opt-in
+ Memory        Outcome      Chatterbox   Codex → evidence
+ Belief        Reflection   SSE player   + limitations
+ Open Loop
+ Winter Event
+```
+
+Domain/Core는 llama.cpp, SenseVoice, Chatterbox 같은 구체 runtime을 직접 import하지 않는다.
+Port/Adapter 경계로 모델을 교체하며 CLI와 Voice는 반드시 같은 Core를 사용한다.
+
+### 한 번의 text turn 내부 순서
+
+1. 사용자 원문을 Conversation DB에 저장한다.
+2. 명시적 Memory, 안정적인 직접 진술과 Open Loop를 deterministic 정책으로 확인한다.
+3. 관련 active Memory, Current State, Belief, 과거 turn과 Open Loop를 조회한다.
+4. `DialogueDirector`가 `listen`, `state_view`, `self_reciprocate` 같은 대화 행동을 고른다.
+5. Identity → Memory → Belief → recall → style → grounding 순으로 context를 만든다.
+6. Local LLM이 답하고 `ResponseReviewer`가 관찰 가능한 실패를 한 번만 repair한다.
+7. 최종 답변을 저장하고 사용자에게 반환한다.
+8. 완료 turn을 privacy-minimal `Winter Event`로 기록한다.
+9. TurnUnderstanding과 Outcome queue는 응답을 막지 않는 Shadow 경로에 남긴다.
+
+### Voice turn의 차이
+
+Voice는 text turn 앞에 STT가, 뒤에 TTS가 붙을 뿐 의미 응답을 다시 작성하지 않는다.
+CLI에 보이는 lexical response와 Voice가 말하는 문장은 동일해야 한다. `ProsodyPlan`은
+감정·속도·에너지·pitch 계약을 제공하지만 현재 TTS가 모든 값을 완전히 실현하지는 못한다.
+
+## 5. 지속 상태와 소유권
+
+서로 다른 종류의 정보를 한 저장소나 prompt에 섞지 않는다.
+
+| 상태 | 뜻 | 변경 주체와 규칙 |
+| --- | --- | --- |
+| Core Identity | 이름·역할·가치·관계 경계 | 천우 승인 없이 자동 변경 금지 |
+| Conversation | 실제 대화 원문 | append-only 기록, 사용자 조회 가능 |
+| User Memory | 천우에 대한 사실·선호·결정 | 직접 진술 또는 검토된 후보만 active |
+| Current State | 요즘의 멘탈·회사·운동 등 변화 가능한 상태 | 최신 값 사용, 이전 값은 History 보존 |
+| Open Loop | 나중에 이어갈 이야기 | 해결·dismiss 전까지 지속 |
+| Winter Belief | 겨울이 자신의 수정 가능한 판단 | 근거·confidence·반증·revision 필수 |
+| Winter Event | 실제로 발생한 대화·평가·결정 | immutable 사실, 해석은 별도 |
+| Capability | 실제 할 수 있는 기능 | health·test·채택 근거 없이는 available 금지 |
+| Improvement | 문제→제안→구현→채택 과정 | 천우 승인과 rollback 필요 |
+
+기본 Host 데이터 경로는 `data/`이며 Git에서 제외된다.
+
+| 파일 | 내용 |
+| --- | --- |
+| `identity.json` | 개인 Core Identity |
+| `conversations.sqlite` | CLI·Web·Voice 대화 원문 |
+| `memories.sqlite` | 사용자 Memory와 Current State History |
+| `beliefs.sqlite` | Winter Belief와 원자적 activation audit |
+| `dialogue_state.sqlite` | Open Loop |
+| `turn_understanding.sqlite` | Shadow turn 분석 |
+| `outcomes.sqlite` | 이전 답변과 다음 반응의 Shadow 결과 |
+| `reflection.sqlite` | 과거 대화 Memory 후보 |
+| `belief_reflection.sqlite` | Winter Belief의 Shadow proposal와 safety 결과 |
+| `day_reflections.sqlite` | 실제 하루를 다음 대화로 잇는 근거 기반 회고 |
+| `winter_events.sqlite` | 겨울이의 실제 사건과 날짜별 시간축 |
+| `voice_latency-*.sqlite` | 원문 없는 Voice 구간 latency |
+
+## 6. Memory가 동작하는 방식
+
+### 즉시 저장 가능한 것
+
+- `기억해. 나는 Python config를 선호해` 같은 명시적 저장 요청
+- `나는 결론부터 듣는 설명을 좋아해` 같은 안정적인 1인칭 직접 진술
+- `우리는 SQLite로 하기로 했어` 같은 직접 결정
+
+질문, 추측, 제3자 사실, `오늘/지금`의 순간 상태는 안정 Memory로 자동 저장하지 않는다.
+
+### Current State와 History
+
+운동, 멘탈, 회사 스트레스처럼 현재 달라질 수 있는 정보는 영구 성격과 분리한다. 같은
+topic의 새 상태가 승인되면 이전 active 값은 `deprecated`가 되고 History로 남는다.
+평범한 대화에는 최신 값만 사용하며 변화를 물을 때만 과거 값을 함께 조회한다.
 
 ```bash
 ./winter state
 ```
 
-평범한 대화에는 최신 상태만 전달합니다. “예전과 지금 내 마음 상태가 어떻게 달라?”처럼
-상태 변화를 묻는 대화에만 과거 값을 함께 전달하며, 천우가 직접 말하지 않은 변화의
-원인은 추측하지 않도록 제한합니다.
+### Reflection
 
-기억 정리 분석은 대화용 Orin을 자동으로 사용하지 않습니다. 실제 부하에서 Orin 보드가
-재부팅된 기록이 있으므로, 안전한 별도 local llama-server를 준비한 경우에만 실행합니다.
+Local LLM Reflection은 과거 문맥에서 장기 후보를 찾지만 원문 evidence를 시스템이 고정하고,
+별도 verifier가 직접성·지속성·현재 상태 grounding을 확인한다. 현재 held-out gate에
+실패했으므로 자동 반영하지 않는다. 분석용 LLM은 대화용 Orin을 자동 재사용하지 않는다.
 
 ```bash
 WINTER_ANALYSIS_LLM_URL=http://127.0.0.1:18081 ./winter reflect
+./winter memories
+./winter overview
 ```
 
-현재 구조, 검증 결과와 남은 한계는
-[대화 기억 복구 설계](docs/reflection-memory.md)에 기록합니다.
+## 7. 겨울이의 하루와 자율 관점
 
-초기 Local LLM은 Qwen3-4B-Instruct-2507 Q4_K_M으로 검증했습니다. 현재 실제 Orin
-endpoint는 `A.X-4.0-Light-Q4_K_M.gguf`, context 4096으로 확인했습니다. Host에는 인증
-없는 원격 포트를 열지 않고 SSH tunnel의 loopback 주소만 사용합니다. 정확한 모델
-출처·해시·성능은
-[모델 선정 문서](docs/model-selection.md)에 기록합니다.
+겨울이의 하루는 생성형 일기가 아니다. 한국 시간 안에서 실제로 발생한 다음 사건의
+집합이다.
 
-한국어 STT는 whisper.cpp 서버로 동작합니다. 브라우저의 WebM/Opus는 웹 계층에서
-16 kHz mono PCM WAV로 변환한 뒤 전사합니다. 실제 폰 녹음에서 이 변환이 없으면
-whisper-server가 HTTP 400을 반환하므로 우회하지 않습니다.
+- CLI·Web·Voice 대화 참여
+- 답변에 대한 후속 결과
+- 평가 성공과 실패
+- 실제 결정과 관점 revision
+- 검증·채택된 capability
 
-한국어 TTS의 현재 stage 1은 Chatterbox Multilingual V3, stage 2는 학습한 Seed-VC입니다.
-89.4분 학습 모델도 억양을 충분히 보존하지 못해 F0-conditioned 대체 경로를 검증 중이며,
-천우의 청취 판정 전에는 운영 기본값을 변경하지 않습니다.
+대화가 없던 시간에 한 활동, 몸의 경험, 감정이나 기억을 만들지 않는다. 기존 대화를 오늘
+일로 소급하지도 않는다.
 
-CPU 개발 환경을 기본값으로 두고, GPU와 Voice 장치는 명시적인 Compose overlay에서만
-전달합니다. 선택 근거는 [ADR-0001](docs/adr/0001-docker-development-baseline.md)에
-있습니다.
-
-## 개발 원칙
-
-- Docker-first: 애플리케이션과 의존성은 컨테이너에서 실행합니다.
-- Local-first: 초기 대화 기능은 외부 상용 LLM API에 의존하지 않습니다.
-- Shared Core: CLI와 Voice는 하나의 `CompanionCore`를 공유합니다.
-- Coupled Reference: Human Reference의 context, 말투, 분위기와 음성을 함께 정렬합니다.
-- Offline tests: 기본 테스트는 인터넷, GPU, 마이크, 모델 가중치, API 키 없이 실행됩니다.
-- Privacy: 원본 영상·음성·자막, Reference corpus, 대화 DB, 모델 파일과 비밀 정보는 Git에 저장하지 않습니다.
-
-Host와 Container의 책임, 조사된 환경 사양, 재확인해야 할 항목은
-[환경 기준 문서](docs/environment.md)에 기록합니다.
-
-## 작업 방식
-
-모든 작업은 GitHub Issue로 시작하며, 기능·버그·조사·설계 결정을 동일한
-상태 전이 형식으로 기록합니다. 원격 저장소에 push하기 전에는 README가 변경된
-프로젝트 상태와 사용 방법을 정확히 반영하는지 확인합니다.
-
-세부 제품·아키텍처·개발 규칙은 [AGENTS.md](AGENTS.md)를 기준으로 합니다.
-
-## Companion Identity
-
-Companion의 이름·역할·핵심 성격·가치관·관계 원칙·변경 불가 경계는 model prompt와
-분리된 JSON Identity로 관리합니다. 파일은 개인 설정이므로 `data/` 아래에 두며 Git에
-넣지 않습니다. 현재 초기 이름은 **겨울이**이며, 그 밖의 Core Persona는 사용자 승인
-없이 자동 변경하지 않습니다. 형식은 [Identity 문서](docs/identity.md)를 따릅니다.
+개발자는 원문을 읽지 않고 다음처럼 상태를 확인할 수 있다.
 
 ```bash
-docker compose run --rm dev python -m companion.cli \
-  --identity-path /workspace/data/identity.json --show-identity
+./winter lived
+./winter lived --winter-day 2026-08-17
+./winter days
+./winter viewpoints
 ```
 
-## Explicit Memory lifecycle
+### 하루가 다음 날로 이어지는 방식
 
-일반 대화는 자동으로 영구 사실이 되지 않습니다. 관리 명령으로 추가한 항목은 처음
-`candidate`가 되고, 검토 뒤 `approved`, 그 다음 `active`로 전이합니다.
+매일 04:10(한국 시간)에 작은 oneshot 작업이 끝난 실제 하루 하나를 정리한다. 천우가 할
+일은 없다. 그날 실제 양방향 대화와 Winter Event가 모두 없으면 아무것도 만들지 않는다.
 
-```bash
-docker compose run --rm dev python -m companion.cli \
-  --memory-db /workspace/data/memories.sqlite \
-  --memory-add "천우가 명시적으로 기억해 달라고 한 내용"
-
-docker compose run --rm dev python -m companion.cli \
-  --memory-db /workspace/data/memories.sqlite --memory-approve <memory-id>
-
-docker compose run --rm dev python -m companion.cli \
-  --memory-db /workspace/data/memories.sqlite --memory-activate <memory-id>
+```text
+함께한 일 / 천우 변화 관찰 / 이어갈 이야기 / 겨울이의 생각 / 다음 대화 단서
 ```
 
-기억의 내용을 바꿀 때는 기존 행을 덮어쓰지 않습니다. `--memory-replace`는 새
-`candidate`를 만들고 기존 기억의 ID를 `supersedes`로 기록합니다. 새 항목이
-`active`가 되는 순간에만 기존 active 항목을 `deprecated`로 전환하므로, 검토 중인
-수정 때문에 현재 기억을 잃지 않습니다.
+각 종류는 최대 하나이며 모든 문장은 같은 날의 conversation message id를 근거로 가진다.
+저장된 회고는 다음 CLI·Web·Voice가 공통으로 읽지만, 영구 사실이 아니라 수정 가능한
+지난날 회고로 표시된다. 현재 천우의 말과 충돌하면 현재 말을 우선한다. Day Reflection은
+Memory·Belief·Capability를 자동 활성화하지 않는다.
 
-```bash
-docker compose run --rm dev python -m companion.cli \
-  --memory-db /workspace/data/memories.sqlite \
-  --memory-replace <memory-id> "수정할 내용"
+현재 과거 대화에는 Winter Event가 없으므로 소급해 겨울이의 하루로 꾸미지 않는다. 첫
+실제 결과는 새 Event가 기록된 하루가 끝난 다음 생성된다. 자세한 경계는
+[Day Reflection](docs/day-reflection.md)과 [ADR-0013](docs/adr/0013-daily-continuity-before-autonomous-analysis.md)에 있다.
 
-docker compose run --rm dev python -m companion.cli \
-  --memory-db /workspace/data/memories.sqlite --memory-deprecate <memory-id>
+### Winter Belief lifecycle
 
-docker compose run --rm dev python -m companion.cli \
-  --memory-db /workspace/data/memories.sqlite --list-memories
+```text
+actual events
+→ local LLM proposal (Shadow)
+→ independent semantic safety review (Shadow)
+→ activation policy
+→ active
+→ counterevidence / revision
+→ deprecated history
 ```
 
-`deprecated`는 이력 보존을 위한 논리적 삭제입니다. 완전히 제거하려면 목록에서 ID를
-확인한 뒤 아래처럼 명시적으로 삭제합니다. 다른 Memory가 해당 ID를 `supersedes`로
-참조하면 이력 보호를 위해 삭제가 거부됩니다.
+자동 activation 정책은 다음을 모두 요구한다.
+
+- `conversation:`, `relationship:`, `project:`의 제한된 Winter-owned subject
+- confidence 0.80 이상
+- 같은 subject의 exact Event 3개 이상
+- 한국 시간 기준 2일 이상
+- `accepted/continued + helpful`인 supportive Outcome 1개 이상
+- 기존 active 관점을 바꿀 때 정확한 `supersedes`
+
+Identity, User Memory, Capability, permission/security, Worker 실행과 외부 write는 이
+경로를 사용할 수 없다. 같은 하드코딩 행동이 반복됐다는 사실만으로도 활성화할 수 없다.
+
+현재 구현은 다음 경계에 있다.
+
+- activation 결정과 Belief 변경은 `beliefs.sqlite`의 한 transaction으로 보존된다.
+- Event 미러가 실패해도 결정은 유실되지 않고 같은 결과로 재시도할 수 있다.
+- Local LLM proposal과 독립 safety review의 structured contract가 있다.
+- safety review는 Winter-owned, evidence entailment, user fact, Identity, capability,
+  dependency/coercion과 counterevidence를 각각 판정한다.
+- 실제 완료 Outcome과 Winter Event를 subject별로 묶는 privacy-safe evidence builder가 있다.
+  답변과 후속 발화 원문은 분석 요청 동안만 읽고 Shadow DB에 다시 복사하지 않는다.
+- 같은 evidence window는 재시작 후에도 같은 ID를 가지며 한 번만 분석된다.
+- 안전하게 판정된 proposal도 현재는 Shadow DB에만 남고 active Belief가 되지 않는다.
+- 20개 locked-v1 semantic safety scene과 실행기가 있다. 아직 실제 별도 분석 모델 결과가
+  없으므로 proposal→candidate와 activator 연결은 금지 상태다.
+
+별도 분석용 로컬 모델을 준비한 개발 환경에서만 다음을 실행한다. 대화용 Orin 주소는
+분석 부하로 재부팅된 기록 때문에 자동 재사용하지 않는다.
 
 ```bash
-docker compose run --rm dev python -m companion.cli \
-  --memory-db /workspace/data/memories.sqlite --memory-delete <memory-id>
+WINTER_ANALYSIS_LLM_URL=http://127.0.0.1:PORT ./winter viewpoint-shadow
+PYTHONPATH=src python experiments/belief_safety_eval.py \
+  --url http://127.0.0.1:PORT \
+  --output review/belief-safety-locked-v1.md
 ```
 
-직접 진술에서 같은 항목의 값이 바뀌거나 같은 대상의 선호가 명확히 뒤집히면 새 기억이
-기존 active 기억을 `supersedes`하고 이전 항목은 `deprecated`가 됩니다. 모호한 의미
-충돌을 LLM으로 판정하지는 않습니다. active Memory 중 현재 질문과 keyword가 겹치는
-최대 3개를 전달하며, 명시적인 회상 질문에는 안정적인 최근 기억을 fallback으로 찾습니다.
-candidate·approved·deprecated·rejected Memory는 전달되지 않습니다.
+설계와 이유는 [SelfModel](docs/self-model-design.md),
+[ADR-0011](docs/adr/0011-evidence-backed-lived-continuity.md)을 따른다.
 
-대화에서 `기억해` 또는 `기억해줘`로 시작하면 그 명령 자체를 사용자의 명시적 승인으로
-본다. repository에는 `candidate → approved → active` 이력이 남고 즉시 다음 대화부터
-사용된다. 이 경로는 정확한 명령에만 열려 있으며 자동 추론 결과에는 허용되지 않는다.
+## 8. 대화 행동과 자기 표현
+
+`DialogueDirector`는 발화를 다음과 같은 관찰 가능한 행동으로 나눈다.
+
+- `listen`: 해결책보다 현재 정서와 이유를 먼저 듣는다.
+- `state_view`: 천우에게 맞춰 동의하지 않고 겨울이의 판단을 먼저 말한다.
+- `self_reciprocate`: 천우가 겨울이를 대화에 포함했을 때 자기 쪽 내용을 말한다.
+- `recall_memory`: active Memory에 근거해 직접 답한다.
+- `continue_thread` / `gentle_callback`: 미완성 이야기를 이어 간다.
+- `explain`: 답부터 말하고 필요한 이유를 설명한다.
+
+`self_reciprocate`는 칭찬, 동의, 질문만으로 대화를 천우에게 되돌리면 실패다. 겨울이는
+Identity, active Belief 또는 방금 대화에 근거한 현재 반응·선택·가치·한계를 하나 말해야
+한다. 화면 밖 활동, 신체 경험과 수행할 수 없는 약속은 만들지 않는다.
+
+현재 이 기능은 제한 운영이다. locked-v1 사람 판정은 4/12였으며 지속되는 SelfModel과
+다양한 active Belief가 아직 부족하다.
+
+## 9. 현재 모델과 음성 경로
+
+| 구성요소 | 현재 선택 | 연결 |
+| --- | --- | --- |
+| Conversation LLM | Orin local llama-server, `A.X-4.0-Light-Q4_K_M.gguf` | SSH loopback `127.0.0.1:18080` |
+| STT | SenseVoiceSmall Q8 GGUF CPU | localhost `127.0.0.1:8095` |
+| TTS/Voice | Chatterbox Multilingual V3, S3Gen Reference direct | localhost `127.0.0.1:8093` |
+| Legacy STT | whisper.cpp | 명시적 fallback `127.0.0.1:8094` |
+| Legacy VC | Seed-VC | rollback 경로, 자동 fallback 금지 |
+
+Voice Identity, Prosody와 Verbal Style은 별도 계약이지만 실제 발화에서는 하나의 말하기
+행동으로 결합한다. 특정 Human Reference는 사용자가 선택한 개인용·비공개 기준선이며,
+원본과 파생 데이터는 승인된 로컬 외장 저장소에만 둔다. 최종 겨울이는 Reference 복제가
+아니라 별도의 `Winter Delta`를 가져야 한다.
+
+현재 직접 Voice 경로의 실제 폰 4턴은 버튼 해제→재생 p50 4.41초, p95 5.03초,
+release→STT p50 0.90초였다. 표본이 4/20이고 수동 transcript 2/4가 의미 있게 틀렸으므로
+실시간 품질 gate를 통과한 결과가 아니다. 자세한 수치는
+[Realtime Readiness](docs/realtime-readiness.md)에 있다.
+
+## 10. Runtime 시작과 점검
+
+### 필수 전제
+
+- Python 3.11
+- Docker Compose
+- Orin llama-server와 SSH loopback tunnel
+- Voice 사용 시 SenseVoice와 Chatterbox container
+- 개인 `data/identity.json`
+- 실제 모델·Reference 파일은 Git 밖의 로컬 경로
+- Codex Worker 사용 시 로그인된 Codex CLI
+
+처음 설치할 때는 `.env.example`을 `.env`로 복사하고 실제 Host 값만 로컬에서 수정한다.
+`.env`는 commit하지 않는다. Identity 형식과 변경 경계는
+[Identity 문서](docs/identity.md)의 JSON schema를 따르며 `data/identity.json`에 둔다.
+Orin 연결은 인증 없는 LLM port를 공개하지 않고 [orin-tunnel.sh](scripts/orin-tunnel.sh)의
+SSH loopback만 사용한다.
+
+### Voice 서비스
 
 ```bash
-docker compose run --rm dev python -m companion.cli \
-  --backend fake \
-  --memory-db /workspace/data/memories.sqlite \
-  --prompt "기억해. 나는 Python config를 선호해"
+docker compose -f compose.sensevoice-server.yaml up -d --build
+
+CHATTERBOX_REFERENCE=/absolute/private/path/to/reference.wav \
+  docker compose -f compose.chatterbox-reference.yaml up -d
+
+curl http://127.0.0.1:8095/health
+curl http://127.0.0.1:8093/health
+systemctl --user restart winter-web.service
+curl http://127.0.0.1:8000/health
 ```
 
-`나는 긴 설명을 싫어해`, `내 생일은 3월 12일이야`, `우리는 SQLite로 하기로 했어`처럼
-안정적인 1인칭 진술은 별도 명령 없이도 사용자 원문 그대로 저장됩니다. CLI는 응답 아래에
-자동 저장된 Memory ID를 표시하지만 이 안내 문구를 Voice로 읽지는 않습니다.
+Reference 절대경로를 Compose 파일, 로그나 Git에 넣지 않는다. Web 경로는
+`--stt-backend sensevoice --no-voice-conversion`을 사용한다. 장애 시 fake, Whisper나
+Seed-VC로 자동 전환하지 않고 오류를 드러낸다.
 
-`지금`, `오늘`, `요즘`이 포함된 순간 상태, 물음표가 있는 질문, `것 같아` 같은 추측,
-제3자에 대한 문장은 자동 기억하지 않습니다. 이 정책은 별도 LLM 호출이 없어 대답 속도를
-늦추지 않으며, 모델의 해석을 사실로 승격하지도 않습니다. 더 넓은 맥락에서 추론하는
-Reflection은 향후 candidate 제안으로만 추가합니다.
+현재 기준 systemd Web unit은 Codex read-only Worker를 함께 켠다. 폰에서 명시적으로
+`코덱스로 ... 확인해줘`라고 말하면 기다리는 동안 진행 상태를 표시하고 결과를 같은
+겨울이 음성으로 읽는다. Credential 원문은 겨울이 Memory나 Worker bundle에 넣지 않는다.
+전체 권한 모델과 다음 write gate는
+[Authority Delegation](docs/authority-delegation.md)을 따른다.
 
-## Conversation continuity
+### 상태 점검 명령
 
-CLI·phone web·Voice는 모두 `data/conversations.sqlite`, `memories.sqlite`,
-`beliefs.sqlite`, `dialogue_state.sqlite`, `turn_understanding.sqlite`, `outcomes.sqlite`를
-공유합니다.
-최근 12개 밖의 대화도 현재 말과 관련 있으면 exact old turn을 최대 두 개 검색합니다.
-오래된 문장을 새로운 사실로 요약하지 않습니다.
+| 명령 | 용도 | Local LLM 필요 |
+| --- | --- | --- |
+| `./winter status` | LLM과 Compose 서비스 상태 | 아니요 |
+| `./winter lived` | 오늘 사건·Belief activation audit | 아니요 |
+| `./winter state` | Current State Timeline | 아니요 |
+| `./winter overview` | 대화·분석·Memory 전체 현황 | 아니요 |
+| `./winter memories` | Reflection 후보 검토 | 아니요 |
+| `./winter reflect` | 과거 대화 분석 | 별도 analysis LLM |
 
-`내일 다시 보자`, `아직 고민 중이야`처럼 천우가 직접 미완성을 표시한 말은 Open Loop로
-남습니다. 상태 확인과 종료는 다음처럼 합니다.
+## 11. 개발 구조
 
-```bash
-./winter chat --list-open-loops
-./winter chat --resolve-open-loop <open-loop-id>
-./winter chat --dismiss-open-loop <open-loop-id>
-./winter chat --list-memories
+```text
+.
+├── AGENTS.md                    제품·개발·안전 불변조건
+├── README.md                    현재 제품과 운영 기준
+├── winter                       사용자 launcher
+├── pyproject.toml               Python/test/lint/type 설정
+├── configs/                     model·verbal style profile
+├── deploy/systemd/              실제 Host user service
+├── docs/
+│   ├── adr/                     변경 불가 설계 결정 기록
+│   ├── winter-v1-goal.md        V1 제품 계약
+│   ├── v1-maturity-ledger.md    근거·한계·다음 gate
+│   └── ...                      기능별 설계와 평가
+├── experiments/                 실제 model·voice·held-out probe
+├── src/companion/
+│   ├── core.py                  모든 interface가 공유하는 Core
+│   ├── contracts.py             응답·음성 데이터 계약
+│   ├── ports.py                 runtime 독립 Port
+│   ├── cli/                     개발/텍스트 interface
+│   ├── voice/                   Voice orchestration
+│   ├── web.py                   Phone HTTP/SSE interface
+│   ├── adapters/                llama.cpp·STT·TTS·SQLite adapter
+│   ├── memory.py                사용자 Memory lifecycle
+│   ├── beliefs.py               Winter Belief와 atomic audit
+│   ├── winter_events.py         실제 사건과 하루
+│   ├── belief_reflection.py     Shadow proposal와 semantic gate
+│   ├── turn_understanding.py    Shadow turn 이해
+│   ├── outcome.py               다음 반응 기반 평가
+│   ├── work_orchestration.py    Winter 목적·Worker 보고·최종 판단 계약
+│   ├── worker_gateway.py        provider-independent typed Worker 도구 계약
+│   ├── isolated_work.py         구현 승인·diff·검증·채택 대기 계약
+│   ├── change_proposal.py       exact patch·Winter 설명·결정 이력 저장
+│   ├── change_adoption.py       stale 차단·실제 적용·rollback
+│   ├── codex_gateway_mcp.py     인증 없는 typed project stdio MCP
+│   ├── adapters/codex_gateway_worker.py  Codex control/tool-plane 분리
+│   ├── adapters/codex_isolated_worker.py  폐기 가능한 copy의 수정·검증
+│   └── reflection.py            과거 대화 Memory 후보
+└── tests/
+    ├── unit/                    인터넷·GPU·모델 없는 기본 계약
+    ├── integration/             Shared Core와 persistence 흐름
+    └── fixtures/                공개 가능한 synthetic fixture만
 ```
 
-각 사용자 턴은 실제 답변과 별개로 Shadow queue에 먼저 남습니다. 분석은 응답 지연을
-피하기 위해 별도 명령으로 실행하고, 현재 결과는 Memory나 다음 답변에 주입하지 않습니다.
+## 12. 개발과 검증
+
+기본 테스트는 인터넷, GPU, 마이크, 실제 checkpoint와 API key 없이 실행돼야 한다.
 
 ```bash
-./winter chat --analyze-pending-turns --analysis-limit 10
-./winter chat --list-turn-understanding
-```
-
-분석 실패는 `failed` 상태와 원인을 남기며 fake로 대체하지 않습니다. strict schema,
-exact-evidence 규칙과 현재 한계는
-[TurnUnderstanding Shadow Mode](docs/turn-understanding.md)에 기록했습니다.
-
-이전 겨울이 답변과 바로 다음 천우 발화는 별도 `data/outcomes.sqlite`에 연결됩니다.
-현재 Outcome 역시 Shadow Mode이며 실제 Memory나 다음 답변을 바꾸지 않습니다.
-
-```bash
-./winter chat --analyze-pending-outcomes --analysis-limit 10
-./winter chat --list-outcomes
-```
-
-구조, 첫 Orin correction probe와 미통과 고도화 gate는
-[OutcomeEvaluator 문서](docs/outcome-evaluator.md)에 기록했습니다.
-
-Outcome DB v3는 Core가 실제 답변에 사용한 Memory provenance와 천우의 blind review를
-서로 분리해 보존한다. Memory가 사용된
-턴만 별도 relation evaluator가 확인·반박을 판정하고, Improvement candidate는 검증된
-categorical failure에서 파생한다. 새 locked v2 15 scene을 두 번 실행한 결과는 18/30 runs,
-194/212 checks, 7/7 synthetic gates이며 평균 5.19초다. Memory·Improvement precision/recall은
-100%였지만 corrected/rejected와 continuation·ambiguous 세부 필드는 여전히 실패한다. 실제
-Shadow 대화 30개 이상의 blind audit 전에는 답변·Memory·DialogueDirector에 연결하지 않는다.
-실행법과 실패 분류는 [Outcome held-out 평가](docs/outcome-evaluation.md)를 따른다.
-
-천우가 검토할 때는 모델 판단을 먼저 보지 않는다. 이전 질문, 실제 겨울이 답변과 다음
-반응을 읽고 숫자로 평가하면 저장 후에만 겨울이 판단과의 차이를 보여준다. `s`는 해당
-대화를 넘기고 `q`는 검토를 끝낸다. 이 명령은 LLM이 꺼져 있어도 실행된다.
-
-```bash
-./winter chat --review-outcomes
-./winter chat --outcome-audit
-```
-
-`--outcome-audit`는 실제 검토 진행률을 `0/30`처럼 보여준다. 30개를 채우더라도 자동으로
-기억이나 응답 정책을 바꾸지 않고, 천우가 결과를 보고 candidate 연결 여부를 결정한다.
-
-대화 행동은 `DialogueDirector`가 선택하고, 회피성 의견·넓은 되묻기·잘못된 callback 같은
-반복 실패만 `ResponseReviewer`가 한 번 재생성합니다. 일반 대화는 최대 2문장, 설명 요청은
-최대 4문장입니다. 설계와 trade-off는
-[ADR-0006](docs/adr/0006-shared-continuity-and-dialogue-control.md)에 기록했습니다.
-
-실제 Orin 멀티세션 평가는 아래 명령으로 재현합니다.
-
-```bash
-PYTHONPATH=src:. python3.11 experiments/companion_dialogue_eval.py
-```
-
-## Winter Belief lifecycle
-
-겨울이의 관점은 Core Persona나 천우에 대한 Memory와 분리합니다. 관점 후보에는 주제,
-입장, 이유, 신뢰도와 최소 하나의 근거가 필요하며, 검토되어 `active`가 된 항목만 관련
-대화에 사용됩니다.
-
-```bash
-docker compose run --rm dev python -m companion.cli \
-  --belief-db /workspace/data/beliefs.sqlite \
-  --belief-add "음성 개발 방향" "앞단 TTS 개선이 우선이다" \
-  --belief-rationale "질문 억양 실패가 반복됐다" \
-  --belief-confidence 0.78 \
-  --belief-evidence voice-test-22 \
-  --belief-evidence public-rvc-bakeoff
-
-docker compose run --rm dev python -m companion.cli \
-  --belief-db /workspace/data/beliefs.sqlite --belief-activate <belief-id>
-
-docker compose run --rm dev python -m companion.cli \
-  --belief-db /workspace/data/beliefs.sqlite --list-beliefs
-```
-
-기존 관점을 바꿀 때는 `--belief-revise <belief-id> "새 입장"`과 새 rationale·evidence를
-함께 지정합니다. 새 candidate가 활성화되기 전에는 기존 관점이 유지됩니다. 자동
-Reflection과 자동 활성화는 아직 제공하지 않으며, 설계 근거는
-[ADR-0005](docs/adr/0005-persistent-winter-beliefs.md)에 기록합니다.
-
-## 개발 환경 스펙
-
-| 구분 | 기준 |
-| --- | --- |
-| Container Python | 3.11 |
-| 기본 이미지 | `python:3.11-slim-bookworm` |
-| 기본 실행 | CPU-only Docker Compose 서비스 `dev` |
-| GPU | RTX 2060 6 GiB를 Host에서 확인; `compose.gpu.yaml`을 명시할 때만 전달 |
-| Voice | PulseAudio/ALSA를 Host에서 확인; `compose.voice.yaml`과 Pulse socket을 명시할 때만 전달 |
-| 모델·개인 데이터 | 이미지와 Git에서 제외, `data/`·`models/` bind mount로만 전달 |
-
-## Docker 실행
-
-기본 CPU 개발 셸을 build하고 Python runtime을 확인합니다.
-
-```bash
-docker compose build
-docker compose run --rm dev python --version
-```
-
-`dev` 서비스는 Docker `local` logging driver를 사용하며, 로그는 10MB 파일 3개로
-제한된다. 장시간 model probe가 Host 디스크를 과도하게 점유하지 않게 하기 위한 설정이다.
-
-GPU 장치가 필요한 후속 adapter 작업에서만 GPU overlay를 명시합니다.
-
-```bash
-docker compose -f compose.yaml -f compose.gpu.yaml run --rm dev bash
-```
-
-Voice 작업에서는 먼저 `.env.example`을 `.env`로 복사하고 Host의 실제
-PulseAudio socket 경로를 확인한 뒤 Voice overlay를 명시합니다.
-
-```bash
-docker compose -f compose.yaml -f compose.voice.yaml run --rm dev bash
-```
-
-기본 CLI는 의도적으로 fake adapter를 사용합니다. 이는 오프라인 개발과 테스트를
-모델 서버의 상태에서 분리하기 위한 명시적 선택이며, `--backend local`이 실패해도
-fake 응답으로 자동 전환하지 않습니다.
-
-```bash
-docker compose run --rm dev python -m companion.cli --backend fake --prompt "안녕"
-```
-
-실제 local LLM CLI는 Host의 runtime과 모델을 **read-only** mount한 `llm` 서비스와,
-그 서비스에만 접속하는 `dev` CLI 컨테이너로 구성됩니다. 아래 변수 경로는 Host
-경로이고, 컨테이너에서는 각각 `/runtime`, `/models`로만 보입니다.
-
-```bash
-export LLAMA_RUNTIME_DIR=/path/to/llama-b10276-parent
-export LLM_MODEL_DIR=/path/to/gguf-directory
-export LLM_MODEL_FILE=Qwen3-4B-Instruct-2507.Q4_K_M.gguf
-
-docker compose -f compose.yaml -f compose.llm.yaml -f compose.gpu.yaml up -d llm
-docker compose -f compose.yaml -f compose.llm.yaml -f compose.gpu.yaml run --rm dev \
-  python -m companion.cli --backend local --prompt "한국어로 한 문장만 인사해줘"
-docker compose -f compose.yaml -f compose.llm.yaml -f compose.gpu.yaml down
-```
-
-`LLAMA_RUNTIME_DIR`에는 그 아래에 `llama-b10276/llama-server`가 있는 디렉터리를
-지정합니다. `llm`은 Host port를 공개하지 않으며 Compose 내부 `http://llm:8080`에서만
-통신합니다.
-
-대화를 프로그램 재시작 뒤에도 보존하려면 명시적으로 SQLite 경로를 지정합니다.
-Docker 실행에서는 컨테이너 내부 `/tmp`가 실행마다 사라지므로, Host의 `./data`와
-연결된 `/workspace/data` 아래를 사용합니다. `data/`와 `*.sqlite`는 Git에서 제외됩니다.
-Host에서 DB를 직접 수정·삭제할 수 있도록, 처음 한 번 현재 사용자 UID/GID를 넘깁니다.
-
-```bash
-export LOCAL_UID=$(id -u)
-export LOCAL_GID=$(id -g)
-
-docker compose run --rm dev python -m companion.cli \
-  --backend fake \
-  --conversation-db /workspace/data/conversations.sqlite \
-  --prompt "이 대화를 저장해줘"
-
-docker compose run --rm dev python -m companion.cli \
-  --backend fake \
-  --conversation-db /workspace/data/conversations.sqlite \
-  --show-history
-```
-
-현재 저장하는 것은 순서가 있는 원문 대화 기록뿐입니다. Local CLI는 기본적으로 최근
-12개 메시지와 총 4,000자 안의 기록을 다음 모델 요청에 함께 넣습니다. 필요하면
-`--context-max-messages`, `--context-max-characters`로 한도를 낮출 수 있습니다.
-이는 당장 대화 흐름을 잇기 위한 context입니다. 장기 기억은 명시적 저장과 lifecycle을
-통해서만 관리하며, 자동 영구 저장하지 않습니다.
-
-테스트는 다음 명령으로 실행합니다.
-
-```bash
-docker compose run --rm dev pytest
-```
-
-lint와 type check는 다음 명령으로 실행합니다. 세 명령 모두 통과해야
-`AGENTS.md`의 Definition of Done을 만족합니다.
-
-```bash
+docker compose run --rm dev pytest -q
 docker compose run --rm dev ruff check .
-docker compose run --rm dev mypy
+docker compose run --rm dev mypy src
 ```
 
-규칙은 `pyproject.toml`의 `[tool.ruff]`와 `[tool.mypy]`에 있습니다. 완화한
-항목에는 그 이유를 주석으로 적었습니다.
+실제 모델·Voice 평가는 기본 회귀와 분리한다. 모델 실패를 fake 성공으로 바꾸지 않으며,
+실행하지 않은 작업을 실행했다고 보고하지 않는다.
 
-실제 LLM checkpoint는 Git과 Docker 이미지에 넣지 않습니다. 내려받은 파일의 경로를
-명시해 Host에서 다음 수동 probe를 실행할 수 있습니다.
+새 작업은 다음 순서를 따른다.
 
-```bash
-python3 experiments/local_llm_probe.py \
-  --runtime-dir /path/to/llama-b10276 \
-  --model-path /path/to/Qwen3-4B-Instruct-2507.Q4_K_M.gguf
-```
+1. 관련 제품 문서와 현재 코드를 읽는다.
+2. acceptance test와 실패 조건을 먼저 정한다.
+3. 가장 작은 완전한 변경을 구현한다.
+4. unit/integration, Ruff와 mypy를 실행한다.
+5. 실제 모델 평가는 별도 marker·probe로 실행한다.
+6. README, ADR과 Maturity Ledger를 같은 변경에서 갱신한다.
+7. 현재 가능한 범위와 전체 성숙도를 구분해 보고한다.
 
-이 probe는 Docker GPU를 사용하며, 파일을 read-only로 mount합니다. 모델 파일의
-정확한 SHA-256과 검증 결과는 [모델 선정 문서](docs/model-selection.md)를 따릅니다.
+## 13. Privacy와 안전 경계
 
-한국어 STT CPU probe는 다음처럼 실행합니다.
+- OpenAI, Anthropic, Gemini 등 외부 상용 대화 API는 초기 Companion 경로에서 사용하지 않는다.
+- 대화 DB, 개인 Memory, 원본 음성·영상·자막, Human Reference와 checkpoint는 Git 제외다.
+- 외부 Worker에는 관련 기술 scope와 sanitized project text만 전달하고 전체 Identity·대화 DB를 넘기지 않는다.
+- Core Identity는 사용자 승인 없이 자동 변경하지 않는다.
+- read-only Worker는 문장 안의 명시적 호출을 turn별 opt-in으로 본다. destructive/external write는 구체 대상에 대한 별도 승인이 필요하다.
+- Capability는 test·health·채택 근거가 없으면 `available`이라고 말할 수 없다.
+- 모든 자동 판단은 evidence, confidence, status, version과 rollback 경로를 남긴다.
+- 운영 adapter 장애는 명시적으로 드러내고 silent fallback하지 않는다.
 
-```bash
-python3 experiments/stt_probe.py \
-  --model-path /path/to/ggml-small.bin \
-  --audio-path /path/to/korean-fixture.flac
-```
+권장 Git 제외 대상은 `.env*`, `data/`, `models/`, `checkpoints/`, `human_reference/`,
+`generated_audio/`, SQLite와 media 파일이다. 작은 공개 synthetic fixture만
+`tests/fixtures/`에 둘 수 있다.
 
-한국어 TTS probe는 별도 pinned Docker image를 build한 뒤 실행합니다.
+## 14. 다음 개발 순서
 
-```bash
-docker build -f Dockerfile.melotts-probe -t winter-ai:melotts-probe .
-python3 experiments/tts_probe.py \
-  --cache-dir /path/outside/git/melotts-cache \
-  --output-path /path/outside/git/melotts-korean.wav
-```
+현재 최우선은 관계와 기억을 유지하면서 겨울이가 실제 전문 작업의 목적과 최종 판단까지
+소유하게 만드는 것이다.
 
-Human Reference source의 메타데이터 preflight probe는 별도 pinned image로
-실행합니다. media를 다운로드하지 않고 duration, audio format, 자막 언어만
-조회합니다. 외장 storage mount와 `.env`의 `REFERENCE_STORAGE_ROOT`,
-`REFERENCE_STORAGE_ID`가 필요합니다.
+1. Work Orchestration V2.1 안전 계약과 Qwen3-14B·A.X 고정 47 check — **완료**
+2. Qwen semantic-v2 12장면 — **완료, 46/66으로 반복 실패**
+3. Gemma 3 12B semantic-v2 — **완료, 40/66으로 Qwen보다 낮고 둘 다 activation 실패**
+4. typed no-network/read-only project gateway — **offline 범위 완료**
+5. credential/control-plane과 Agent tool을 분리한 provider adapter — **Shadow 구현, synthetic live 1/1**
+6. isolated implementation proposal — **Shadow 범위 완료**, synthetic 최소 수정·독립 검증·원본 불변 1/1
+7. proposal 영속화·근거 기반 Winter 설명·exact hash 채택 결정 — **Shadow 범위 완료**
+8. 대상 stale 확인·오류 시 전 파일 복원·적용과 rollback — **Shadow 범위 완료**
+9. project 전체 stale 판정·process crash 복구·실제 Winter 검증 profile
+10. prompt-injection·path/network/write 격리 공격 suite
+11. Qwen3-30B-A3B 동일 semantic-v2와 대화 Core 비교 — **완료, 빠르지만 의미·grounding gate 실패**
+12. Gemma 3 27B 동일 semantic-v2 비교 — **완료, 44/66·27초와 Core chat 호환 실패**
+13. 같은 12~30B drop-in 반복을 중단하고 다음 Core/runtime 전략 결정
+14. semantic·권한 gate 합격 후 read-only 실제 작업 20개를 사람 평가
+15. 검증된 WinterDecision을 기존 Codex read-only route 앞뒤에 Shadow로 연결
+16. Improvement Ledger와 실제 작은 capability의 제안→채택→재평가→rollback 완주
 
-```bash
-docker compose -f compose.reference-source.yaml run --rm reference-source-probe \
-  --candidate-id <candidate-id> \
-  --report-relative-path reports/<name>.json
-```
+## 15. 주요 문서 인덱스
 
-실행 규약, 실패 정책, 설계 결정은
-[source metadata preflight 문서](docs/reference-source-probe.md)를 따릅니다.
+| 질문 | 기준 문서 |
+| --- | --- |
+| 이 프로젝트의 최종 V1 목표는? | [Winter V1 Goal](docs/winter-v1-goal.md) |
+| 지금 실제로 어디까지 되는가? | [Maturity Ledger](docs/v1-maturity-ledger.md) |
+| 다음 개발 순서는? | [Roadmap](docs/roadmap.md) |
+| 겨울이에게 계정 권한을 어떻게 위임하는가? | [Authority Delegation](docs/authority-delegation.md) |
+| 겨울이가 Worker를 어떻게 이해·지휘·검수하는가? | [Winter-owned Work Orchestration](docs/work-orchestration.md), [ADR-0015](docs/adr/0015-single-core-work-orchestration.md) |
+| 자아·관점·하루의 경계는? | [SelfModel Design](docs/self-model-design.md) |
+| 왜 자동 Belief에 이런 gate가 있는가? | [ADR-0011](docs/adr/0011-evidence-backed-lived-continuity.md) |
+| LLM 관점 후보는 어떻게 검증하는가? | [Belief Reflection](docs/belief-reflection.md), [ADR-0012](docs/adr/0012-shadow-belief-semantic-review.md) |
+| 어제의 겨울이가 오늘로 어떻게 이어지는가? | [Day Reflection](docs/day-reflection.md), [ADR-0013](docs/adr/0013-daily-continuity-before-autonomous-analysis.md) |
+| 대화가 아직 왜 Agent처럼 느껴지는가? | [Self-Presence](docs/self-presence.md) |
+| Memory와 현재 상태는 어떻게 다른가? | [Reflection Memory](docs/reflection-memory.md) |
+| Phone Voice가 실시간인가? | [Realtime Readiness](docs/realtime-readiness.md) |
+| 현재 Voice 경로 선택 이유는? | [Voice Path Decision](docs/voice-path-decision.md) |
+| 모델·라이선스·artifact는? | [Model Selection](docs/model-selection.md) |
+| Identity 파일은 어떻게 만드는가? | [Identity](docs/identity.md) |
+| Human Reference 데이터 경계는? | [Human Reference Design](docs/human-reference-design.md) |
+| Agent가 따라야 할 규칙은? | [AGENTS.md](AGENTS.md) |
 
-자막이 `raw_transcript`로 쓸 수 있는 품질인지 측정하는 probe는 같은 image에서
-텍스트만 내려받아 실행합니다.
+## 16. 새 사람이나 Agent의 인수인계 순서
 
-```bash
-docker compose -f compose.reference-source.yaml run --rm reference-subtitle-probe \
-  --candidate-id <candidate-id> \
-  --report-relative-path reports/<name>.json \
-  --duration <source-id>=<seconds>
-```
+처음 저장소를 열었다면 다음 순서로 이해한다.
 
-측정 지표와 판정 기준은
-[자막 품질 측정 문서](docs/reference-subtitle-quality.md)를 따릅니다.
+1. 이 README의 1~7절을 읽어 제품과 실제 사용자 흐름을 이해한다.
+2. [AGENTS.md](AGENTS.md)를 끝까지 읽어 고정 요구사항과 금지 사항을 확인한다.
+3. [Maturity Ledger](docs/v1-maturity-ledger.md)에서 성공과 실패 기준선을 함께 확인한다.
+4. `git status --short`로 혼합 worktree를 확인하고 사용자·Claude·Codex 변경을 보존한다.
+5. `./winter status`, `./winter lived`로 실제 runtime과 상태를 읽기만 한다.
+6. 변경 전 관련 ADR·기능 문서와 테스트를 찾는다.
+7. 하나의 작은 scope만 구현하고 offline 회귀를 통과시킨다.
+8. 운영 반영 전 README·Ledger·rollback 영향을 확인한다.
 
-승인된 source의 오디오를 수집할 때는 한 번에 하나씩, 재인코딩 없이 받습니다.
-
-```bash
-docker compose -f compose.reference-source.yaml run --rm reference-audio-ingest \\
-  --candidate-id <candidate-id> \\
-  --source-id <source-id> \\
-  --report-relative-path reports/<name>.json \\
-  --expected-duration-seconds <seconds>
-```
-
-수집 계약과 실패 정책은
-[오디오 수집 문서](docs/reference-audio-ingest.md)를 따릅니다.
-
-승인된 candidate와 source 등록은 전용 명령으로 합니다. manifest를 직접 편집하지
-않습니다.
-
-```bash
-docker compose -f compose.reference-source.yaml run --rm reference-source-register --list
-docker compose -f compose.reference-source.yaml run --rm reference-source-register \\
-  --add-source <candidate-id> --source-uri <URI>
-```
-
-URI는 외장 private manifest에만 저장되며 stdout과 report에는 나오지 않습니다.
-
-수집한 오디오의 전사 품질은 구간 단위로 측정합니다. whisper.cpp image에 ffmpeg가
-포함돼 있어 자르기·리샘플·전사가 한 runtime에서 끝납니다.
-
-```bash
-PYTHONPATH=src python3 experiments/reference_transcription_probe.py \\
-  --audio-path <외장>/raw/audio/<candidate>/<source>.webm \\
-  --reference-vtt <외장>/raw/subtitles/<candidate>/<source>.ko-orig.vtt \\
-  --model-path <모델>/ggml-small.bin \\
-  --work-dir <외장>/derived/audio/stt-pilot \\
-  --source-id <source-id> --start-seconds 600 --duration-seconds 300
-```
-
-측정 방법과 결과는
-[STT 파일럿 문서](docs/reference-transcription-probe.md)를 따릅니다.
-
-전사에서 말투 특성을 추출할 때는 대조 전사를 함께 측정합니다. 두 전사에 모두
-나타나는 특성만 설계 근거로 씁니다.
-
-```bash
-PYTHONPATH=src python3 experiments/reference_speech_style.py \\
-  --source-id <source-id> \\
-  --transcript <외장>/derived/audio/stt-pilot/<source>-0-<duration>.vtt \\
-  --secondary-transcript <외장>/raw/subtitles/<candidate>/<source>.ko-orig.vtt \\
-  --report-path <외장>/reports/<name>.json
-```
-
-측정 항목과 결과는
-[말투 특성 문서](docs/reference-speech-style.md)를 따릅니다.
-
-대화형 source에서 Reference 발화만 골라내는 화자 검증은 별도 pinned image로
-실행합니다. **현재 이 방법은 동작하지 않으며** 경위와 이유는
-[화자 검증 문서](docs/speaker-verification.md)에 있습니다.
-
-말투는 `configs/verbal_style/`의 Python profile로 관리합니다. 기본값은
-`reference_broadcast`이며 Reference 측정에 근거합니다. 이전 정책은 `base`로 남겨
-비교할 수 있습니다.
-
-```bash
-docker compose run --rm dev python -m companion.cli --backend fake \\
-  --verbal-style reference_broadcast --prompt "안녕"
-```
-
-근거와 한계는 [말투 profile 문서](docs/verbal-style-profiles.md)를 따릅니다.
-
-모델 선택값은 `configs/models/`의 Python profile로 관리합니다. 기본값은 `base`,
-RTX 2060 6 GiB profile은 `rtx2060_6gb`(Vulkan GPU backend, 37 layers), CPU
-profile은 `cpu`입니다.
+새 Agent는 저장소를 다시 bootstrap하거나, prompt만 반복 수정하거나, 실패한 실제 모델을
+fake adapter로 숨겨서는 안 된다.

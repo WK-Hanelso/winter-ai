@@ -1,0 +1,10 @@
+[Unit]
+Description=Reflect on Winter's completed day every morning
+
+[Timer]
+OnCalendar=*-*-* 04:10:00 Asia/Seoul
+Persistent=true
+Unit=winter-day-close.service
+
+[Install]
+WantedBy=timers.target

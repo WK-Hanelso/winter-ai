@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+import copy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
+from pathlib import Path
 import sys
 import threading
 import time
@@ -27,6 +29,8 @@ import wave
 
 from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 import torch
+
+from companion.chatterbox_conditioning import CONDITIONING_MODES, select_conditioning
 
 DEFAULT_PORT = 8093
 LANGUAGE = "ko"
@@ -90,11 +94,23 @@ class Voice:
         half: Sequence[str] = (),
         cfg_weight: float = DEFAULT_CFG_WEIGHT,
         exaggeration: float = DEFAULT_EXAGGERATION,
+        conditioning: str = "builtin",
+        reference: Path | None = None,
     ) -> None:
         started = time.perf_counter()
         self._model = ChatterboxMultilingualTTS.from_pretrained(
             device=device, t3_model=MODEL_VERSION
         )
+        default_conditions = copy.deepcopy(self._model.conds)
+        if conditioning != "builtin":
+            if reference is None or not reference.is_file():
+                raise SystemExit("S3Gen Reference 조건에는 참조 WAV가 필요합니다")
+            self._model.prepare_conditionals(
+                str(reference), exaggeration=exaggeration
+            )
+            self._model.conds = select_conditioning(
+                default_conditions, self._model.conds, conditioning
+            )
         for name in half:
             part = getattr(self._model, name, None)
             if part is None or not hasattr(part, "half"):
@@ -121,7 +137,7 @@ class Voice:
         self._lock = threading.Lock()
         print(
             f"목소리 준비됨 ({device}, {time.perf_counter() - started:.1f}초, "
-            f"cfg {cfg_weight:g}, exaggeration {exaggeration:g})",
+            f"cfg {cfg_weight:g}, exaggeration {exaggeration:g}, {conditioning})",
             flush=True,
         )
 
@@ -202,6 +218,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--cfg-weight", type=float, default=DEFAULT_CFG_WEIGHT)
     parser.add_argument("--exaggeration", type=float, default=DEFAULT_EXAGGERATION)
+    parser.add_argument("--conditioning", choices=CONDITIONING_MODES, default="builtin")
+    parser.add_argument("--reference", type=Path)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     return parser
 
@@ -213,7 +231,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if unknown:
         print(f"모르는 부분입니다: {', '.join(unknown)}", file=sys.stderr)
         return 1
-    voice = Voice(arguments.device, parts, arguments.cfg_weight, arguments.exaggeration)
+    voice = Voice(
+        arguments.device,
+        parts,
+        arguments.cfg_weight,
+        arguments.exaggeration,
+        arguments.conditioning,
+        arguments.reference,
+    )
     server = ThreadingHTTPServer(("0.0.0.0", arguments.port), make_handler(voice))
     print(f"대기 중: http://0.0.0.0:{arguments.port}/speak", flush=True)
     server.serve_forever()

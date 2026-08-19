@@ -14,6 +14,11 @@
 - Claude, GPT, Gemini 등은 나중에 전문 작업을 위임하는 Worker로 연결한다.
 - 초기 Companion의 대화와 기억 기능은 외부 상용 Foundation Model API에 의존하지 않는다.
 
+겨울이는 범용 Agent에 캐릭터를 씌운 제품이 아니다. **천우와 생활의 시간을 이어 가는
+Companion**이 제품의 중심이고, 검색·개발·자동화 Worker는 그 관계를 지원하는 종속
+capability다. 겨울이의 하루는 꾸며 낸 일기나 화면 밖 활동이 아니라 실제 대화, 결정,
+평가, 실패, 관점 수정과 채택된 능력으로만 구성한다.
+
 핵심 제품 가설은 다음과 같다.
 
 > 사전학습된 Local LLM, 외부화된 Identity, 구조화된 Memory, 사전학습된 TTS를 조합하면 사용자가 시간이 지나도 동일한 Companion과 대화하고 있다고 느낄 수 있다.
@@ -62,6 +67,34 @@ Voice ─┘
 ```
 
 CLI에서 저장된 기억은 Voice에서 사용되어야 하며, Voice에서 발생한 대화도 CLI에서 조회할 수 있어야 한다.
+
+### 2.1.1 Zero-maintenance User Experience
+
+실사용에서 천우가 해야 하는 일은 겨울이와 대화하는 것뿐이다. 기억 정리, 상태 최신화,
+검색 index 갱신, 분석 실행을 위해 별도 CLI 명령이나 관리 화면 조작을 요구하지 않는다.
+
+- 사용자 발화와 응답은 Shared Core가 내부 분석 queue에 자동 등록한다.
+- 장기 분석은 응답 latency와 분리된 background 경로에서 실행한다.
+- 확실한 직접 진술은 activation gate를 통과한 정책 안에서 내부 갱신할 수 있다.
+- 애매하거나 충돌하는 정보는 명령형 review UI가 아니라 겨울이가 다음 대화에서 자연스럽게
+  확인한다.
+- 개발용 `overview`, `reflect`, `memories` 명령은 audit·debug·복구 도구이며 제품의 정상
+  사용자 흐름이 아니다.
+- 품질 gate가 실패한 기능은 자동 갱신하지 않고 Shadow로 관찰하지만, 이 안전 제약을
+  사용자에게 반복 작업으로 전가하지 않는다.
+
+### 2.1.2 Lived Continuity and Autonomous Belief
+
+- CLI, Web와 Voice의 실제 사건은 하나의 `Winter Event` 시간축에 append-only로 남긴다.
+- 대화 원문은 기존 대화 저장소에만 두고 Event에는 사건 종류, 근거 참조와 최소 metadata만
+  기록한다.
+- 충분한 독립 근거가 여러 날에 걸쳐 반복되고 이후 반응에서 실제로 지지된 낮은 위험의
+  Winter Belief는 승인된 정책 범위에서 겨울이가 스스로 활성화·수정할 수 있다.
+- 자동 판단은 confidence, evidence, 차단 이유와 revision history를 남기며 모니터링과
+  rollback이 가능해야 한다.
+- Core Identity, User Memory, Capability, permission/security, Worker 실행과 외부 write는
+  이 자동 활성화 경로를 사용할 수 없다.
+- 실제 사건이 없는 시간에 보낸 하루, 몸의 경험, 감정이나 활동을 만들지 않는다.
 
 ### 2.2 Local-first
 
@@ -559,18 +592,64 @@ Companion Identity를 Worker에 넘기지 않는다. Worker는 전문 작업 결
 ## 8. Current Work Direction
 
 Task 001과 초기 Milestone 기반은 완료되었다. 기존 저장소를 다시 bootstrap하지 않는다.
-현재 최우선 작업은 V1 구현 순서의 첫 항목인 `TurnUnderstanding Shadow Mode`다.
+`Winter Day Reflection V0`의 구현 기반은 완료되었고 실제 3일 관찰 gate는 계속 유지한다.
+사용자가 우선순위를 실제 전문 작업 능력으로 명시적으로 변경했으므로, 현재 최우선은
+관계·기억뿐 아니라 작업 의도와 최종 판단도 겨울이가 소유한 채 외부 Worker를 지휘하는
+`Winter-owned Work Orchestration` Shadow V0를 검증하는 것이다.
 
 1. 현재 혼합 worktree의 사용자·Claude·Codex 변경을 보존한다.
-2. `TurnUnderstanding` domain schema와 Port를 정의한다.
-3. deterministic fake interpreter와 offline acceptance tests를 먼저 만든다.
-4. 분석 결과는 event log에만 저장하고 초기에는 응답·Memory를 변경하지 않는다.
-5. held-out dialogue에서 evidence, intent hypotheses, temporal scope, memory/improvement
-   proposal과 uncertainty를 평가한다.
-6. 실제 Local LLM interpreter는 별도 model marker로 연결하고 latency와 오류를 측정한다.
+2. 하나의 Winter Core Model이 `IntentBrief`와 `WinterDecision`을 모두 생성한다. 두 개의
+   본체나 별도 최종 답변 모델로 나누지 않는다.
+3. `IntentProposal → deterministic IntentBrief → WorkerTaskPacket → EvidenceReport →
+   deterministic action을 포함한 WinterDecision` V2.1을 유지한다.
+4. Worker에는 sanitized project text만 전달하고 Identity, Memory, Conversation, account
+   credential, Human Reference와 음성을 전달하지 않는다.
+5. 현재 운영 Codex V0의 explicit opt-in과 read-only 제한은 유지하며, 새 Shadow 판단을
+   평가 전 실제 답변에 연결하지 않는다.
+6. Qwen semantic-v2 12장면은 46/66·10.7초·11/12 schema, ambiguity 0/3,
+   network scope 0/1, review assessment 3/6으로 반복 실패했다.
+7. 천우의 Terms 동의 뒤 Gemma 3 12B도 같은 suite에서 40/66·15.2초·11/12 schema,
+   ambiguity 0/3, read-only ready 0/2, review assessment 3/6으로 실패했다. 당시 14B/12B
+   상대 순위는 Qwen > Gemma > A.X였지만 어느 모델도 activation하지 않는다.
+8. Qwen3-30B-A3B Instruct 2507 Q4_K_M도 같은 suite에서 46/66·5.5초·12/12 schema였지만
+   ambiguity 0/3, read-only ready 1/2, 올바른 network scope 0/1, review assessment 3/6으로
+   실패했다. 실제 Core 7턴도 자동 14/14와 달리 사람 검토에서 화면 밖 신체 행동과 질문 대상
+   변경이 드러나 운영 A.X보다 대화 교체 근거가 없었다. parameter 수나 schema 성공률만으로
+   activation하지 않는다.
+9. Gemma 3 27B IT Q4_K_M은 44/66·27.0초·11/12 schema, ambiguity 0/3, read-only
+   ready 1/2, 올바른 network scope 0/1, review assessment 3/6으로 실패했다. 실제 Core
+   대화도 Gemma role 교대 제약으로 HTTP 400이 났다. 같은 12~30B drop-in 반복은 중단하고
+   새 모델 계열 또는 runtime이 기존 실패 축을 해결한다는 근거가 있을 때만 다음 probe를 한다.
+10. 모델의 capability label을 실제 권한 강제로 간주하지 않는다. 목록·검색·텍스트 읽기만
+   제공하는 typed project gateway와 Codex provider adapter를 Shadow 구현했다. 부모
+   control-plane만 인증/API transport를 갖고 모델은 shell/web 없는 `env -i` MCP만 사용한다.
+   synthetic live 1건만 통과했으므로 기존 Codex V0에는 아직 연결하지 않으며 path/network/
+   write·prompt-injection 공격 suite 뒤에만 20 task Shadow로 이동한다.
+11. write Worker는 구현 승인, 격리 worktree, 독립 검증, 별도 채택 승인과 rollback 전에는
+   활성화하지 않는다.
+12. isolated implementation proposal Shadow는 sanitized baseline/copy, exact path·line scope,
+    network·HOME 없는 host unittest·Python 구조 검증과 source 불변 synthetic live를
+    통과했다. exact patch와 승인 목적·실제 diff·host 검증에서 만든 Winter 설명을 SQLite에
+    보존하고, 재시작 복원과 patch hash에 묶인 채택/재작업 결정 기록도 통과했다. 사용자-facing
+    route에는 아직 연결하지 않는다. 채택 뒤 대상 before hash stale 차단, 중간 오류 전 파일
+    복원, 적용 후 편집 보호와 재시작 rollback도 synthetic live로 통과했다. project 전체
+    baseline, process crash 복구, 실제 repository 검증과 Capability Registry 등록은 여전히
+    금지한다.
+13. 계정 비밀 원문은 모델 Memory가 아니라 OS credential store/connector가 보관한다.
+14. Day Reflection 실제 3일 사람 검토와 기존 Memory/Belief gate는 병행해 유지한다.
+15. 운영 A.X의 첫 실제 저장소 Intent는 약 9.7초 뒤 paraphrase evidence, `account` resource
+    오분류, 모순된 clarification과 추상 DoD로 gate에서 실패했다. Worker는 실행되지 않았고
+    repository도 외부 전송되지 않았다. prompt 예외를 누적하거나 실제 route를 연결하지 말고,
+    다음 Core 또는 단순화 계약을 같은 task로 먼저 검증한다.
+16. 권한·resource·exact evidence를 정책으로 옮긴 A.X 간소 Intent도 6/6 schema·평균 4.9초지만
+    ambiguity 0/2, 사람 검토 usable 1/6으로 실패했다. 분석을 구현으로 확대하고 실행 불가능한
+    DoD를 만들며 누락된 referent를 추측했다. orchestration 코드를 더 늘리지 말고 새 Core
+    후보가 이 6장면과 semantic-v2를 통과하는지 먼저 본다.
 
-`TurnUnderstanding` 검증 전에는 추론형 자동 기억을 active로 만들거나 실제 Worker 자동
-실행을 연결하지 않는다. 전체 범위와 완료 조건은 `docs/winter-v1-goal.md`를 따른다.
+TurnUnderstanding과 Reflection의 기존 품질 gate는 그대로 유지한다. 자동 Belief 정책이
+있다는 이유만으로 검증되지 않은 LLM candidate를 active로 만들거나 write Worker를 자동
+실행하지 않는다. 기존 TurnUnderstanding gate와 새 Belief safety gate를 모두 통과해야 한다.
+전체 범위와 완료 조건은 `docs/winter-v1-goal.md`를 따른다.
 
 ## 8.1 Historical First Task — Completed
 
@@ -617,6 +696,27 @@ Task 001이 완료되기 전에는 실제 장기 기억, fine-tuning, 외부 Wor
 ## 9. Agent Workflow
 
 Codex는 한 번에 큰 기능 전체를 구현하지 않는다.
+
+### Development Control Gate
+
+모든 Agent는 코드·설정·운영 문서를 변경하기 전에 저장소 root의 `project-state.toml`을
+읽고 `./winter project-check`를 실행한다.
+
+- `current_phase`, `active_issue`, `active_work`에 포함되지 않은 기능을 확장하지 않는다.
+- 우선순위를 바꾸려면 구현보다 먼저 사용자와 scope를 합의하고 GitHub Issue와
+  `project-state.toml`을 갱신한다.
+- `absent → contract → shadow → operational → validated` 단계를 건너뛰지 않는다.
+- `operational`과 `validated` 승격에는 repository 안에서 다시 확인 가능한 evidence가
+  있어야 한다.
+- dependency가 `operational`이 아니면 종속 기능을 `operational`로 승격하지 않는다.
+- 작업 종료 전 `./winter project-check`를 다시 실행하고 README, Roadmap, Maturity Ledger의
+  명시적 상태가 같은지 확인한다.
+- Gate 실패를 우회하거나 검사 코드를 약화해 기능을 통과시키지 않는다. 잘못된 상태·근거·
+  dependency를 먼저 수정한다.
+
+V0는 free-form 문서 의미와 기존 dirty worktree의 파일별 Issue scope를 자동 판정하지 못한다.
+따라서 현재 혼합 baseline이 정리되기 전까지 Agent는 active Issue 외 파일 변경을 사용자에게
+명시하고, 기존 변경과 자신의 변경을 구분해 보고한다.
 
 작업 순서:
 

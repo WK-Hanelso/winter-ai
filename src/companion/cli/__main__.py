@@ -4,11 +4,20 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from datetime import timedelta
 import json
 from pathlib import Path
 import sys
 from typing import TextIO
 
+from companion.adapters.belief_reflection_interpreter import (
+    StructuredChatBeliefProposalInterpreter,
+    StructuredChatBeliefSafetyReviewer,
+)
+from companion.adapters.codex_worker import CodexReadOnlyWorker
+from companion.adapters.day_reflection_interpreter import (
+    StructuredChatDayReflectionInterpreter,
+)
 from companion.adapters.fake import (
     AdapterUnavailableError,
     FakeChatModel,
@@ -24,6 +33,14 @@ from companion.adapters.sqlite_repository import (
     SqliteConversationRepository,
 )
 from companion.adapters.turn_interpreter import StructuredChatTurnInterpreter
+from companion.belief_reflection import (
+    BeliefEvidenceWindowBuilder,
+    BeliefReflectionError,
+    BeliefReflectionRepositoryError,
+    ShadowBeliefReflectionBatchService,
+    ShadowBeliefReflectionService,
+    SqliteBeliefProposalRepository,
+)
 from companion.beliefs import (
     ActiveBeliefRetriever,
     BeliefRepositoryError,
@@ -31,7 +48,19 @@ from companion.beliefs import (
 )
 from companion.context import ConversationContextBuilder
 from companion.core import CompanionCore
+from companion.day_reflection import (
+    ActiveDayReflectionRetriever,
+    DayReflectionError,
+    DayReflectionRepositoryError,
+    DayReflectionService,
+    SqliteConversationDayReader,
+    SqliteDayReflectionRepository,
+)
 from companion.identity import IdentityRepositoryError, JsonIdentityRepository
+from companion.lived_continuity import (
+    render_lived_continuity,
+    summarize_lived_continuity,
+)
 from companion.memory import ActiveMemoryRetriever, MemoryRepositoryError, SqliteMemoryRepository
 from companion.open_loops import (
     ActiveOpenLoopRetriever,
@@ -71,10 +100,19 @@ from companion.verbal_style import (
     VerbalStylePlanner,
     load_verbal_style,
 )
+from companion.winter_events import (
+    SqliteWinterEventRepository,
+    SystemClock,
+    WinterEventError,
+    WinterEventRepositoryError,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--codex-worker", action="store_true")
+    parser.add_argument("--codex-executable", default="codex")
+    parser.add_argument("--codex-model", default="gpt-5.4")
     parser.add_argument(
         "--backend",
         choices=("fake", "local"),
@@ -86,6 +124,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="http://llm:8080",
         help="local llama.cpp server URL when --backend local is selected",
     )
+    parser.add_argument("--winter-event-db", type=Path)
+    parser.add_argument("--belief-reflection-db", type=Path)
+    parser.add_argument("--day-reflection-db", type=Path)
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("--prompt", help="run one turn instead of an interactive session")
     actions.add_argument(
@@ -169,6 +210,31 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="show raw conversations, pending analysis and usable memory counts",
     )
+    actions.add_argument(
+        "--lived-continuity",
+        action="store_true",
+        help="show privacy-minimal evidence that makes up Winter's current day",
+    )
+    actions.add_argument(
+        "--analyze-belief-reflection",
+        action="store_true",
+        help="analyze new evidence windows into Shadow-only Winter viewpoints",
+    )
+    actions.add_argument(
+        "--list-belief-reflection",
+        action="store_true",
+        help="list Shadow-only Winter viewpoint observations",
+    )
+    actions.add_argument(
+        "--close-winter-day",
+        action="store_true",
+        help="close one completed Korean day into a grounded Winter reflection",
+    )
+    actions.add_argument(
+        "--list-winter-days",
+        action="store_true",
+        help="list stored Winter day reflections without loading a model",
+    )
     parser.add_argument("--identity-path", type=Path)
     parser.add_argument("--memory-db", type=Path)
     parser.add_argument("--memory-kind", default="semantic")
@@ -178,6 +244,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--turn-understanding-db", type=Path)
     parser.add_argument("--outcome-db", type=Path)
     parser.add_argument("--reflection-db", type=Path)
+    parser.add_argument(
+        "--winter-day",
+        help="Korean local date to inspect with --lived-continuity (YYYY-MM-DD)",
+    )
     parser.add_argument(
         "--analysis-limit",
         type=_positive_int,
@@ -318,6 +388,31 @@ def run(
         print(f"Belief storage unavailable: {error}", file=stdout)
         return 1
     try:
+        winter_event_path = getattr(args, "winter_event_db", None)
+        winter_event_repository = (
+            SqliteWinterEventRepository(winter_event_path)
+            if winter_event_path
+            else None
+        )
+    except WinterEventRepositoryError as error:
+        print(f"Winter lived continuity unavailable: {error}", file=stdout)
+        return 1
+    try:
+        day_reflection_path = getattr(args, "day_reflection_db", None)
+        day_reflection_repository = (
+            SqliteDayReflectionRepository(day_reflection_path)
+            if day_reflection_path
+            else None
+        )
+        day_reflection_retriever = (
+            ActiveDayReflectionRetriever(day_reflection_repository)
+            if day_reflection_repository
+            else None
+        )
+    except DayReflectionRepositoryError as error:
+        print(f"Winter day reflection unavailable: {error}", file=stdout)
+        return 1
+    try:
         dialogue_state_path = getattr(args, "dialogue_state_db", None)
         open_loop_repository = (
             SqliteOpenLoopRepository(dialogue_state_path)
@@ -403,11 +498,64 @@ def run(
             args,
             outcome_repository,
             turn_understanding_repository,
+            winter_event_repository,
             stdin,
+            stdout,
+        )
+    belief_reflection_actions = (
+        "analyze_belief_reflection",
+        "list_belief_reflection",
+    )
+    if any(getattr(args, name, False) for name in belief_reflection_actions):
+        return _handle_belief_reflection(
+            args,
+            outcome_repository,
+            winter_event_repository,
+            stdout,
+        )
+    if getattr(args, "close_winter_day", False) or getattr(
+        args, "list_winter_days", False
+    ):
+        return _handle_day_reflection(
+            args,
+            day_reflection_repository,
+            winter_event_repository,
             stdout,
         )
     if getattr(args, "show_history", False):
         return _show_history(repository, stdout)
+    if getattr(args, "lived_continuity", False):
+        if winter_event_repository is None or belief_repository is None:
+            print(
+                "Winter lived continuity requires event and belief storage.",
+                file=stdout,
+            )
+            return 1
+        local_date = getattr(args, "winter_day", None)
+        if not local_date:
+            local_date = SystemClock().now().date().isoformat()
+        try:
+            proposal_path = getattr(args, "belief_reflection_db", None)
+            proposal_repository = (
+                SqliteBeliefProposalRepository(proposal_path)
+                if proposal_path
+                else None
+            )
+            summary = summarize_lived_continuity(
+                winter_event_repository,
+                belief_repository,
+                local_date,
+                proposal_repository,
+            )
+        except (
+            BeliefReflectionRepositoryError,
+            WinterEventError,
+            WinterEventRepositoryError,
+        ) as error:
+            print(f"Winter lived continuity unavailable: {error}", file=stdout)
+            return 1
+        print(render_lived_continuity(summary), file=stdout)
+        return 0
     core = CompanionCore(
         build_chat_model(args),
         repository,
@@ -425,6 +573,18 @@ def run(
         turn_understanding_repository=turn_understanding_repository,
         outcome_repository=outcome_repository,
         turn_source="cli",
+        winter_event_repository=winter_event_repository,
+        clock=SystemClock() if winter_event_repository is not None else None,
+        day_reflection_retriever=day_reflection_retriever,
+        read_only_worker=(
+            CodexReadOnlyWorker(
+                Path.cwd(),
+                executable=getattr(args, "codex_executable", "codex"),
+                model=getattr(args, "codex_model", "gpt-5.4"),
+            )
+            if getattr(args, "codex_worker", False)
+            else None
+        ),
     )
     if args.prompt is not None:
         return _run_turn(core, args.prompt, stdout)
@@ -467,6 +627,160 @@ def _show_history(repository: ConversationRepository, stdout: TextIO) -> int:
     for message in messages:
         print(f"{message.role}> {message.content}", file=stdout)
     return 0
+
+
+def _handle_belief_reflection(
+    args: argparse.Namespace,
+    outcomes: SqliteOutcomeRepository | None,
+    events: SqliteWinterEventRepository | None,
+    stdout: TextIO,
+) -> int:
+    proposal_path = getattr(args, "belief_reflection_db", None)
+    if proposal_path is None:
+        print("Winter viewpoint Shadow requires --belief-reflection-db.", file=stdout)
+        return 1
+    try:
+        observations = SqliteBeliefProposalRepository(proposal_path)
+        if getattr(args, "list_belief_reflection", False):
+            stored = observations.list()
+            if not stored:
+                print("아직 관찰된 겨울이 관점 후보가 없습니다.", file=stdout)
+                return 0
+            for observation in stored:
+                proposal = observation.proposal
+                if proposal is None:
+                    print(
+                        f"{observation.created_at} 후보 없음 "
+                        f"({', '.join(observation.reason_codes)})",
+                        file=stdout,
+                    )
+                    continue
+                status = "통과(Shadow)" if observation.safe else "차단"
+                reasons = ", ".join(observation.reason_codes) or "없음"
+                print(
+                    f"{observation.created_at} {status} {proposal.subject}: "
+                    f"{proposal.stance} | confidence={proposal.confidence:.2f} "
+                    f"| 이유={reasons}",
+                    file=stdout,
+                )
+            return 0
+        if args.backend != "local":
+            print(
+                "관점 분석은 실제 local 분석 모델을 명시해야 합니다. "
+                "fake 결과는 실사용 DB에 기록하지 않습니다.",
+                file=stdout,
+            )
+            return 2
+        if outcomes is None or events is None:
+            print(
+                "Winter viewpoint Shadow requires outcome and Winter event storage.",
+                file=stdout,
+            )
+            return 1
+        chat_model = build_chat_model(args)
+        reflection = ShadowBeliefReflectionService(
+            StructuredChatBeliefProposalInterpreter(chat_model),
+            StructuredChatBeliefSafetyReviewer(chat_model),
+            observations,
+            events,
+        )
+        result = ShadowBeliefReflectionBatchService(
+            BeliefEvidenceWindowBuilder(outcomes, events),
+            reflection,
+            observations,
+        ).run(limit=getattr(args, "analysis_limit", 10))
+        print(
+            "겨울이 관점 Shadow 분석: "
+            f"근거 묶음 {result.windows}, 새 분석 {result.analyzed}, "
+            f"기존 결과 {result.already_analyzed}, 다음 실행 대기 {result.deferred}",
+            file=stdout,
+        )
+        print(
+            f"결과: 안전 통과 {result.safe}, 차단 {result.blocked}, "
+            f"후보 없음 {result.no_proposal}",
+            file=stdout,
+        )
+        print(
+            f"근거 연결: 완료 결과 {result.completed_outcomes}, "
+            f"연결 {result.linked_outcomes}, 미연결 {result.unlinked_outcomes}, "
+            f"제외 {result.excluded_outcomes}",
+            file=stdout,
+        )
+        print(
+            "통과 결과도 아직 대화·기억·Identity에는 영향을 주지 않습니다.",
+            file=stdout,
+        )
+        return 0
+    except (
+        BeliefReflectionError,
+        BeliefReflectionRepositoryError,
+        OutcomeRepositoryError,
+        WinterEventRepositoryError,
+    ) as error:
+        print(f"Winter viewpoint Shadow unavailable: {error}", file=stdout)
+        return 1
+
+
+def _handle_day_reflection(
+    args: argparse.Namespace,
+    repository: SqliteDayReflectionRepository | None,
+    events: SqliteWinterEventRepository | None,
+    stdout: TextIO,
+) -> int:
+    if repository is None:
+        print("Winter day reflection requires --day-reflection-db.", file=stdout)
+        return 1
+    try:
+        if getattr(args, "list_winter_days", False):
+            reflections = repository.list()
+            if not reflections:
+                print("아직 닫힌 겨울이의 하루가 없습니다.", file=stdout)
+                return 0
+            labels = {
+                "shared_moment": "함께한 일",
+                "cheonu_change": "천우 변화 관찰",
+                "open_thread": "이어갈 이야기",
+                "winter_reflection": "겨울이의 생각",
+                "next_cue": "다음 대화 단서",
+            }
+            for reflection in reflections:
+                print(f"겨울이의 {reflection.local_date}", file=stdout)
+                for point in reflection.points:
+                    print(f"- {labels[point.kind]}: {point.content}", file=stdout)
+            return 0
+        if args.backend != "local":
+            print(
+                "하루 정리는 실제 local 대화 모델을 사용해야 합니다. "
+                "fake 결과는 실사용 DB에 기록하지 않습니다.",
+                file=stdout,
+            )
+            return 2
+        conversation_path = getattr(args, "conversation_db", None)
+        if conversation_path is None or events is None:
+            print(
+                "Winter day reflection requires conversation and event storage.",
+                file=stdout,
+            )
+            return 1
+        now = SystemClock().now()
+        local_date = getattr(args, "winter_day", None)
+        if not local_date:
+            local_date = (now.date() - timedelta(days=1)).isoformat()
+        result = DayReflectionService(
+            SqliteConversationDayReader(conversation_path),
+            events,
+            StructuredChatDayReflectionInterpreter(build_chat_model(args)),
+            repository,
+        ).close(local_date, now=now)
+        state = "새로 닫음" if result.created else "이미 닫힘"
+        print(f"겨울이의 {local_date}: {state}", file=stdout)
+        for point in result.reflection.points:
+            print(f"- {point.kind}: {point.content}", file=stdout)
+        print("다음 CLI·Web·Voice 대화부터 이 회고를 함께 봅니다.", file=stdout)
+        return 0
+    except (DayReflectionError, DayReflectionRepositoryError) as error:
+        print(f"Winter day reflection unavailable: {error}", file=stdout)
+        return 1
 
 
 def _handle_memory(args: argparse.Namespace, stdout: TextIO) -> int:
@@ -644,6 +958,7 @@ def _handle_outcomes(
     args: argparse.Namespace,
     repository: SqliteOutcomeRepository | None,
     turn_repository: SqliteTurnUnderstandingRepository | None,
+    winter_event_repository: SqliteWinterEventRepository | None,
     stdin: TextIO,
     stdout: TextIO,
 ) -> int:
@@ -679,7 +994,11 @@ def _handle_outcomes(
                 else StructuredChatOutcomeInterpreter(build_chat_model(args))
             )
             result = ShadowOutcomeService(
-                repository, turn_repository, interpreter
+                repository,
+                turn_repository,
+                interpreter,
+                winter_event_repository,
+                SystemClock() if winter_event_repository is not None else None,
             ).process_pending(limit=getattr(args, "analysis_limit", 10))
             print(
                 "Shadow outcomes: "
@@ -766,6 +1085,7 @@ def _handle_reflection(
             history,
             reflections,
             reflection_interpreter,
+            memories,
         ).process_pending(
             limit=getattr(args, "analysis_limit", 10),
             progress=lambda completed, total: print(
@@ -786,7 +1106,7 @@ def _handle_reflection(
         )
         print(
             f"이번 기억 정리: 완료 {reflected.completed}, 실패 {reflected.failed}, "
-            f"연결 보류 {reflected.deferred}",
+            f"연결 보류 {reflected.deferred}, 후보 제외 경고 {reflected.warnings}",
             file=stdout,
         )
         print(

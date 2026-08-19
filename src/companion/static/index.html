@@ -80,8 +80,8 @@ function say(who, text) {
 // herself — the pipeline is deliberately a sentence ahead.
 const queue = [];
 let playing = false;
-function enqueue(wavBase64) {
-  queue.push("data:audio/wav;base64," + wavBase64);
+function enqueue(wavBase64, onPlaying = null) {
+  queue.push({ source: "data:audio/wav;base64," + wavBase64, onPlaying });
   if (!playing) playNext();
 }
 function playNext() {
@@ -89,12 +89,36 @@ function playNext() {
   if (!next) { playing = false; state.textContent = "준비됨"; return; }
   playing = true;
   state.textContent = "말하는 중";
-  const audio = new Audio(next);
+  const audio = new Audio(next.source);
+  if (next.onPlaying) audio.addEventListener("playing", next.onPlaying, { once: true });
   audio.onended = audio.onerror = playNext;
   audio.play().catch(() => playNext());
 }
 
-async function turn(text) {
+async function reportVoiceTrace(trace) {
+  const payload = {
+    trace_id: trace.id,
+    release_to_stt_ms: trace.sttDoneAt - trace.releasedAt,
+    release_to_first_sentence_ms: trace.firstSentenceAt - trace.releasedAt,
+    release_to_first_audio_ms: trace.firstAudioAt - trace.releasedAt,
+    release_to_play_ms: trace.firstPlayAt - trace.releasedAt,
+    server_stt_ms: trace.serverSttMs,
+    server_first_sentence_ms: trace.serverFirstSentenceMs,
+    server_first_audio_ms: trace.serverFirstAudioMs,
+  };
+  try {
+    await fetch("/voice-metric", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    });
+  } catch (_) {
+    // A performance report must never interrupt the conversation.
+  }
+}
+
+async function turn(text, trace = null) {
   say("천우", text);
   state.textContent = "생각 중";
   hold.disabled = true;
@@ -121,11 +145,26 @@ async function turn(text) {
         const event = (block.match(/^event: (.*)$/m) || [])[1];
         const data = JSON.parse((block.match(/^data: (.*)$/m) || [, "{}"])[1]);
         if (event === "sentence") {
+          if (trace && trace.firstSentenceAt === null) {
+            trace.firstSentenceAt = performance.now();
+            trace.serverFirstSentenceMs = Number(data.server_elapsed_ms);
+          }
           her = her || say("겨울이", "");
           her.textContent += (her.textContent ? " " : "") + data.text;
           log.scrollTop = log.scrollHeight;
+        } else if (event === "status") {
+          state.textContent = data.message;
         } else if (event === "audio") {
-          enqueue(data.wav);
+          let onPlaying = null;
+          if (trace && trace.firstAudioAt === null) {
+            trace.firstAudioAt = performance.now();
+            trace.serverFirstAudioMs = Number(data.server_elapsed_ms);
+            onPlaying = () => {
+              trace.firstPlayAt = performance.now();
+              reportVoiceTrace(trace);
+            };
+          }
+          enqueue(data.wav, onPlaying);
         } else if (event === "error") {
           say("시스템", data.message);
         }
@@ -160,6 +199,7 @@ async function startRecording() {
     chunks = [];
     recorder.ondataavailable = (event) => chunks.push(event.data);
     recorder.onstop = async () => {
+      const releasedAt = performance.now();
       media.getTracks().forEach((track) => track.stop());
       const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
       recorder = null;
@@ -168,7 +208,20 @@ async function startRecording() {
       try {
         const response = await fetch("/listen", { method: "POST", body: blob });
         const heard = await response.json();
-        if (heard.text) { turn(heard.text); } else { say("시스템", heard.error || "못 알아들었어"); state.textContent = "준비됨"; }
+        if (heard.text) {
+          const trace = {
+            id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+            releasedAt,
+            sttDoneAt: performance.now(),
+            firstSentenceAt: null,
+            firstAudioAt: null,
+            firstPlayAt: null,
+            serverSttMs: Number(heard.server_stt_ms),
+            serverFirstSentenceMs: null,
+            serverFirstAudioMs: null,
+          };
+          turn(heard.text, trace);
+        } else { say("시스템", heard.error || "못 알아들었어"); state.textContent = "준비됨"; }
       } catch (error) {
         say("시스템", String(error));
         state.textContent = "준비됨";

@@ -61,7 +61,7 @@ def run_memory_candidate_review(
     approved = 0
     rejected = 0
     for index, candidate in enumerate(candidates, start=1):
-        _print_candidate(candidate, index, len(candidates), stdout)
+        _print_candidate(candidate, index, len(candidates), memories, stdout)
         try:
             action = _ask_action(candidate, stdin, stdout)
             edited_content = None
@@ -137,9 +137,16 @@ def print_companion_overview(
     print(
         f"- 기억 정리: 완료 {extraction_counts['completed']}, "
         f"분석 대기 {extraction_counts['pending']}, "
-        f"재시도 필요 {extraction_counts['failed']}",
+        f"재시도 필요 {extraction_counts['failed']}, "
+        f"후보 제외 경고 {extraction_counts['warnings']}",
         file=stdout,
     )
+    if extraction_counts["warnings"]:
+        for warning in reflections.list_extraction_warnings():
+            print(
+                f"  - 발화 {warning.message_id}: {warning.detail}",
+                file=stdout,
+            )
     print(
         f"- 천우가 볼 기억 후보: {reflection_counts['candidate']}",
         file=stdout,
@@ -153,7 +160,8 @@ def print_companion_overview(
     print(f"- 현재 사용 중인 장기 기억: {memory_counts['active']}", file=stdout)
     if extraction_counts["pending"]:
         print(
-            "\n기억 정리 대기를 줄이려면: 별도 분석 모델 설정 후 ./winter reflect",
+            "\n내부 maintenance: background 분석 worker 미연결 "
+            "(개발 진단: 별도 분석 모델로 ./winter reflect)",
             file=stdout,
         )
     if turn_counts["pending"] or outcome_counts["pending"]:
@@ -169,11 +177,26 @@ def _print_candidate(
     candidate: ReflectionCandidate,
     index: int,
     total: int,
+    memories: SqliteMemoryRepository,
     stdout: TextIO,
 ) -> None:
     print("\n" + "=" * 64, file=stdout)
     print(f"기억 후보 {index}/{total}", file=stdout)
-    print(f"종류: {_KIND_LABELS[candidate.kind]}", file=stdout)
+    if candidate.is_current_state:
+        print("종류: 천우의 현재 상태 변경", file=stdout)
+        print(f"상태 주제: {candidate.state_topic}", file=stdout)
+        previous = next(
+            (
+                memory
+                for memory in memories.list()
+                if memory.id == candidate.supersedes_memory_id
+            ),
+            None,
+        )
+        if previous is not None:
+            print(f"기존 상태: {previous.content}", file=stdout)
+    else:
+        print(f"종류: {_KIND_LABELS[candidate.kind]}", file=stdout)
     print(f"내용: {candidate.content}", file=stdout)
     print(f"유효 범위: {_SCOPE_LABELS[candidate.temporal_scope]}", file=stdout)
     print(f"판단 확신도: {candidate.confidence * 100:.0f}%", file=stdout)
@@ -185,13 +208,21 @@ def _print_candidate(
             "이 항목은 순간 경험·관계·개선 정보라 승인해도 일반 기억에는 넣지 않습니다.",
             file=stdout,
         )
+    elif candidate.is_current_state:
+        print(
+            "승인하면 기존 상태는 History에 남고 이 내용이 현재 상태가 됩니다.",
+            file=stdout,
+        )
 
 
 def _ask_action(
     candidate: ReflectionCandidate, stdin: TextIO, stdout: TextIO
 ) -> str:
     if candidate.can_activate_as_memory:
-        print("  1. 맞아, 기억해서 다음 대화부터 사용", file=stdout)
+        if candidate.is_current_state:
+            print("  1. 맞아, 현재 상태를 이 내용으로 갱신", file=stdout)
+        else:
+            print("  1. 맞아, 기억해서 다음 대화부터 사용", file=stdout)
     else:
         print("  1. 맞아, 확인된 후보로 별도 보관", file=stdout)
     print("  2. 아니야, 기억하지 않기", file=stdout)

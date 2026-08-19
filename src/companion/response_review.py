@@ -16,6 +16,16 @@ _BROAD_QUESTION = re.compile(
     r"구체적으로.{0,20}(?:말|얘기)|말해\s*줄\s*수|얘기해\s*줄\s*수"
 )
 _GENERIC_OFFER = re.compile(r"언제든.{0,20}말해|도움.{0,20}(?:말해|줄까)|더\s*얘기해\s*볼래")
+_FIRST_PERSON = re.compile(r"(?:^|[\s,])(나는|난|나도|내가|내\s)")
+_THIN_SELF_RESPONSE = re.compile(
+    r"나는\s*(?:잘|괜찮).{0,12}지내|나도\s*열심히|"
+    r"서로\s*(?:힘내|잘\s*지내)|같이\s*힘내|잘\s*지내자|"
+    r"(?:나는|난|나도).{0,12}(?:동의|맞아|그래)"
+)
+_UNPROMPTED_DISTRESS = re.compile(
+    r"힘들|힘드|힘든|지쳤|지친|우울|불안|아프|괴로|외로"
+)
+_SELF_TURN_PRAISE = re.compile(r"대단|멋지|훌륭|잘했|존경|인상적|기특")
 _WORDS = re.compile(r"[0-9A-Za-z가-힣]+")
 _FOCUS_STOP = {
     "내일",
@@ -127,6 +137,30 @@ class ResponseReviewer:
             return (
                 "방금 초안의 상투적인 도움 제안을 빼고, 천우가 실제로 말한 내용에 대한 "
                 "너의 반응만 자연스럽게 다시 말해."
+            )
+        if behavior == "self_reciprocate" and (
+            not _FIRST_PERSON.search(draft)
+            or _THIN_SELF_RESPONSE.search(draft)
+            or _GENERIC_OFFER.search(draft)
+            or _SELF_TURN_PRAISE.search(draft)
+            or "?" in draft
+            or _BROAD_QUESTION.search(draft)
+            or (
+                focus is not None
+                and not _UNPROMPTED_DISTRESS.search(focus)
+                and _UNPROMPTED_DISTRESS.search(draft)
+            )
+        ):
+            return (
+                "방금 초안은 겨울이 쪽 내용 없이 맞장구나 일반적인 도움 제안으로 끝나서 "
+                "실패했어. 질문 없이 한 문장으로 다시 말해. '나는', '난', '나도', '내가' "
+                "중 하나로 시작해, 지금 대화에서 "
+                "실제로 생긴 구체적인 선택·가치·궁금함 중 하나를 말해. 동의한다는 말은 "
+                "자기 내용으로 세지 마. Identity나 "
+                "주어진 활성 관점에 없는 성격을 만들지 말고, 대화 밖 활동·신체 경험·"
+                "수행할 수 없는 약속도 꾸미지 마. 천우의 이번 말에 없던 힘듦이나 상태를 "
+                "추가하지 마. 천우가 대단하다거나 잘했다는 칭찬도 전부 빼고 네 쪽의 "
+                "선택·가치·한계만 남겨."
             )
         return None
 

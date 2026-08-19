@@ -94,3 +94,58 @@ def test_active_memory_recall_falls_back_to_the_stored_words() -> None:
         focus=None,
         memory_focus=memory,
     ) == f"응, “{memory}”라고 기억해뒀어."
+
+
+def test_self_presence_rejects_generic_mutual_encouragement() -> None:
+    reviewer = ResponseReviewer()
+
+    no_self = reviewer.repair_instruction(
+        "self_reciprocate", "고마워! 서로 힘내서 잘 지내자."
+    )
+    thin_self = reviewer.repair_instruction(
+        "self_reciprocate", "나는 잘 지내고 있어. 언제든지 말해줘."
+    )
+    agreement_only = reviewer.repair_instruction(
+        "self_reciprocate", "난 이 말에 동의해."
+    )
+    praise_only = reviewer.repair_instruction(
+        "self_reciprocate", "난 이 말에 담긴 결심이 정말 대단하다고 생각해."
+    )
+
+    assert no_self is not None
+    assert thin_self is not None
+    assert agreement_only is not None
+    assert praise_only is not None
+    assert "대화 밖 활동" in no_self
+
+
+def test_grounded_specific_self_presence_passes() -> None:
+    assert (
+        ResponseReviewer().repair_instruction(
+            "self_reciprocate",
+            "나는 네가 꾸준히 해왔다는 얘기가 오래 남아. 오늘은 그 꾸준함이 좀 부러워.",
+        )
+        is None
+    )
+
+
+def test_self_presence_rejects_question_and_unprompted_distress() -> None:
+    reviewer = ResponseReviewer()
+    focus = "나도 열심히 할 테니까 너도 열심히 살아보자."
+
+    assert (
+        reviewer.repair_instruction(
+            "self_reciprocate",
+            "나는 네가 힘든 걸 알면 마음이 무거워.",
+            focus=focus,
+        )
+        is not None
+    )
+    assert (
+        reviewer.repair_instruction(
+            "self_reciprocate",
+            "나는 네 말이 오래 남네. 요즘 어떻게 지내?",
+            focus=focus,
+        )
+        is not None
+    )

@@ -1,0 +1,16 @@
+[Unit]
+Description=Close one grounded Winter day
+After=network-online.target winter-web.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/hanelso/hanelso/winter
+Environment=PYTHONPATH=/home/hanelso/hanelso/winter/src
+Environment=WINTER_DATA_DIR=/home/hanelso/hanelso/winter/data
+Environment=WINTER_LLM_URL=http://127.0.0.1:18080
+ExecStart=/home/hanelso/.pyenv/versions/3.11.9/bin/python3.11 -m companion.day_reflection_worker
+Restart=on-failure
+RestartSec=30m
+NoNewPrivileges=true
