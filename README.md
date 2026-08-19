@@ -186,6 +186,10 @@ Web은 `127.0.0.1:8000`에만 bind하고, 폰 외부 접속은 Tailscale Serve H
 [Web ingress safety](docs/web-ingress-safety.md)를 따른다. 공개 인터넷이나 LAN에 인증 없는
 포트를 직접 열지 않는다.
 
+Web은 Shared Core 생성부터 음성 전달과 terminal event까지 한 turn씩 처리한다. Core 또는
+음성 경로가 실패하면 빈 답변을 성공으로 끝내지 않고 명시적 SSE error를 보낸다. 동시 요청과
+실패 경계는 [Web turn safety](docs/web-turn-safety.md)를 따른다.
+
 ## 4. 전체 동작 구조
 
 ```text

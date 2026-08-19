@@ -151,77 +151,97 @@ class Companion:
         """Answer once, emitting each sentence and then its audio."""
         started = time.perf_counter()
         prosody = ProsodyPlanner().plan(classify_dialogue_act(text))
-        written: list[str] = []
-        pending: list[str] = []
-        done = threading.Event()
-
-        def think() -> None:
-            try:
-                self._core.respond_to_text_streaming(
-                    text,
-                    pending.append,
-                    on_status=lambda message: emit(
-                        "status",
-                        {
-                            "message": message,
-                            "server_elapsed_ms": _elapsed_ms(started),
-                        },
-                    ),
-                )
-            finally:
-                done.set()
-
-        def sentences() -> Iterator[str]:
-            index = 0
-            while True:
-                if index < len(pending):
-                    sentence = pending[index]
-                    index += 1
-                    written.append(sentence)
-                    emit(
-                        "sentence",
-                        {
-                            "text": sentence,
-                            "server_elapsed_ms": _elapsed_ms(started),
-                        },
-                    )
-                    yield sentence
-                elif done.is_set() and index >= len(pending):
-                    return
-                else:
-                    time.sleep(0.02)
-
-        thinking = threading.Thread(target=think, daemon=True)
-        thinking.start()
-        first = True
         with self._lock:
-            for piece in stream(
-                sentences(),
-                lambda sentence: self._tts.synthesize(
-                    SpeechRequest(
-                        text=sentence,
-                        emotion=prosody.emotion,
-                        pace=1.0,
-                        energy=prosody.energy,
-                        pitch_offset=prosody.pitch_offset,
+            written: list[str] = []
+            pending: list[str] = []
+            failures: list[Exception] = []
+            done = threading.Event()
+            emit_lock = threading.Lock()
+
+            def safe_emit(event: str, payload: dict[str, str | float]) -> None:
+                # Core status comes from the thinking thread while sentence/audio
+                # events come from this thread. A single writer keeps each SSE
+                # frame intact on the shared response stream.
+                with emit_lock:
+                    emit(event, payload)
+
+            def think() -> None:
+                try:
+                    self._core.respond_to_text_streaming(
+                        text,
+                        pending.append,
+                        on_status=lambda message: safe_emit(
+                            "status",
+                            {
+                                "message": message,
+                                "server_elapsed_ms": _elapsed_ms(started),
+                            },
+                        ),
                     )
-                ),
-                (lambda audio: audio)
-                if self._converter is None
-                else self._converter.convert,
-            ):
-                if first:
-                    print(f"  첫 소리까지 {time.perf_counter() - started:.1f}초", flush=True)
-                    first = False
-                emit(
-                    "audio",
-                    {
-                        "wav": base64.b64encode(piece.data).decode(),
-                        "server_elapsed_ms": _elapsed_ms(started),
-                    },
-                )
-        thinking.join()
-        emit("done", {"text": " ".join(written)})
+                except Exception as error:  # noqa: BLE001 - re-raised on request thread
+                    failures.append(error)
+                finally:
+                    done.set()
+
+            def sentences() -> Iterator[str]:
+                index = 0
+                while True:
+                    if index < len(pending):
+                        sentence = pending[index]
+                        index += 1
+                        written.append(sentence)
+                        safe_emit(
+                            "sentence",
+                            {
+                                "text": sentence,
+                                "server_elapsed_ms": _elapsed_ms(started),
+                            },
+                        )
+                        yield sentence
+                    elif done.is_set() and index >= len(pending):
+                        return
+                    else:
+                        time.sleep(0.02)
+
+            thinking = threading.Thread(target=think, daemon=True)
+            thinking.start()
+            first = True
+            try:
+                for piece in stream(
+                    sentences(),
+                    lambda sentence: self._tts.synthesize(
+                        SpeechRequest(
+                            text=sentence,
+                            emotion=prosody.emotion,
+                            pace=1.0,
+                            energy=prosody.energy,
+                            pitch_offset=prosody.pitch_offset,
+                        )
+                    ),
+                    (lambda audio: audio)
+                    if self._converter is None
+                    else self._converter.convert,
+                ):
+                    if first:
+                        print(
+                            f"  첫 소리까지 {time.perf_counter() - started:.1f}초",
+                            flush=True,
+                        )
+                        first = False
+                    safe_emit(
+                        "audio",
+                        {
+                            "wav": base64.b64encode(piece.data).decode(),
+                            "server_elapsed_ms": _elapsed_ms(started),
+                        },
+                    )
+            finally:
+                # A dropped client or failed TTS must not leave Core mutating
+                # conversation state after this turn releases the lock.
+                thinking.join()
+            if failures:
+                raise failures[0]
+            safe_emit("done", {"text": " ".join(written)})
 
 
 def make_handler(

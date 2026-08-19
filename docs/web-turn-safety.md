@@ -44,3 +44,19 @@ request
 - 두 동시 turn에서 Core 최대 동시 실행 수는 1이다.
 - TTS/delivery 실패 뒤 `done`은 없다.
 - 정상 text/voice 경로 회귀가 유지된다.
+
+## 2026-08-19 구현 검증
+
+수정 전 regression은 Core 예외가 caller에 전달되지 않고 Web이 빈 `done`을 내보내며, 첫
+turn을 의도적으로 정지한 동안 두 번째 Core가 진입하는 것을 재현했다. 수정 뒤에는 다음을
+확인했다.
+
+- Core 예외 direct propagation과 `done` 미발행
+- 실제 HTTP handler의 SSE `error`와 빈 `done` 미발행
+- 두 concurrent answer의 Core 최대 동시 실행 수 1
+- TTS 실패 시 `done` 미발행
+- Web 관련 정상·ingress·metrics 13 tests 통과
+- 전체 offline 691 tests, Ruff 전체, mypy 161 source files 통과
+
+코드는 deterministic failure/concurrency contract를 통과한 Shadow다. 실행 중인 user service가
+새 process로 재시작되기 전에는 운영 경로에 반영됐다고 판정하지 않는다.

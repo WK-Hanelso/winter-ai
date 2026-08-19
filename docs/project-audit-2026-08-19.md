@@ -329,3 +329,6 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   예외가 빈 `done`으로 숨는 문제와 동시에 시작된 turn이 Shared Core에서 겹치는 문제를
   하나의 full-turn 경계로 수정한다. streaming 재설계·Memory·Worker 확장은 이 scope에서
   제외한다.
+- 2026-08-19: 실패와 동시성을 deterministic test로 먼저 재현한 뒤 full-turn lock, Core
+  thread 예외 회수와 SSE single-writer를 구현했다. Web 관련 13 tests와 전체 691 tests,
+  Ruff, mypy를 통과했다. 실행 중 service 재시작 전이므로 `web_turn_safety=shadow`로 둔다.

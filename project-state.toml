@@ -78,9 +78,10 @@ dependencies = ["phone_voice"]
 
 [[features]]
 id = "web_turn_safety"
-maturity = "contract"
+maturity = "shadow"
 evidence = [
   "docs/web-turn-safety.md",
+  "tests/unit/test_web_voice_path.py",
 ]
 dependencies = ["phone_voice", "web_ingress_safety"]
 
