@@ -376,3 +376,6 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   live queue는 시작 시 196에서 195로 줄었다. 결과는 TurnUnderstanding Shadow에만 있고 active
   Memory 10건은 변하지 않았다. 전체 724 tests, Ruff와 mypy 161 files도 통과했다. 24시간
   안정성·실제 대화 latency·사람 품질 audit은 미완료다.
+- 2026-08-19: 실제 maintenance process를 inference 도중 재시작했다. 130초 stop budget 안에서
+  기존 process가 현재 cycle을 67.0초에 완료하고 pending `190→189`로 한 번만 전이한 뒤 정상
+  종료했으며 새 PID가 기동했다. failed·중복 완료·강제 kill은 없었다.

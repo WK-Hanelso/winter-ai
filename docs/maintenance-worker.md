@@ -84,6 +84,7 @@ offline test로 검증했다. 2026-08-19에는 전용 CPU runtime과 user system
   자체에 없고 Web UI와 prompt log도 껐다.
 - supervisor: `winter-analysis.service`, `winter-maintenance.service`. worker는 batch 1,
   완료 뒤 5초 휴식, idle 10초, unavailable backoff 최대 120초, low CPU/IO priority다.
+  stop/restart는 현재 최대 요청보다 긴 130초를 기다려 cycle 경계에서 끝낸다.
 - copied production DB canary 5/5 completed, failed 0. 2-thread 첫 건은 91.59초,
   4-thread 3건 연속은 126.21초(건당 42.07초)였다.
 - 동일 synthetic 대화 모델 요청 3회의 평균은 analysis idle 0.300초, 부하 중 0.285초였다.
@@ -93,6 +94,8 @@ offline test로 검증했다. 2026-08-19에는 전용 CPU runtime과 user system
 - 두 user service는 자동 시작 상태다. 24시간 supervisor/queue/대화 latency와 결과 품질
   사람 audit은 아직 끝나지 않았다.
 - 배포 직후 전체 offline 회귀는 724 tests, Ruff 전체, mypy 161 source files를 통과했다.
+- live restart는 진행 중 cycle을 67.0초에 완료해 pending `190→189`로 한 번만 전이한 뒤
+  정상 종료·새 PID 기동했다. 강제 종료, failed event와 중복 완료는 없었다.
 
 개발자가 상태만 확인할 때:
 

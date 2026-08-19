@@ -15,7 +15,8 @@ current 6 GiB GPU, and earlier Orin analysis load was not operationally stable.
 Run the existing Qwen3-4B Q4 checkpoint in a separately built CPU-only llama.cpp server bound to
 `127.0.0.1:18081`. Supervise the model and worker as user services. Limit the runtime to four CPU
 threads and one request, lower CPU/IO priority, process one event per cycle, and pause five seconds
-after completed work. Keep prompts out of logs and record only aggregate queue and latency fields.
+after completed work. Give shutdown 130 seconds so the 120-second model request can reach a cycle
+boundary. Keep prompts out of logs and record only aggregate queue and latency fields.
 
 The worker consumes TurnUnderstanding only. Its outputs remain Shadow and cannot alter responses,
 Memory, Identity, Belief, capability state, or Worker authority.

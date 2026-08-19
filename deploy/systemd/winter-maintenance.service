@@ -11,6 +11,7 @@ Environment=PYTHONPATH=/home/hanelso/hanelso/winter/src
 ExecStart=/home/hanelso/.pyenv/versions/3.11.9/bin/python3.11 -m companion.maintenance_worker --turn-understanding-path /home/hanelso/hanelso/winter/data/turn_understanding.sqlite --lock-path /home/hanelso/hanelso/winter/data/maintenance.lock --analysis-url http://127.0.0.1:18081 --batch-size 1 --idle-seconds 10 --processed-delay-seconds 5 --backoff-seconds 10 --max-backoff-seconds 120
 Restart=on-failure
 RestartSec=10
+TimeoutStopSec=130
 Nice=15
 CPUWeight=10
 IOWeight=10
