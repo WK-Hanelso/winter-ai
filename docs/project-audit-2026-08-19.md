@@ -401,3 +401,7 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   analysis health 정상, maintenance restart 0, active Memory 10건 불변이다. 초기 canary의
   failed 0을 운영 품질로 확대 해석하지 않으며 validator 완화 없이 기존 activation 실패를
   유지한다.
+- 2026-08-19: #119를 완료하고 Issue #120 persistent conversational Improvement Ledger를
+  단일 active code scope로 전환했다. 이번 범위는 observed→discussing→versioned proposed→
+  explicit implementation approval과 read-only Core snapshot까지다. 자동 improvement signal,
+  Worker 실행, source 적용과 Capability 채택은 포함하지 않는다.

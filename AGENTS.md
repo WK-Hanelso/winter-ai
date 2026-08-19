@@ -597,13 +597,13 @@ Task 001과 초기 Milestone 기반은 완료되었다. 기존 저장소를 다�
 관계·기억뿐 아니라 작업 의도와 최종 판단도 겨울이가 소유한 채 외부 Worker를 지휘하는
 `Winter-owned Work Orchestration` Shadow V0를 검증하는 것이다.
 
-2026-08-19 전체 감사의 prerequisite 복구 순서에 따라 현재 단일 active scope는 Issue #119
-`read-only SelfModel + persistent CapabilityRegistry`다. #118 background maintenance는
-24시간 관찰 트랙에서 계속 실행하지만 새 코드를 추가하지 않는다. #119의 persistent Registry,
-health+test/evaluation lifecycle, turn별 read-only snapshot과 final claim authorization은 구현돼
-운영 검증 중이다. Capability 채택, 권한 변경, Worker 실행과 Shadow 결과 activation은 다음
-issue 전까지 금지한다. 아래 Work Orchestration 계약과 실패 기준선은 그대로 보존하되
-ImprovementLedger가 생기기 전에는 더 확장하지 않는다.
+2026-08-19 전체 감사의 prerequisite 복구 순서에 따라 #119 `read-only SelfModel + persistent
+CapabilityRegistry`의 구현·운영 검증을 완료했다. 현재 단일 active scope는 Issue #120
+`persistent conversational ImprovementLedger`다. #118 background maintenance는 24시간
+관찰 트랙에서 계속 실행하지만 결과 품질 gate는 실패 상태이며 새 소비자에 연결하지 않는다.
+#120은 문제·근거·대안·위험·scope·acceptance·rollback과 명시적 구현 승인까지만 지속하며,
+TurnUnderstanding 자동 등록, Worker 실행, Capability 채택, 권한 변경과 Shadow 결과
+activation은 금지한다. 아래 Work Orchestration 계약과 실패 기준선은 그대로 보존한다.
 
 1. 현재 혼합 worktree의 사용자·Claude·Codex 변경을 보존한다.
 2. 하나의 Winter Core Model이 `IntentBrief`와 `WinterDecision`을 모두 생성한다. 두 개의
