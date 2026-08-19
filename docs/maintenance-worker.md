@@ -97,6 +97,26 @@ offline test로 검증했다. 2026-08-19에는 전용 CPU runtime과 user system
 - live restart는 진행 중 cycle을 67.0초에 완료해 pending `190→189`로 한 번만 전이한 뒤
   정상 종료·새 PID 기동했다. 강제 종료, failed event와 중복 완료는 없었다.
 
+### 운영 관찰 snapshot — 2026-08-19 16:09 KST
+
+- aggregate queue는 `completed 16 / failed 8 / pending 175`다. 최근 처리 24건 기준 성공
+  16건·schema/grounding 차단 8건으로, 초기 canary의 failed 0은 실제 다양성에서 유지되지
+  않았다.
+- 실패는 exact evidence substring 불일치 6건(`observations` 4, intent 1, affect 1)과
+  confidence 형식 오류 2건이다. invalid JSON이나 runtime 장애를 fake 성공으로 바꾼 결과는
+  없다.
+- 한 요청이 120초를 넘겨 deferred됐지만 pending으로 남아 재시도된다. schema/grounding
+  실패 8건은 failed audit row로 보존되며 Memory나 답변으로 전달되지 않는다.
+- `winter-analysis`는 initial hardening 호환 수정 전 restart 4회 뒤 15:32부터 active이며,
+  `winter-maintenance`는 restart 0회로 15:40부터 active다. 확인 시점 analysis health는
+  정상이었다.
+- active Memory는 여전히 10건이다. 이 결과는 기존 TurnUnderstanding 5/10 activation 실패를
+  운영 데이터가 다시 지지하므로, prompt 예외나 validator 완화로 통과시키지 않는다.
+
+따라서 배포 안정성 관찰은 계속하되 결과 소비자 연결 gate는 실패 상태다. 24시간이 끝나도
+이 실패율과 사람 품질 audit가 해결되지 않으면 service 생존과 분석 결과 activation을 별도로
+판정한다.
+
 개발자가 상태만 확인할 때:
 
 ```bash

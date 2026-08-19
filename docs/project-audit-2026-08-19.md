@@ -396,3 +396,8 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   DB를 쓰지 않은 격리 Core 3턴에서 대화 가능, explicit Memory 가능, web search·project write
   불가를 구분했다. 넓은 능력 질문에서 한계를 자발적으로 열거하지 않은 응답은 실제 사용
   관찰 항목으로 남긴다.
+- 2026-08-19 16:09: #118 aggregate는 completed 16·failed 8·pending 175가 됐다. 실패는
+  exact evidence 불일치 6건과 confidence 형식 오류 2건이며 모두 Shadow row에서 차단됐다.
+  analysis health 정상, maintenance restart 0, active Memory 10건 불변이다. 초기 canary의
+  failed 0을 운영 품질로 확대 해석하지 않으며 validator 완화 없이 기존 activation 실패를
+  유지한다.
