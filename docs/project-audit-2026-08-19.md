@@ -332,3 +332,7 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
 - 2026-08-19: 실패와 동시성을 deterministic test로 먼저 재현한 뒤 full-turn lock, Core
   thread 예외 회수와 SSE single-writer를 구현했다. Web 관련 13 tests와 전체 691 tests,
   Ruff, mypy를 통과했다. 실행 중 service 재시작 전이므로 `web_turn_safety=shadow`로 둔다.
+- 2026-08-19: 구현 commit 뒤 user service를 새 PID로 재시작하고 active/running,
+  `127.0.0.1:8000`, local health와 Tailscale HTTPS health를 확인했다. synthetic 발화로 실제
+  대화 DB를 오염시키지 않고 `web_turn_safety=operational`로 승격했다. terminal error의 사람
+  관찰과 queue 대기 UX는 일상 실사용 후 고도화 판단으로 남긴다.

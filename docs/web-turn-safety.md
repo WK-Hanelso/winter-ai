@@ -58,5 +58,7 @@ turn을 의도적으로 정지한 동안 두 번째 Core가 진입하는 것을 
 - Web 관련 정상·ingress·metrics 13 tests 통과
 - 전체 offline 691 tests, Ruff 전체, mypy 161 source files 통과
 
-코드는 deterministic failure/concurrency contract를 통과한 Shadow다. 실행 중인 user service가
-새 process로 재시작되기 전에는 운영 경로에 반영됐다고 판정하지 않는다.
+구현 commit 뒤 user service를 새 PID로 재시작했다. 새 process의 active/running 상태,
+`127.0.0.1:8000` listener, local health와 Tailscale Serve HTTPS health를 확인해 제한 운영으로
+승격했다. 실제 실패를 만들기 위한 가짜 발화는 대화·기억 DB를 오염시키므로 보내지 않았고,
+terminal error 표시와 자연스러운 대기 경험은 이후 실제 사용 중 관찰한다.
