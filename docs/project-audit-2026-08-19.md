@@ -313,3 +313,5 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   판정하지 않는다. 해당 한계는 baseline consolidation 뒤 고도화한다.
 - 2026-08-19: #112 local acceptance를 완료하고 Issue #113을 active scope로 전환했다. #113은
   기존 mixed worktree를 재작성하지 않고 local recovery snapshot으로 보존하는 작업이다.
+- 2026-08-19: privacy·staged diff·전체 회귀를 통과한 147개 파일을 local commit `cb4bb4b`로
+  보존했다. 이 snapshot은 기능 완료가 아니라 이후 Issue diff를 분리하기 위한 복구점이다.

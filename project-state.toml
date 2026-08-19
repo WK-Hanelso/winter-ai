@@ -34,9 +34,9 @@ sync_status = true
 
 [[features]]
 id = "baseline_consolidation"
-maturity = "contract"
+maturity = "operational"
 evidence = [
-  "docs/project-audit-2026-08-19.md",
+  "docs/baseline-consolidation-2026-08-19.md",
 ]
 dependencies = ["development_control_gate"]
 
