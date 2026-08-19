@@ -60,6 +60,11 @@ from companion.beliefs import (
     BeliefRepositoryError,
     SqliteBeliefRepository,
 )
+from companion.capabilities import (
+    CapabilityRegistryError,
+    PersistentSelfModel,
+    SqliteCapabilityRegistry,
+)
 from companion.context import ConversationContextBuilder
 from companion.contracts import AudioInput, SpeechRequest
 from companion.core import CompanionCore
@@ -113,6 +118,7 @@ DEFAULT_DATA = Path(os.environ.get("WINTER_DATA_DIR", "data"))
 DEFAULT_IDENTITY = DEFAULT_DATA / "identity.json"
 DEFAULT_CONVERSATION = DEFAULT_DATA / "conversations.sqlite"
 DEFAULT_MEMORIES = DEFAULT_DATA / "memories.sqlite"
+DEFAULT_CAPABILITIES = DEFAULT_DATA / "capabilities.sqlite"
 DEFAULT_BELIEFS = DEFAULT_DATA / "beliefs.sqlite"
 DEFAULT_DIALOGUE_STATE = DEFAULT_DATA / "dialogue_state.sqlite"
 DEFAULT_TURN_UNDERSTANDING = DEFAULT_DATA / "turn_understanding.sqlite"
@@ -480,6 +486,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--identity-path", type=Path, default=DEFAULT_IDENTITY)
     parser.add_argument("--conversation-path", type=Path, default=DEFAULT_CONVERSATION)
     parser.add_argument("--memory-path", type=Path, default=DEFAULT_MEMORIES)
+    parser.add_argument(
+        "--capability-path", type=Path, default=DEFAULT_CAPABILITIES
+    )
     parser.add_argument("--belief-path", type=Path, default=DEFAULT_BELIEFS)
     parser.add_argument(
         "--dialogue-state-path", type=Path, default=DEFAULT_DIALOGUE_STATE
@@ -523,6 +532,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         memory_retriever = ActiveMemoryRetriever(memory_repository)
     except MemoryRepositoryError as error:
         print(f"천우에 대한 기억을 읽지 못했습니다: {error}", file=sys.stderr)
+        return 1
+    try:
+        capability_registry = SqliteCapabilityRegistry(arguments.capability_path)
+        self_model_provider = PersistentSelfModel(
+            identity,
+            capability_registry,
+            runtime_capabilities=("conversation", "memory"),
+        )
+    except CapabilityRegistryError as error:
+        print(f"겨울이 능력 기록을 읽지 못했습니다: {error}", file=sys.stderr)
         return 1
     try:
         belief_retriever = ActiveBeliefRetriever(
@@ -587,6 +606,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         winter_event_repository=winter_event_repository,
         clock=SystemClock(),
         day_reflection_retriever=day_reflection_retriever,
+        self_model_provider=self_model_provider,
         read_only_worker=(
             CodexReadOnlyWorker(
                 Path.cwd(),

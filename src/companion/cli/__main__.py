@@ -46,6 +46,11 @@ from companion.beliefs import (
     BeliefRepositoryError,
     SqliteBeliefRepository,
 )
+from companion.capabilities import (
+    CapabilityRegistryError,
+    PersistentSelfModel,
+    SqliteCapabilityRegistry,
+)
 from companion.context import ConversationContextBuilder
 from companion.core import CompanionCore
 from companion.day_reflection import (
@@ -379,6 +384,23 @@ def run(
         print(f"Memory unavailable: {error}", file=stdout)
         return 1
     try:
+        capability_path = getattr(args, "capability_db", None)
+        capability_registry = (
+            SqliteCapabilityRegistry(capability_path) if capability_path else None
+        )
+        self_model_provider = (
+            PersistentSelfModel(
+                identity,
+                capability_registry,
+                runtime_capabilities=("conversation", "memory"),
+            )
+            if identity is not None and capability_registry is not None
+            else None
+        )
+    except CapabilityRegistryError as error:
+        print(f"Capability registry unavailable: {error}", file=stdout)
+        return 1
+    try:
         belief_path = getattr(args, "belief_db", None)
         belief_repository = SqliteBeliefRepository(belief_path) if belief_path else None
         belief_retriever = (
@@ -576,6 +598,7 @@ def run(
         winter_event_repository=winter_event_repository,
         clock=SystemClock() if winter_event_repository is not None else None,
         day_reflection_retriever=day_reflection_retriever,
+        self_model_provider=self_model_provider,
         read_only_worker=(
             CodexReadOnlyWorker(
                 Path.cwd(),

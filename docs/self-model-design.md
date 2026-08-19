@@ -102,8 +102,8 @@ not available now
 - 검증·채택되지 않은 capability 사용
 ```
 
-이 목록을 prompt에 수동 복사하지 않는다. 최종 구현에서는 `CapabilityRegistry`의 health,
-evaluation, adopted version에서 read-only snapshot을 만든다.
+이 목록을 prompt에 수동 복사하지 않는다. `CapabilityRegistry`의 health,
+test/evaluation, version과 현재 interface 연결 상태에서 turn별 read-only snapshot을 만든다.
 
 ## 활성화 순서
 
@@ -142,7 +142,32 @@ Grounded Self-Presence 0.1의 실패 기준선은
 [locked-v1 review](../review/self-presence/locked-v1-2026-08-17.md)에 있다. 다음 코드는
 같은 scene에 prompt를 맞추기 전에 Order 1의 read-only snapshot부터 시작한다.
 
-## 현재 구현 범위 — 2026-08-17
+## 현재 구현 범위 — 2026-08-19
+
+### SelfModel과 Capability Registry
+
+- `capabilities.sqlite`가 capability 정의, version, limitation, machine claim scope,
+  dependency, health·test/evaluation evidence와 lifecycle history를 재시작 뒤에도 보존한다.
+- 가장 최근 health 성공, test/evaluation 성공과 available dependency가 모두 없으면
+  `available`로 전이할 수 없다.
+- `PersistentSelfModel`은 Identity와 Registry를 읽어 turn마다 하나의 immutable snapshot을
+  만들며 대화 중 Registry를 수정하지 않는다.
+- Registry가 available이어도 현재 interface runtime에 연결되지 않은 기능은 snapshot에서
+  `degraded`로 보인다.
+- CLI·Web·Voice는 같은 `data/capabilities.sqlite`를 사용한다. 현재 기반 등록 대상은 실제로
+  연결된 `conversation`, `memory` 두 가지뿐이다.
+- final response claim gate는 snapshot의 machine claim scope를 사용한다. 대화·기억 주장은
+  허용하되 등록되지 않은 project write, web search, account 사용과 system 실행 주장은
+  차단한다.
+- `./winter capabilities`는 원문이나 Memory 내용 없이 ID, 상태, version과 근거 수만 보는
+  개발·audit 명령이다. 정상 사용에서 천우가 실행할 필요는 없다.
+
+Capability claim authorization은 실제 도구 실행 권한이 아니다. 새 capability의 채택,
+Worker 실행, 계정 권한과 외부 write는 Improvement Ledger와 별도 승인·검증·rollback이
+생기기 전까지 열지 않는다. 결정은
+[ADR-0022](adr/0022-evidence-gated-capability-registry.md)에 기록한다.
+
+### Lived continuity
 
 - Shared Core의 완료된 CLI·Web·Voice turn을 `conversation_turn` Event로 자동 기록한다.
 - Event에는 대화 원문이나 음성을 복제하지 않고 행동·출처·근거 id만 남긴다.

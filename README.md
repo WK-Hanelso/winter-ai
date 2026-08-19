@@ -16,7 +16,7 @@ Memory와 시간축을 공유한다.
 새 기능을 시작하거나 상태를 바꾸기 전후에 `./winter project-check`를 실행한다. 이 검사가
 실패하면 새 기능을 확장하지 않고 Issue·근거·문서 상태부터 바로잡는다.
 
-<!-- winter-project-state: capability_registry=absent, development_control_gate=operational, improvement_ledger=absent, self_model=contract, work_orchestration=shadow -->
+<!-- winter-project-state: capability_registry=operational, development_control_gate=operational, improvement_ledger=absent, self_model=operational, work_orchestration=shadow -->
 
 ## 1. 겨울이는 무엇인가
 
@@ -56,6 +56,7 @@ V1의 목표 자율성은 **Level 3 — 천우가 승인한 변경만 Worker가 
 | Background Maintenance | Shadow 운영 관찰 중 | 전용 CPU 모델이 응답과 분리되어 TurnUnderstanding queue를 자동 소비 | 5건 copied-DB·1건 live canary만 통과, 24시간 관찰과 결과 품질 audit 전 |
 | Grounded Self-Presence | 제한 운영 | 직접 초대받은 턴에서 겨울이 쪽 판단·가치·반응 표현 | 사람 판정 4/12, 완성된 자아가 아님 |
 | Response Claim Gate | 제한 운영 | 최종 답변의 신체 행동·바깥 사건·기억·외부 능력을 deterministic evidence와 대조 | locked-v2 14장면과 실제 Core 임시 평가 범위이며 범용 사실성 보장 아님 |
+| SelfModel / Capability Registry | 제한 운영 | Identity와 health·test 근거가 있는 실제 대화·Memory 능력을 매 turn 읽고, 등록되지 않은 기능 주장을 차단 | runtime 장애 자동 degraded 전이와 capability 채택 cycle은 아직 없음 |
 | Winter Event/Day | turn 기록 운영 | 실제 turn을 한국 시간의 겨울이 하루로 기록 | 기존 대화 소급 없음, event 종류 확장 중 |
 | Winter Belief | manual 운영 / autonomous Shadow | 근거·수정 이력, 저위험 자동 activation 계약 | LLM 후보와 activator 운영 연결 전 |
 | Voice Identity | 제한 운영 | Chatterbox S3Gen Reference 직접 합성 | 사람으로 착각할 자연스러움에 미달 |
@@ -73,12 +74,13 @@ V1의 목표 자율성은 **Level 3 — 천우가 승인한 변경만 Worker가 
 천우가 말한다
 → 겨울이가 현재 대화·기억·미완성 이야기를 참고해 답한다
 → 대화와 실제 사건이 자동 저장된다
+→ 매 turn 같은 Capability Registry에서 실제 가능·불가능을 읽는다
 → 응답과 분리된 Shadow 분석이 의도·결과·후보를 관찰한다
 → 확실한 직접 정보만 승인된 정책으로 최신화한다
 → 애매한 내용은 겨울이가 이후 대화에서 자연스럽게 확인한다
 ```
 
-`overview`, `reflect`, `memories`, `lived` 같은 명령은 개발·audit·복구 도구다. 천우의
+`overview`, `reflect`, `memories`, `lived`, `capabilities` 같은 명령은 개발·audit·복구 도구다. 천우의
 일상 사용 조건이 아니다.
 
 ### Text CLI
@@ -274,6 +276,7 @@ CLI에 보이는 lexical response와 Voice가 말하는 문장은 동일해야 �
 | `belief_reflection.sqlite` | Winter Belief의 Shadow proposal와 safety 결과 |
 | `day_reflections.sqlite` | 실제 하루를 다음 대화로 잇는 근거 기반 회고 |
 | `winter_events.sqlite` | 겨울이의 실제 사건과 날짜별 시간축 |
+| `capabilities.sqlite` | 실제 기능, limitation, health·test 근거와 lifecycle |
 | `voice_latency-*.sqlite` | 원문 없는 Voice 구간 latency |
 
 ## 6. Memory가 동작하는 방식
@@ -402,7 +405,15 @@ PYTHONPATH=src python experiments/belief_safety_eval.py \
 ```
 
 설계와 이유는 [SelfModel](docs/self-model-design.md),
-[ADR-0011](docs/adr/0011-evidence-backed-lived-continuity.md)을 따른다.
+[ADR-0011](docs/adr/0011-evidence-backed-lived-continuity.md),
+[ADR-0022](docs/adr/0022-evidence-gated-capability-registry.md)을 따른다.
+
+현재 capability 상태는 개발·audit가 필요할 때만 다음처럼 확인한다. 이 명령은 capability를
+추가하거나 활성화하지 않는다.
+
+```bash
+./winter capabilities
+```
 
 ## 8. 대화 행동과 자기 표현
 
@@ -573,7 +584,8 @@ docker compose run --rm dev mypy src
 - 외부 Worker에는 관련 기술 scope와 sanitized project text만 전달하고 전체 Identity·대화 DB를 넘기지 않는다.
 - Core Identity는 사용자 승인 없이 자동 변경하지 않는다.
 - read-only Worker는 문장 안의 명시적 호출을 turn별 opt-in으로 본다. destructive/external write는 구체 대상에 대한 별도 승인이 필요하다.
-- Capability는 test·health·채택 근거가 없으면 `available`이라고 말할 수 없다.
+- Capability는 가장 최근 health 성공과 test/evaluation 근거, available dependency가 없으면
+  `available`이라고 말할 수 없다. claim scope는 실행 권한과 별개다.
 - 모든 자동 판단은 evidence, confidence, status, version과 rollback 경로를 남긴다.
 - 운영 adapter 장애는 명시적으로 드러내고 silent fallback하지 않는다.
 
@@ -587,22 +599,15 @@ docker compose run --rm dev mypy src
 소유하게 만드는 것이다.
 
 1. 전용 CPU background maintenance 배포 — **초기 배포 완료, 24시간 Shadow 관찰 중**
-2. Work Orchestration V2.1 안전 계약과 Qwen3-14B·A.X 고정 47 check — **완료**
-3. Qwen semantic-v2 12장면 — **완료, 46/66으로 반복 실패**
-4. Gemma 3 12B semantic-v2 — **완료, 40/66으로 Qwen보다 낮고 둘 다 activation 실패**
-5. typed no-network/read-only project gateway — **offline 범위 완료**
-6. credential/control-plane과 Agent tool을 분리한 provider adapter — **Shadow 구현, synthetic live 1/1**
-7. isolated implementation proposal — **Shadow 범위 완료**, synthetic 최소 수정·독립 검증·원본 불변 1/1
-8. proposal 영속화·근거 기반 Winter 설명·exact hash 채택 결정 — **Shadow 범위 완료**
-9. 대상 stale 확인·오류 시 전 파일 복원·적용과 rollback — **Shadow 범위 완료**
-10. project 전체 stale 판정·process crash 복구·실제 Winter 검증 profile
-11. prompt-injection·path/network/write 격리 공격 suite
-12. Qwen3-30B-A3B 동일 semantic-v2와 대화 Core 비교 — **완료, 빠르지만 의미·grounding gate 실패**
-13. Gemma 3 27B 동일 semantic-v2 비교 — **완료, 44/66·27초와 Core chat 호환 실패**
-14. 같은 12~30B drop-in 반복을 중단하고 다음 Core/runtime 전략 결정
-15. semantic·권한 gate 합격 후 read-only 실제 작업 20개를 사람 평가
-16. 검증된 WinterDecision을 기존 Codex read-only route 앞뒤에 Shadow로 연결
-17. Improvement Ledger와 실제 작은 capability의 제안→채택→재평가→rollback 완주
+2. persistent Capability Registry와 read-only SelfModel — **#119 범위 완료, 제한 운영 검증 중**
+3. Improvement Ledger와 대화형 proposal state machine
+4. Work Orchestration V2.1 안전 계약과 기존 모델 baseline — **구현 완료, activation 실패**
+5. project 전체 stale 판정·process crash 복구·실제 Winter 검증 profile
+6. prompt-injection·path/network/write 격리 공격 suite
+7. 새 Core/runtime가 기존 ambiguity·grounding gate를 해결한다는 근거 확보
+8. semantic·권한 gate 합격 후 read-only 실제 작업 20개를 사람 평가
+9. 검증된 WinterDecision을 기존 Codex read-only route 앞뒤에 Shadow로 연결
+10. 실제 작은 capability의 제안→승인→구현→검증→채택→재평가→rollback 완주
 
 ## 15. 주요 문서 인덱스
 

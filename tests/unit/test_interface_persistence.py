@@ -13,6 +13,8 @@ def test_all_user_interfaces_default_to_the_same_persistent_state() -> None:
     assert voice_args.conversation_path == expected_data / "conversations.sqlite"
     assert web_args.memory_path == expected_data / "memories.sqlite"
     assert voice_args.memory_path == expected_data / "memories.sqlite"
+    assert web_args.capability_path == expected_data / "capabilities.sqlite"
+    assert voice_args.capability_path == expected_data / "capabilities.sqlite"
     assert web_args.belief_path == expected_data / "beliefs.sqlite"
     assert voice_args.belief_path == expected_data / "beliefs.sqlite"
     assert web_args.dialogue_state_path == expected_data / "dialogue_state.sqlite"

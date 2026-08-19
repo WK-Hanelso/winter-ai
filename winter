@@ -125,6 +125,14 @@ case "${1:-start}" in
     shift
     run_chat --list-winter-days "$@"
     ;;
+  capabilities)
+    shift
+    find_python
+    exec env \
+      PYTHONPATH="$ROOT_DIR/src" \
+      WINTER_DATA_DIR="$ROOT_DIR/data" \
+      "$PYTHON_BIN" -m companion.capability_admin --list "$@"
+    ;;
   day-close)
     shift
     run_chat --close-winter-day "$@"
@@ -151,7 +159,7 @@ case "${1:-start}" in
     "${COMPOSE[@]}" stop llm
     ;;
   *)
-    echo "Usage: ./winter {start|chat|voice|reflect|memories|overview|state|lived|days|day-close|viewpoints|viewpoint-shadow|project-check|status|stop}" >&2
+    echo "Usage: ./winter {start|chat|voice|reflect|memories|overview|state|lived|days|day-close|viewpoints|viewpoint-shadow|capabilities|project-check|status|stop}" >&2
     exit 2
     ;;
 esac

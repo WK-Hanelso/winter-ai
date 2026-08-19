@@ -165,15 +165,25 @@ dependencies = ["shared_core", "persistent_memory"]
 
 [[features]]
 id = "self_model"
-maturity = "contract"
-evidence = ["docs/self-model-design.md"]
+maturity = "operational"
+evidence = [
+  "src/companion/capabilities.py",
+  "tests/unit/test_capabilities.py",
+  "docs/self-model-design.md",
+  "docs/adr/0022-evidence-gated-capability-registry.md",
+]
 dependencies = ["shared_core"]
 sync_status = true
 
 [[features]]
 id = "capability_registry"
-maturity = "absent"
-evidence = []
+maturity = "operational"
+evidence = [
+  "src/companion/capabilities.py",
+  "src/companion/capability_admin.py",
+  "tests/unit/test_capabilities.py",
+  "docs/adr/0022-evidence-gated-capability-registry.md",
+]
 dependencies = ["self_model"]
 sync_status = true
 

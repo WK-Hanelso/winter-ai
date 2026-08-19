@@ -383,3 +383,10 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   read-only SelfModel·persistent CapabilityRegistry로 전환했다. `available`은 health와
   test/evaluation 근거를 모두 요구하며, 이번 범위에는 capability 채택·권한 변경·Worker 실행과
   Shadow 분석 activation을 포함하지 않는다.
+- 2026-08-19: #119에 별도 SQLite Registry, 근거 기반 lifecycle, dependency와 runtime 연결을
+  함께 확인하는 read-only SelfModel snapshot을 구현했다. CLI·Web·Voice는 같은
+  `capabilities.sqlite`를 읽고 final claim gate는 snapshot의 machine scope만 신뢰한다. 기존
+  conversation·memory 기반 기능만 trusted bootstrap 대상으로 제한했으며 채택·실행 권한은
+  열지 않았다. 일반 Memory capability는 특정 기억 사실이나 저장 완료의 근거로 쓸 수 없게
+  분리했고, 집중 60 tests, 전체 735 tests, Ruff 전체와 mypy 163 source files를 통과했다.
+  운영 Core 검증은 남겼다.

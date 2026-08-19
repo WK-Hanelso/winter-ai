@@ -160,6 +160,54 @@ def test_unsupported_user_cause_uses_a_listening_fallback() -> None:
     assert gate.violations(fallback, evidence) == ()
 
 
+def test_available_capability_scope_authorizes_only_the_matching_claim() -> None:
+    gate = ResponseClaimGate()
+    evidence = ClaimEvidence(
+        user_text="너는 지금 뭘 할 수 있어?",
+        capability_claim_scopes=("conversation.respond", "project.read"),
+    )
+
+    assert gate.violations("나는 지금 대화에서 답변할 수 있어.", evidence) == ()
+    assert gate.violations("프로젝트 파일을 읽어 확인할 수 있어.", evidence) == ()
+    violation = gate.violations("프로젝트 파일을 바로 수정할 수 있어.", evidence)
+
+    assert violation[0].kind == "capability"
+
+
+def test_unknown_or_degraded_capability_cannot_authorize_a_claim() -> None:
+    violation = ResponseClaimGate().violations(
+        "나는 인터넷을 검색할 수 있어.",
+        ClaimEvidence(user_text="검색할 수 있어?"),
+    )
+
+    assert violation[0].kind == "capability"
+
+
+def test_memory_capability_does_not_authorize_a_specific_memory_fact() -> None:
+    gate = ResponseClaimGate()
+    evidence = ClaimEvidence(
+        user_text="내가 어제 말한 거 기억해?",
+        capability_claim_scopes=("memory.explicit",),
+    )
+
+    assert gate.violations("나는 요청받은 내용을 기억할 수 있어.", evidence) == ()
+    violation = gate.violations("응, 네가 어제 운동했다고 기억하고 있어.", evidence)
+
+    assert violation[0].kind == "memory"
+
+
+def test_memory_capability_does_not_authorize_an_unperformed_write() -> None:
+    violation = ResponseClaimGate().violations(
+        "그 내용은 기억해둘게.",
+        ClaimEvidence(
+            user_text="그게 중요해.",
+            capability_claim_scopes=("memory.explicit",),
+        ),
+    )
+
+    assert violation[0].kind == "memory"
+
+
 class RepeatingUnsafeModel:
     def __init__(self) -> None:
         self.requests: list[ChatRequest] = []

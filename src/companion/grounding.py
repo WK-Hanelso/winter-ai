@@ -75,6 +75,7 @@ class ClaimEvidence:
     memory_contents: tuple[str, ...] = ()
     memory_write_authorized: bool = False
     worker_result_authorized: bool = False
+    capability_claim_scopes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -94,8 +95,8 @@ _BODY_STATE = re.compile(r"배고프|목마르|졸리|추워|더워|몸이\s*아
 _MEMORY_CLAIM = re.compile(r"기억해둘|기억(?:해|나|하고|했)|잊지\s*않")
 _MEMORY_WRITE = re.compile(r"기억해둘")
 _CAPABILITY_CLAIM = re.compile(
-    r"(?:파일|코드|저장소|서버|인터넷|웹|검색|메일|계정|캘린더|"
-    r"설치|삭제|수정|실행|다운로드|업로드).{0,24}"
+    r"(?:대화|답변|기억|음성|마이크|휴대폰|폰|파일|코드|저장소|서버|인터넷|웹|"
+    r"검색|메일|계정|캘린더|설치|삭제|수정|실행|다운로드|업로드).{0,32}"
     r"(?:할\s*수\s*있|가능|해\s*줄게|해줄게|할게|처리해)"
 )
 _WEATHER = re.compile(r"날씨|기온|(?:비|눈)(?:가|이|는|도|를|\s)|밖에.{0,12}(?:비|눈)")
@@ -158,10 +159,16 @@ class ResponseClaimGate:
                 found.append(ClaimViolation("body_action", raw_sentence))
                 continue
             if _MEMORY_CLAIM.search(sentence) and not _MEMORY_DENIAL.search(sentence):
+                capability_scopes = _capability_claim_scopes(sentence)
+                capability_granted = bool(_CAPABILITY_CLAIM.search(sentence)) and bool(
+                    capability_scopes
+                ) and capability_scopes.issubset(
+                    evidence.capability_claim_scopes
+                )
                 write_allowed = bool(
                     evidence.memory_write_authorized and _MEMORY_WRITE.search(sentence)
                 )
-                if not write_allowed and not _memory_claim_is_supported(
+                if not capability_granted and not write_allowed and not _memory_claim_is_supported(
                     sentence, evidence.memory_contents
                 ):
                     found.append(ClaimViolation("memory", raw_sentence))
@@ -171,8 +178,12 @@ class ResponseClaimGate:
                 and not evidence.worker_result_authorized
                 and not _CAPABILITY_DENIAL.search(sentence)
             ):
-                found.append(ClaimViolation("capability", raw_sentence))
-                continue
+                claimed_scopes = _capability_claim_scopes(sentence)
+                if not claimed_scopes or not claimed_scopes.issubset(
+                    evidence.capability_claim_scopes
+                ):
+                    found.append(ClaimViolation("capability", raw_sentence))
+                    continue
             categories = _outside_categories(sentence)
             if (
                 categories
@@ -247,3 +258,29 @@ def _asserted_outside_categories(text: str) -> set[str]:
     if _CAUSE_EVIDENCE.search(text):
         categories.add("user_cause")
     return categories
+
+
+def _capability_claim_scopes(text: str) -> set[str]:
+    scopes: set[str] = set()
+    if re.search(r"대화|답변", text):
+        scopes.add("conversation.respond")
+    if re.search(r"기억", text):
+        scopes.add("memory.explicit")
+    if re.search(r"음성|마이크|휴대폰|폰", text):
+        scopes.add("voice.converse")
+    if re.search(r"파일|코드|저장소", text):
+        if re.search(r"삭제|수정|편집|쓰|저장|적용", text):
+            scopes.add("project.write")
+        elif re.search(r"읽|확인|찾|검색|검토|보", text):
+            scopes.add("project.read")
+        else:
+            scopes.add("project.unknown")
+    if re.search(r"인터넷|웹|검색", text) and "project.read" not in scopes:
+        scopes.add("web.search")
+    if re.search(r"메일", text):
+        scopes.add("email.write")
+    if re.search(r"계정", text):
+        scopes.add("account.use")
+    if re.search(r"서버|실행|설치|다운로드|업로드", text):
+        scopes.add("system.execute")
+    return scopes

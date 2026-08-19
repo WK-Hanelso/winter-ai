@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from companion.beliefs import belief_context
+from companion.capabilities import SelfModelProvider
 from companion.context import ConversationContextBuilder
 from companion.contracts import ChatRequest, ConversationMessage
 from companion.conversation_recall import ConversationRecallRetriever, recall_context
@@ -79,6 +80,7 @@ class _Turn:
     style: VerbalStylePlan
     memory_focus: str | None
     memory_contents: tuple[str, ...]
+    capability_claim_scopes: tuple[str, ...]
     shadow_turn_id: str | None
     maintenance_route: MaintenanceRoute
     experience_id: str
@@ -115,6 +117,7 @@ class CompanionCore:
         read_only_worker: ReadOnlyWorker | None = None,
         worker_routing_policy: ExplicitCodexRoutingPolicy | None = None,
         response_claim_gate: ResponseClaimGate | None = None,
+        self_model_provider: SelfModelProvider | None = None,
     ) -> None:
         self._chat_model = chat_model
         self._conversation_repository = conversation_repository
@@ -149,6 +152,7 @@ class CompanionCore:
             worker_routing_policy or ExplicitCodexRoutingPolicy()
         )
         self._response_claim_gate = response_claim_gate or ResponseClaimGate()
+        self._self_model_provider = self_model_provider
 
     def respond_to_text(self, text: str) -> CompanionResponse:
         turn = self._prepare(text)
@@ -407,6 +411,15 @@ class CompanionCore:
             system_messages.append(
                 ConversationMessage("system", self._identity.system_message())
             )
+        self_model_snapshot = (
+            self._self_model_provider.snapshot()
+            if self._self_model_provider is not None
+            else None
+        )
+        if self_model_snapshot is not None:
+            system_messages.append(
+                ConversationMessage("system", self_model_snapshot.system_message())
+            )
         if self._day_reflection_retriever is not None and self._clock is not None:
             prior_days = self._day_reflection_retriever.retrieve(
                 before_date=self._clock.now().date().isoformat()
@@ -475,6 +488,11 @@ class CompanionCore:
             memory_contents=tuple(
                 memory.content
                 for memory in selected_memories + current_state_history
+            ),
+            capability_claim_scopes=(
+                self_model_snapshot.authorized_claim_scopes
+                if self_model_snapshot is not None
+                else ()
             ),
             shadow_turn_id=shadow_turn_id,
             maintenance_route=maintenance_route,
@@ -572,6 +590,7 @@ class CompanionCore:
                 turn.candidate_ids or turn.automatic_memory_ids
             ),
             worker_result_authorized=worker_result is not None,
+            capability_claim_scopes=turn.capability_claim_scopes,
         )
 
 

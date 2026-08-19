@@ -599,11 +599,11 @@ Task 001과 초기 Milestone 기반은 완료되었다. 기존 저장소를 다�
 
 2026-08-19 전체 감사의 prerequisite 복구 순서에 따라 현재 단일 active scope는 Issue #119
 `read-only SelfModel + persistent CapabilityRegistry`다. #118 background maintenance는
-24시간 관찰 트랙에서 계속 실행하지만 새 코드를 추가하지 않는다. #119에서는 실제 health와
-test/evaluation 근거가 없는 capability를 `available`로 만들지 않으며, 대화 중 snapshot은
-읽기 전용이다. Capability 채택, 권한 변경, Worker 실행과 Shadow 결과 activation은 다음
+24시간 관찰 트랙에서 계속 실행하지만 새 코드를 추가하지 않는다. #119의 persistent Registry,
+health+test/evaluation lifecycle, turn별 read-only snapshot과 final claim authorization은 구현돼
+운영 검증 중이다. Capability 채택, 권한 변경, Worker 실행과 Shadow 결과 activation은 다음
 issue 전까지 금지한다. 아래 Work Orchestration 계약과 실패 기준선은 그대로 보존하되
-CapabilityRegistry와 ImprovementLedger가 생기기 전에는 더 확장하지 않는다.
+ImprovementLedger가 생기기 전에는 더 확장하지 않는다.
 
 1. 현재 혼합 worktree의 사용자·Claude·Codex 변경을 보존한다.
 2. 하나의 Winter Core Model이 `IntentBrief`와 `WinterDecision`을 모두 생성한다. 두 개의

@@ -7,6 +7,10 @@ from companion.adapters.fake import (
     InMemoryConversationRepository,
 )
 from companion.beliefs import ActiveBeliefRetriever, SqliteBeliefRepository
+from companion.capabilities import (
+    PersistentSelfModel,
+    SqliteCapabilityRegistry,
+)
 from companion.context import ConversationContextBuilder
 from companion.contracts import ChatRequest, ChatResult, ConversationMessage
 from companion.core import CompanionCore
@@ -119,6 +123,65 @@ def test_core_prefixes_identity_as_system_message() -> None:
     # Identity leads: it frames every other system block.
     assert model.requests[0].messages[0].role == "system"
     assert "너는 Winter야." in model.requests[0].messages[0].content
+
+
+def test_core_injects_read_only_self_model_and_uses_same_claim_evidence(
+    tmp_path,
+) -> None:
+    identity = CompanionIdentity(
+        "Winter",
+        "companion",
+        ("calm",),
+        ("honesty",),
+        ("respect",),
+        ("no impersonation",),
+        "1",
+    )
+    registry = SqliteCapabilityRegistry(tmp_path / "capabilities.sqlite")
+    registry.propose(
+        capability_id="conversation",
+        name="현재 대화",
+        version="1",
+        supports=("현재 대화에서 답변할 수 있다",),
+        limitations=("대화 밖에서 활동하지 않는다",),
+        claim_scopes=("conversation.respond",),
+        health_check="runtime:core",
+    )
+    registry.record_evidence(
+        "conversation",
+        kind="health",
+        reference="runtime:healthy",
+        passed=True,
+        observed_at="2026-08-19T00:00:00+00:00",
+    )
+    registry.record_evidence(
+        "conversation",
+        kind="test",
+        reference="pytest:core",
+        passed=True,
+        observed_at="2026-08-19T00:01:00+00:00",
+    )
+    for status in ("approved", "building", "testing", "available"):
+        registry.transition("conversation", status)
+    model = CapturingChatModel()
+    core = CompanionCore(
+        model,
+        InMemoryConversationRepository(),
+        identity=identity,
+        self_model_provider=PersistentSelfModel(
+            identity, registry, runtime_capabilities=("conversation",)
+        ),
+    )
+
+    core.respond_to_text("너는 지금 뭘 할 수 있어?")
+
+    system = [
+        message.content
+        for message in model.requests[0].messages
+        if message.role == "system"
+    ]
+    assert any("[검증된 SelfModel" in message for message in system)
+    assert any("현재 대화에서 답변할 수 있다" in message for message in system)
 
 
 def test_core_injects_selected_active_memory_as_distinct_system_message(tmp_path) -> None:

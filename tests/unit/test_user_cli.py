@@ -14,6 +14,7 @@ def test_user_cli_uses_persistent_defaults(monkeypatch, tmp_path) -> None:
     assert user_cli.main(["--backend", "fake"]) == 0
     assert captured["conversation_db"] == tmp_path / "conversations.sqlite"
     assert captured["memory_db"] == tmp_path / "memories.sqlite"
+    assert captured["capability_db"] == tmp_path / "capabilities.sqlite"
     assert captured["belief_db"] == tmp_path / "beliefs.sqlite"
     assert captured["dialogue_state_db"] == tmp_path / "dialogue_state.sqlite"
     assert (
