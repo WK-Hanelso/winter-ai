@@ -1,0 +1,28 @@
+[Unit]
+Description=Winter dedicated CPU-only Shadow analysis model
+After=network.target
+StartLimitIntervalSec=0
+ConditionPathExists=/home/hanelso/hanelso/winter/data/analysis-runtime/llama.cpp-b10276/build/bin/llama-server
+ConditionPathExists=/home/hanelso/hanelso/winter/data/analysis-models/Qwen3-4B-Instruct-2507.Q4_K_M.gguf
+
+[Service]
+Type=simple
+WorkingDirectory=/home/hanelso/hanelso/winter
+ExecStart=/home/hanelso/hanelso/winter/data/analysis-runtime/llama.cpp-b10276/build/bin/llama-server --model /home/hanelso/hanelso/winter/data/analysis-models/Qwen3-4B-Instruct-2507.Q4_K_M.gguf --host 127.0.0.1 --port 18081 --threads 4 --threads-batch 4 --ctx-size 2048 --parallel 1 --batch-size 256 --ubatch-size 128 --no-ui --log-disable
+Restart=on-failure
+RestartSec=10
+Nice=15
+CPUWeight=10
+CPUQuota=400%
+IOWeight=10
+OOMScoreAdjust=500
+MemoryHigh=6G
+MemoryMax=8G
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictAddressFamilies=AF_UNIX AF_INET
+
+[Install]
+WantedBy=default.target

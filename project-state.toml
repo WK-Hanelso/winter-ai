@@ -147,6 +147,9 @@ id = "background_maintenance"
 maturity = "shadow"
 evidence = [
   "docs/maintenance-worker.md",
+  "docs/adr/0021-dedicated-cpu-shadow-maintenance.md",
+  "deploy/systemd/winter-analysis.service",
+  "deploy/systemd/winter-maintenance.service",
   "tests/unit/test_maintenance_worker.py",
 ]
 dependencies = ["turn_understanding", "outcome_evaluator"]

@@ -49,36 +49,56 @@ WINTER_ANALYSIS_LLM_URL=http://127.0.0.1:<전용-port> \
 ```
 
 기본 batch는 5개, 빈 queue polling은 2초, 분석 runtime unavailable backoff는
-5초에서 시작해 최대 60초다. SIGINT와 SIGTERM을 받으면 현재 cycle 경계에서 종료한다.
+5초에서 시작해 최대 60초다. 운영 unit은 대화 여유를 위해 batch 1과 완료 후 5초 휴식을
+명시한다. SIGINT와 SIGTERM을 받으면 현재 cycle 경계에서 종료한다.
+
+각 처리 cycle은 사용자 원문 없이 `processed/completed/failed/deferred`, 처리 전후 pending
+수와 elapsed만 기록한다. queue 수는 SQL `COUNT`로 읽어 private text를 계측 경로에 올리지
+않는다.
 
 ## 현재 배포 상태와 다음 gate
 
 Worker 코드, single-instance, 재시작 무중복, unavailable backoff와 clean shutdown은
-offline test로 검증했다. 2026-08-17 전체 회귀는 546개 test, Ruff 전체와 mypy 127개
-source file을 통과했다. 그러나 안전한 전용 분석 runtime과 장시간 supervisor는 아직
-운영 배포하지 않았다. 과거 구조화 분석 부하 중 Orin reset이 관찰됐기 때문에 대화용
-Orin을 이 Worker에 연결하지 않는다.
+offline test로 검증했다. 2026-08-19에는 전용 CPU runtime과 user systemd supervisor를
+초기 배포했다. 대화용 Orin `:18080`과 Voice GPU는 사용하지 않는다.
 
 상시 운영 gate는 다음과 같다.
 
-1. 대화·Voice GPU와 자원을 다투지 않는 전용 local analysis runtime을 정한다.
-2. supervisor 아래에서 재시작과 24시간 idle/burst 동작을 확인한다.
-3. CLI, Web, Voice에서 천우가 별도 명령을 쓰지 않아도 queue가 줄어드는지 확인한다.
-4. 분석 중에도 대화 첫 응답 latency가 악화되지 않는지 비교한다.
-5. 그 뒤 Reflection/current-state와 Outcome을 각각 독립 gate로 연결한다.
+1. supervisor 아래에서 재시작과 24시간 idle/burst 동작을 확인한다.
+2. CLI, Web, Voice에서 천우가 별도 명령을 쓰지 않아도 queue가 줄어드는지 확인한다.
+3. 분석 중에도 실제 대화 첫 응답 latency가 악화되지 않는지 더 긴 표본으로 비교한다.
+4. 처리 결과를 사람 audit해 기존 TurnUnderstanding 5/10 실패 축을 다시 측정한다.
+5. 그 뒤에만 Reflection/current-state와 Outcome을 각각 독립 gate로 연결한다.
 
 평가 gate를 통과하기 전에는 Worker가 계속 돌아도 추론 결과를 active Memory로 승격하지
 않는다.
 
-## Issue #118 운영 시작점 — 2026-08-19
+## Issue #118 초기 배포 — 2026-08-19
 
-- production TurnUnderstanding queue는 원문을 읽지 않은 aggregate 기준 pending 196건이다.
-- `127.0.0.1:18081` 전용 analysis listener와 maintenance user unit은 아직 없다.
-- `127.0.0.1:18080`은 대화 경로이므로 명시·암묵적으로 재사용하지 않는다.
-- GPU free 약 2.3 GiB 상태에서 두 번째 GPU model 상주를 가정하지 않는다.
-- 이전 평가에 사용한 CPU-only Qwen3-4B runtime을 로컬에서 먼저 resolve하고 copied DB
-  canary→bounded live batch→continuous Shadow 순서로만 연다.
-- 로그에는 cycle별 processed/completed/failed/deferred와 queue depth·latency aggregate만
-  남기며 user text, context와 model prompt를 출력하지 않는다.
-- 24시간 관찰은 service 최초 배포 완료와 분리한다. 실제 시간이 지나기 전에 완료로
-  기록하지 않는다.
+- model: `Qwen3-4B-Instruct-2507.Q4_K_M.gguf`, SHA-256
+  `edabe01d973c31dce0d71eaf7e44628021b23b9bd2cbb93059846dad1cc4e153`
+- runtime: official llama.cpp tag `b10276`, commit
+  `6ea215d171fd31df943bf1ac8227129f2b963160`, CPU-only API build. host CMake 3.16에서
+  disabled UI asset script만 최소 version 3.16으로 낮췄으며 UI·download 경로는 모두 껐다.
+- endpoint: `127.0.0.1:18081`, 4 CPU threads, parallel 1, context 2048. GPU layer는 빌드
+  자체에 없고 Web UI와 prompt log도 껐다.
+- supervisor: `winter-analysis.service`, `winter-maintenance.service`. worker는 batch 1,
+  완료 뒤 5초 휴식, idle 10초, unavailable backoff 최대 120초, low CPU/IO priority다.
+- copied production DB canary 5/5 completed, failed 0. 2-thread 첫 건은 91.59초,
+  4-thread 3건 연속은 126.21초(건당 42.07초)였다.
+- 동일 synthetic 대화 모델 요청 3회의 평균은 analysis idle 0.300초, 부하 중 0.285초였다.
+  작은 표본에서 악화가 보이지 않았다는 뜻일 뿐 실사용 무영향 확정은 아니다.
+- bounded live canary 1건은 pending `196→195`, completed 1, failed 0, 59.9초였다.
+  active Memory는 전후 동일한 10건이며 분석 결과는 답변·Memory에 연결되지 않았다.
+- 두 user service는 자동 시작 상태다. 24시간 supervisor/queue/대화 latency와 결과 품질
+  사람 audit은 아직 끝나지 않았다.
+- 배포 직후 전체 offline 회귀는 724 tests, Ruff 전체, mypy 161 source files를 통과했다.
+
+개발자가 상태만 확인할 때:
+
+```bash
+systemctl --user status winter-analysis.service winter-maintenance.service
+journalctl --user-unit winter-maintenance.service --since today
+```
+
+정상 사용자 흐름에서는 이 명령이 필요 없다.

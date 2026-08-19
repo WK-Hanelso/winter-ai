@@ -43,8 +43,11 @@ def test_worker_completes_pending_once_and_restart_does_not_duplicate(
     ).run_once()
 
     assert (first.processed, first.completed, first.failed) == (1, 1, 0)
+    assert (first.pending_before, first.pending_after) == (1, 0)
+    assert first.elapsed_seconds >= 0
     assert first.next_delay_seconds == 0
     assert restarted.processed == 0
+    assert (restarted.pending_before, restarted.pending_after) == (0, 0)
     assert restarted.next_delay_seconds == 2.0
     assert len(repository.list(status="completed")) == 1
 
@@ -84,6 +87,19 @@ def test_worker_serve_stops_cleanly_after_cycle(tmp_path: Path) -> None:
 
     assert len(cycles) == 1
     assert cycles[0].completed == 1
+
+
+def test_worker_can_pause_between_completed_background_items(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "turns.sqlite")
+    worker = ShadowMaintenanceWorker(
+        ShadowAnalysisService(repository, FakeTurnInterpreter()),
+        processed_delay_seconds=4,
+    )
+
+    cycle = worker.run_once()
+
+    assert cycle.completed == 1
+    assert cycle.next_delay_seconds == 4
 
 
 def test_single_instance_lock_rejects_second_worker(tmp_path: Path) -> None:

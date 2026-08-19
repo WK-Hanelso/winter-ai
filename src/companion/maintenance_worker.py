@@ -11,6 +11,7 @@ from pathlib import Path
 import signal
 import sys
 from threading import Event
+from time import perf_counter
 from types import TracebackType
 from typing import TextIO
 
@@ -36,6 +37,9 @@ class MaintenanceCycle:
     completed: int
     failed: int
     deferred: int
+    pending_before: int
+    pending_after: int
+    elapsed_seconds: float
     next_delay_seconds: float
 
 
@@ -48,6 +52,7 @@ class ShadowMaintenanceWorker:
         *,
         batch_size: int = 5,
         idle_seconds: float = 2.0,
+        processed_delay_seconds: float = 0.0,
         unavailable_backoff_seconds: float = 5.0,
         max_backoff_seconds: float = 60.0,
     ) -> None:
@@ -55,23 +60,33 @@ class ShadowMaintenanceWorker:
             raise ValueError("maintenance batch size must be at least 1")
         if idle_seconds <= 0 or unavailable_backoff_seconds <= 0:
             raise ValueError("maintenance delays must be positive")
+        if processed_delay_seconds < 0:
+            raise ValueError("processed delay must not be negative")
         if max_backoff_seconds < unavailable_backoff_seconds:
             raise ValueError("maximum backoff must not be smaller than initial backoff")
         self._service = service
         self._batch_size = batch_size
         self._idle_seconds = idle_seconds
+        self._processed_delay = processed_delay_seconds
         self._initial_backoff = unavailable_backoff_seconds
         self._max_backoff = max_backoff_seconds
         self._current_backoff = unavailable_backoff_seconds
 
     def run_once(self) -> MaintenanceCycle:
+        pending_before = self._service.pending_count()
+        started = perf_counter()
         result = self._service.process_pending(limit=self._batch_size)
+        elapsed_seconds = perf_counter() - started
+        pending_after = self._service.pending_count()
         delay = self._next_delay(result)
         return MaintenanceCycle(
             processed=result.processed,
             completed=result.completed,
             failed=result.failed,
             deferred=result.deferred,
+            pending_before=pending_before,
+            pending_after=pending_after,
+            elapsed_seconds=elapsed_seconds,
             next_delay_seconds=delay,
         )
 
@@ -97,7 +112,7 @@ class ShadowMaintenanceWorker:
             )
             return delay
         self._current_backoff = self._initial_backoff
-        return self._idle_seconds if result.processed == 0 else 0.0
+        return self._idle_seconds if result.processed == 0 else self._processed_delay
 
 
 class SingleInstanceLock:
@@ -152,6 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backend", choices=("local", "fake"), default="local")
     parser.add_argument("--batch-size", type=int, default=5)
     parser.add_argument("--idle-seconds", type=float, default=2.0)
+    parser.add_argument("--processed-delay-seconds", type=float, default=0.0)
     parser.add_argument("--backoff-seconds", type=float, default=5.0)
     parser.add_argument("--max-backoff-seconds", type=float, default=60.0)
     parser.add_argument("--once", action="store_true")
@@ -185,6 +201,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ShadowAnalysisService(repository, interpreter),
             batch_size=arguments.batch_size,
             idle_seconds=arguments.idle_seconds,
+            processed_delay_seconds=arguments.processed_delay_seconds,
             unavailable_backoff_seconds=arguments.backoff_seconds,
             max_backoff_seconds=arguments.max_backoff_seconds,
         )
@@ -213,6 +230,8 @@ def _print_cycle(cycle: MaintenanceCycle) -> None:
         "maintenance shadow: "
         f"processed={cycle.processed} completed={cycle.completed} "
         f"failed={cycle.failed} deferred={cycle.deferred} "
+        f"pending={cycle.pending_before}->{cycle.pending_after} "
+        f"elapsed={cycle.elapsed_seconds:.1f}s "
         f"next_delay={cycle.next_delay_seconds:.1f}s",
         flush=True,
     )

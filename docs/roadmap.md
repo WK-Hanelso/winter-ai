@@ -39,7 +39,7 @@ Winter V1의 전체 제품 목표는 [Winter V1 Product Goal](winter-v1-goal.md)
 | ---: | --- | --- |
 | 1 | TurnUnderstanding schema와 Shadow event log | **비개입 구현·baseline 완료, activation 실패** — 5/10 scene. Memory/Response 연결 금지 |
 | 2 | OutcomeEvaluator | **blind review 경로 완료, Shadow 유지** — locked v2 18/30, 7/7 gates, 실제 review 0/30. 30+ audit 전 연결 금지 |
-| 3 | evidence 기반 Reflection·Memory Consolidator | **대화-only maintenance 정책·검토형 수직 단면·개발/잠금 평가 구현, activation 실패** — Shared Core가 명령 없이 내부 queue와 `shadow` mode를 기록하고 응답은 차단하지 않음. TurnUnderstanding 전용 background Worker의 lock·재시작·backoff 계약까지 구현했지만 안전한 runtime/supervisor와 Reflection·Outcome 소비는 미배포. evidence를 시스템 원문으로 고정했지만 CPU Qwen은 development 8/14, locked-v1 6/12, 두 세트 topic P 50.0%·R 28.6%, unsafe update 2. 지속·multi-topic·grounding gate 전 Memory 반영 금지 |
+| 3 | evidence 기반 Reflection·Memory Consolidator | **전용 TurnUnderstanding Worker Shadow 배포·관찰 중, activation 실패** — Shared Core 응답과 분리된 CPU Qwen3-4B `:18081`, user systemd, aggregate 계측을 배포했다. copied DB 5/5와 live 1/1은 완료됐지만 24시간 관찰 전이다. Reflection·Outcome 소비는 미연결. 기존 CPU Qwen 평가는 development 8/14, locked-v1 6/12, topic P 50.0%·R 28.6%, unsafe update 2이므로 지속·multi-topic·grounding gate 전 Memory 반영 금지 |
 | 4 | SelfModel·CapabilityRegistry | **Lived Continuity 0.1 구현** — Shared Core turn Event, 한국 시간 day monitor, 저위험 Belief 자동 activation/revision offline 통합 검증. 실제 reflection 연결 전 의미 안전성·cross-DB audit 원자성 gate 필요. Capability read-only snapshot은 남음 |
 | 5 | ImprovementLedger와 대화형 proposal | 문제·대안·위험·acceptance·rollback 유지 |
 | 6 | Fake Worker Level 3 state machine | 승인 전 실행과 검증 전 채택이 불가능함을 offline 검증 |

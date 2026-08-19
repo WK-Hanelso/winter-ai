@@ -480,6 +480,28 @@ class SqliteTurnUnderstandingRepository:
             ) from error
         return tuple(_event_from_row(row) for row in rows)
 
+    def count(self, *, status: str | None = None) -> int:
+        """Count queue rows without loading private conversation text."""
+        if status is not None and status not in EVENT_STATUSES:
+            raise TurnUnderstandingRepositoryError(
+                f"unsupported Shadow turn status: {status}"
+            )
+        sql = "SELECT COUNT(*) AS count FROM turn_understanding_events"
+        values: tuple[object, ...] = ()
+        if status is not None:
+            sql += " WHERE status = ?"
+            values = (status,)
+        try:
+            with self._connect() as connection:
+                row = connection.execute(sql, values).fetchone()
+        except sqlite3.Error as error:
+            raise TurnUnderstandingRepositoryError(
+                f"could not count Shadow turns: {error}"
+            ) from error
+        if row is None:
+            raise TurnUnderstandingRepositoryError("Shadow turn count was unavailable")
+        return int(row["count"])
+
     def _update(
         self,
         event_id: str,
@@ -583,6 +605,9 @@ class ShadowAnalysisService:
     ) -> None:
         self._repository = repository
         self._interpreter = interpreter
+
+    def pending_count(self) -> int:
+        return self._repository.count(status="pending")
 
     def process_pending(self, *, limit: int = 10) -> ProcessingResult:
         pending = self._repository.list(status="pending", limit=limit)

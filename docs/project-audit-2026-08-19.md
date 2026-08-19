@@ -369,3 +369,10 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   scope로 전환했다. aggregate pending은 196건이고 전용 18081 listener·maintenance unit은
   없다. 대화용 18080과 GPU를 재사용하지 않고 이전 CPU-only Qwen3-4B를 resolve한 뒤 copied
   DB canary부터 시작한다. 초기 배포와 실제 24시간 gate는 분리한다.
+- 2026-08-19: Qwen3-4B Q4와 llama.cpp b10276 CPU-only runtime을 Git 제외 영속 경로에
+  복구했다. copied DB canary 5/5, live bounded 1/1이 완료됐고 실패는 없었다. 4-thread 3건은
+  평균 42.07초, synthetic conversation 요청은 idle 평균 0.300초와 analysis 부하 중 0.285초로
+  작은 표본상 악화가 없었다. `winter-analysis`와 `winter-maintenance` user service를 배포했고
+  live queue는 시작 시 196에서 195로 줄었다. 결과는 TurnUnderstanding Shadow에만 있고 active
+  Memory 10건은 변하지 않았다. 전체 724 tests, Ruff와 mypy 161 files도 통과했다. 24시간
+  안정성·실제 대화 latency·사람 품질 audit은 미완료다.

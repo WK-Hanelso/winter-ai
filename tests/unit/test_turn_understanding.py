@@ -130,6 +130,8 @@ def test_sqlite_repository_persists_pending_and_completed_shadow_events(
 
     reopened = SqliteTurnUnderstandingRepository(database)
     assert reopened.get(pending.id).status == "pending"
+    assert reopened.count() == 1
+    assert reopened.count(status="pending") == 1
     completed = reopened.complete(
         pending.id, _understanding("결과부터 보여주는 쪽이 편했어")
     )
@@ -137,7 +139,16 @@ def test_sqlite_repository_persists_pending_and_completed_shadow_events(
     assert completed.status == "completed"
     assert completed.understanding is not None
     assert completed.understanding.memory_proposals[0].kind == "preference"
+    assert reopened.count(status="pending") == 0
+    assert reopened.count(status="completed") == 1
     assert SqliteTurnUnderstandingRepository(database).list()[0] == completed
+
+
+def test_repository_count_rejects_unknown_status(tmp_path: Path) -> None:
+    repository = SqliteTurnUnderstandingRepository(tmp_path / "turn.sqlite")
+
+    with pytest.raises(TurnUnderstandingRepositoryError, match="unsupported"):
+        repository.count(status="running")
 
 
 def test_repository_rejects_newer_schema_version(tmp_path: Path) -> None:

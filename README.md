@@ -52,7 +52,8 @@ V1의 목표 자율성은 **Level 3 — 천우가 승인한 변경만 Worker가 
 | Current State | 검토형 | 현재 상태와 과거 상태 Timeline 유지 | Local 분석 정확도가 activation gate 미달 |
 | Open Loop | 운영 | 나중에 이어갈 주제와 재시작 callback | 간접 약속·자동 완료 판정 부족 |
 | TurnUnderstanding | Shadow | 의도·감정·시간 범위·제안 구조 기록 | held-out 5/10, 응답과 Memory에 미연결 |
-| OutcomeEvaluator | Shadow | 이전 답변과 다음 천우 반응을 연결해 평가 | locked 18/30, background 운영 미배포 |
+| OutcomeEvaluator | Shadow | 이전 답변과 다음 천우 반응을 연결해 평가 | locked 18/30, 상시 worker 소비 미연결 |
+| Background Maintenance | Shadow 운영 관찰 중 | 전용 CPU 모델이 응답과 분리되어 TurnUnderstanding queue를 자동 소비 | 5건 copied-DB·1건 live canary만 통과, 24시간 관찰과 결과 품질 audit 전 |
 | Grounded Self-Presence | 제한 운영 | 직접 초대받은 턴에서 겨울이 쪽 판단·가치·반응 표현 | 사람 판정 4/12, 완성된 자아가 아님 |
 | Response Claim Gate | 제한 운영 | 최종 답변의 신체 행동·바깥 사건·기억·외부 능력을 deterministic evidence와 대조 | locked-v2 14장면과 실제 Core 임시 평가 범위이며 범용 사실성 보장 아님 |
 | Winter Event/Day | turn 기록 운영 | 실제 turn을 한국 시간의 겨울이 하루로 기록 | 기존 대화 소급 없음, event 종류 확장 중 |
@@ -585,22 +586,23 @@ docker compose run --rm dev mypy src
 현재 최우선은 관계와 기억을 유지하면서 겨울이가 실제 전문 작업의 목적과 최종 판단까지
 소유하게 만드는 것이다.
 
-1. Work Orchestration V2.1 안전 계약과 Qwen3-14B·A.X 고정 47 check — **완료**
-2. Qwen semantic-v2 12장면 — **완료, 46/66으로 반복 실패**
-3. Gemma 3 12B semantic-v2 — **완료, 40/66으로 Qwen보다 낮고 둘 다 activation 실패**
-4. typed no-network/read-only project gateway — **offline 범위 완료**
-5. credential/control-plane과 Agent tool을 분리한 provider adapter — **Shadow 구현, synthetic live 1/1**
-6. isolated implementation proposal — **Shadow 범위 완료**, synthetic 최소 수정·독립 검증·원본 불변 1/1
-7. proposal 영속화·근거 기반 Winter 설명·exact hash 채택 결정 — **Shadow 범위 완료**
-8. 대상 stale 확인·오류 시 전 파일 복원·적용과 rollback — **Shadow 범위 완료**
-9. project 전체 stale 판정·process crash 복구·실제 Winter 검증 profile
-10. prompt-injection·path/network/write 격리 공격 suite
-11. Qwen3-30B-A3B 동일 semantic-v2와 대화 Core 비교 — **완료, 빠르지만 의미·grounding gate 실패**
-12. Gemma 3 27B 동일 semantic-v2 비교 — **완료, 44/66·27초와 Core chat 호환 실패**
-13. 같은 12~30B drop-in 반복을 중단하고 다음 Core/runtime 전략 결정
-14. semantic·권한 gate 합격 후 read-only 실제 작업 20개를 사람 평가
-15. 검증된 WinterDecision을 기존 Codex read-only route 앞뒤에 Shadow로 연결
-16. Improvement Ledger와 실제 작은 capability의 제안→채택→재평가→rollback 완주
+1. 전용 CPU background maintenance 배포 — **초기 배포 완료, 24시간 Shadow 관찰 중**
+2. Work Orchestration V2.1 안전 계약과 Qwen3-14B·A.X 고정 47 check — **완료**
+3. Qwen semantic-v2 12장면 — **완료, 46/66으로 반복 실패**
+4. Gemma 3 12B semantic-v2 — **완료, 40/66으로 Qwen보다 낮고 둘 다 activation 실패**
+5. typed no-network/read-only project gateway — **offline 범위 완료**
+6. credential/control-plane과 Agent tool을 분리한 provider adapter — **Shadow 구현, synthetic live 1/1**
+7. isolated implementation proposal — **Shadow 범위 완료**, synthetic 최소 수정·독립 검증·원본 불변 1/1
+8. proposal 영속화·근거 기반 Winter 설명·exact hash 채택 결정 — **Shadow 범위 완료**
+9. 대상 stale 확인·오류 시 전 파일 복원·적용과 rollback — **Shadow 범위 완료**
+10. project 전체 stale 판정·process crash 복구·실제 Winter 검증 profile
+11. prompt-injection·path/network/write 격리 공격 suite
+12. Qwen3-30B-A3B 동일 semantic-v2와 대화 Core 비교 — **완료, 빠르지만 의미·grounding gate 실패**
+13. Gemma 3 27B 동일 semantic-v2 비교 — **완료, 44/66·27초와 Core chat 호환 실패**
+14. 같은 12~30B drop-in 반복을 중단하고 다음 Core/runtime 전략 결정
+15. semantic·권한 gate 합격 후 read-only 실제 작업 20개를 사람 평가
+16. 검증된 WinterDecision을 기존 Codex read-only route 앞뒤에 Shadow로 연결
+17. Improvement Ledger와 실제 작은 capability의 제안→채택→재평가→rollback 완주
 
 ## 15. 주요 문서 인덱스
 
