@@ -12,10 +12,10 @@
 ## Foundation Recovery — 현재 최우선
 
 2026-08-19 전체 감사 결과에 따라 새 모델 탐색과 Worker 확장을 일시 중지했다. Issue #112
-`Development Control Gate V0`의 local acceptance를 닫았고, 현재 active scope는 Issue #113
-`pre-audit baseline 보존`이다. 이후 순서는 Web 운영 P0, Memory evidence/temporal contract,
-background analysis, SelfModel·CapabilityRegistry, ImprovementLedger, 기존 Worker Shadow
-재연결이다.
+`Development Control Gate V0`와 Issue #113 `pre-audit baseline 보존`을 완료했다. 현재 active
+scope는 Issue #114 `Web ingress와 request body 제한`이다. 이후 순서는 Web turn 오류·동시성,
+Memory evidence/temporal contract, background analysis, SelfModel·CapabilityRegistry,
+ImprovementLedger, 기존 Worker Shadow 재연결이다.
 
 ## Current state
 

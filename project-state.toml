@@ -1,7 +1,7 @@
 schema_version = 1
 current_phase = "foundation_recovery"
-active_issue = 113
-active_work = ["baseline_consolidation"]
+active_issue = 114
+active_work = ["web_ingress_safety"]
 
 # These files define mission, current product target, maturity and the audit baseline.
 canonical_documents = [
@@ -66,6 +66,14 @@ evidence = [
   "tests/unit/test_web_voice_path.py",
 ]
 dependencies = ["shared_core"]
+
+[[features]]
+id = "web_ingress_safety"
+maturity = "contract"
+evidence = [
+  "docs/project-audit-2026-08-19.md",
+]
+dependencies = ["phone_voice"]
 
 [[features]]
 id = "voice_identity"

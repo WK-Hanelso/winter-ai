@@ -315,3 +315,5 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   기존 mixed worktree를 재작성하지 않고 local recovery snapshot으로 보존하는 작업이다.
 - 2026-08-19: privacy·staged diff·전체 회귀를 통과한 147개 파일을 local commit `cb4bb4b`로
   보존했다. 이 snapshot은 기능 완료가 아니라 이후 Issue diff를 분리하기 위한 복구점이다.
+- 2026-08-19: clean baseline 뒤 Issue #114를 첫 운영 P0로 활성화했다. 범위는 loopback-only
+  Web ingress와 bounded request body이며, thread 오류·동시성은 다음 Issue로 분리한다.
