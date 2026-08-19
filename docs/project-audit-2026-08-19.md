@@ -418,3 +418,7 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   total 0으로 초기화했다. 최종 claim gate commit 뒤 Web PID `687163`, restart 0,
   `127.0.0.1:8000` listener와 local/Tailscale HTTPS health를 확인했다. 실제 개선 안건의
   자연스러운 상태 설명과 overblock은 사용자 관찰 대기다.
+- 2026-08-19 16:31: #118 queue가 completed 16·failed 8·pending 177에서 멈춘 원인을 확인했다.
+  동일한 선두 pending row가 120.1초 timeout으로 최소 8회 연속 deferred되고 backoff가 120초에
+  도달해 이후 row를 영구적으로 굶겼다. row를 실패·삭제하지 않고 defer audit와 retry rotation만
+  추가하는 범위로 #118을 다시 active code scope로 전환했다.

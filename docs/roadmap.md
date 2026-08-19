@@ -19,8 +19,9 @@ scope였던 Issue #117 `final response claim/evidence grounding gate`도 제한 
 Issue #118 `대화 자원과 분리된 background Shadow maintenance 배포`는 24시간 관찰 트랙에서
 계속 실행 중이며 실제 schema/grounding 실패도 별도 기록한다. Issue #119 `실제 근거 기반
 read-only SelfModel·persistent CapabilityRegistry`는 구현·운영 검증을 완료했다. 현재 코드
-변경의 단일 active scope는 Issue #120 `persistent conversational ImprovementLedger`다.
-기존 Worker Shadow 재연결은 그 뒤다.
+변경의 단일 active scope는 Issue #118의 운영 관찰에서 발견된 deferred row queue starvation
+수정이다. #120 `persistent conversational ImprovementLedger` 기반은 완료했다. 기존 Worker
+Shadow 재연결은 fairness 수정과 검증 뒤다.
 
 ## Current state
 
