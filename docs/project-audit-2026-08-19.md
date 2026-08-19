@@ -336,3 +336,7 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
   `127.0.0.1:8000`, local health와 Tailscale HTTPS health를 확인했다. synthetic 발화로 실제
   대화 DB를 오염시키지 않고 `web_turn_safety=operational`로 승격했다. terminal error의 사람
   관찰과 queue 대기 UX는 일상 실사용 후 고도화 판단으로 남긴다.
+- 2026-08-19: #115를 완료하고 Issue #116을 active scope로 전환했다. 이미 구현된 검토형
+  current-state history를 재작성하지 않고, synchronous direct-memory가 broad self-appraisal을
+  영구 semantic으로 확정하는 경로와 새 Memory의 conversation evidence·temporal metadata
+  부재만 다룬다. background extractor 품질 개선은 다음 scope로 분리한다.

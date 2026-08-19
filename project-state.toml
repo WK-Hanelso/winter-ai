@@ -1,7 +1,7 @@
 schema_version = 1
 current_phase = "foundation_recovery"
-active_issue = 115
-active_work = ["web_turn_safety"]
+active_issue = 116
+active_work = ["direct_memory_safety"]
 
 # These files define mission, current product target, maturity and the audit baseline.
 canonical_documents = [
@@ -57,6 +57,14 @@ evidence = [
   "tests/unit/test_memory.py",
 ]
 dependencies = ["shared_core"]
+
+[[features]]
+id = "direct_memory_safety"
+maturity = "contract"
+evidence = [
+  "docs/memory-evidence-temporal.md",
+]
+dependencies = ["persistent_memory"]
 
 [[features]]
 id = "phone_voice"
