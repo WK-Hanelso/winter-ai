@@ -10,7 +10,11 @@ import sys
 from tempfile import TemporaryDirectory
 
 from companion.adapters.codex_isolated_worker import CodexIsolatedWorkWorker
-from companion.change_adoption import ChangeAdoptionService
+from companion.change_adoption import (
+    ChangeAdoptionService,
+    CommandRepositoryVerifier,
+    VerificationCommand,
+)
 from companion.change_proposal import (
     PersistentIsolatedWorkService,
     SqliteChangeProposalRepository,
@@ -76,7 +80,25 @@ def main() -> int:
             decision="adopt",
             expected_patch_sha256=stored.patch_sha256,
         )
-        adoption = ChangeAdoptionService(source, proposals)
+        adoption = ChangeAdoptionService(
+            source,
+            proposals,
+            repository_verifier=CommandRepositoryVerifier(
+                (
+                    VerificationCommand(
+                        "python_unittest",
+                        (
+                            sys.executable,
+                            "-m",
+                            "unittest",
+                            "discover",
+                            "-s",
+                            "tests",
+                        ),
+                    ),
+                )
+            ),
+        )
         applied = adoption.apply(
             stored.proposal_id,
             expected_patch_sha256=stored.patch_sha256,

@@ -608,7 +608,7 @@ docker compose run --rm dev mypy src
 4. Fake Worker 승인→독립 검증→별도 채택→rollback — **#121 Shadow 범위 완료**
 5. 승인 lifecycle과 기존 격리 수정안 Shadow 연결 — **#122 Shadow 범위 완료**
 6. Work Orchestration V2.1 안전 계약과 기존 모델 baseline — **구현 완료, activation 실패**
-7. project 전체 stale 판정·process crash 복구·실제 Winter 검증 profile — **#123 진행 중**
+7. project 전체 stale 판정·process crash 복구·실제 Winter 검증 profile — **#123 범위 구현**
 8. prompt-injection·path/network/write 격리 공격 suite
 9. 새 Core/runtime가 기존 ambiguity·grounding gate를 해결한다는 근거 확보
 10. semantic·권한 gate 합격 후 read-only 실제 작업 20개를 사람 평가
@@ -627,6 +627,7 @@ docker compose run --rm dev mypy src
 | 자아·관점·하루의 경계는? | [SelfModel Design](docs/self-model-design.md) |
 | 개선 문제에서 검증·채택·rollback까지 어떻게 이어지는가? | [ADR-0023 Improvement Ledger](docs/adr/0023-persistent-conversational-improvement-ledger.md), [ADR-0024 Fake Worker lifecycle](docs/adr/0024-fake-worker-level3-lifecycle.md) |
 | 승인된 개선과 격리 수정안은 어떻게 같은 작업임을 증명하는가? | [ADR-0025 Isolated lifecycle bridge](docs/adr/0025-isolated-lifecycle-shadow-bridge.md) |
+| source 적용 전 project drift와 crash는 어떻게 막는가? | [ADR-0026 Project baseline and crash recovery](docs/adr/0026-project-baseline-and-adoption-crash-recovery.md) |
 | 왜 자동 Belief에 이런 gate가 있는가? | [ADR-0011](docs/adr/0011-evidence-backed-lived-continuity.md) |
 | LLM 관점 후보는 어떻게 검증하는가? | [Belief Reflection](docs/belief-reflection.md), [ADR-0012](docs/adr/0012-shadow-belief-semantic-review.md) |
 | 어제의 겨울이가 오늘로 어떻게 이어지는가? | [Day Reflection](docs/day-reflection.md), [ADR-0013](docs/adr/0013-daily-continuity-before-autonomous-analysis.md) |

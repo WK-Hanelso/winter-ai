@@ -11,64 +11,17 @@ import shutil
 import subprocess
 from tempfile import TemporaryDirectory
 
+from companion.project_baseline import (
+    MAX_SAFE_BUNDLE_BYTES,
+    MAX_SAFE_FILE_BYTES,
+    MAX_SAFE_FILES,
+    is_safe_project_path,
+)
 from companion.worker import (
     ReadOnlyWorkerRequest,
     ReadOnlyWorkerResult,
     WorkerUnavailableError,
 )
-
-_ROOT_FILES = {
-    "AGENTS.md",
-    "README.md",
-    "pyproject.toml",
-    "winter",
-}
-_ROOT_PREFIXES = ("Dockerfile", "compose.")
-_ALLOWED_DIRECTORIES = {
-    "configs",
-    "deploy",
-    "docs",
-    "experiments",
-    "scripts",
-    "src",
-    "tests",
-}
-_ALLOWED_SUFFIXES = {
-    ".css",
-    ".html",
-    ".ini",
-    ".js",
-    ".json",
-    ".md",
-    ".py",
-    ".sh",
-    ".toml",
-    ".txt",
-    ".yaml",
-    ".yml",
-}
-_DENIED_PARTS = {
-    ".agents",
-    ".claude",
-    ".codex",
-    ".git",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    "__pycache__",
-    "checkpoints",
-    "data",
-    "datasets",
-    "generated_audio",
-    "human_reference",
-    "models",
-    "node_modules",
-    "review",
-    "voice_references",
-}
-_MAX_FILE_BYTES = 512_000
-_MAX_BUNDLE_BYTES = 12_000_000
-_MAX_FILES = 1_500
 
 _RESULT_SCHEMA = {
     "type": "object",
@@ -105,10 +58,10 @@ class SafeProjectBundle:
             if not _is_allowed(relative):
                 continue
             size = source.stat().st_size
-            if size > _MAX_FILE_BYTES:
+            if size > MAX_SAFE_FILE_BYTES:
                 continue
             total_bytes += size
-            if total_bytes > _MAX_BUNDLE_BYTES or len(selected) >= _MAX_FILES:
+            if total_bytes > MAX_SAFE_BUNDLE_BYTES or len(selected) >= MAX_SAFE_FILES:
                 raise WorkerUnavailableError(
                     "Codex 작업 묶음이 안전 제한을 초과했습니다."
                 )
@@ -122,17 +75,7 @@ class SafeProjectBundle:
 
 
 def _is_allowed(relative: Path) -> bool:
-    parts = relative.parts
-    if not parts or any(part in _DENIED_PARTS or part.startswith(".") for part in parts):
-        return False
-    if relative.name.startswith(".env"):
-        return False
-    if len(parts) == 1:
-        return (
-            relative.name in _ROOT_FILES
-            or relative.name.startswith(_ROOT_PREFIXES)
-        ) and (relative.suffix in _ALLOWED_SUFFIXES or relative.name == "winter")
-    return parts[0] in _ALLOWED_DIRECTORIES and relative.suffix in _ALLOWED_SUFFIXES
+    return is_safe_project_path(relative)
 
 
 class CodexReadOnlyWorker:

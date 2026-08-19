@@ -25,6 +25,7 @@ from companion.isolated_work import (
     IsolatedWorkResult,
     VerificationResult,
 )
+from companion.project_baseline import build_project_baseline
 from companion.worker import WorkerUnavailableError
 
 _REPORT_SCHEMA = {
@@ -110,6 +111,7 @@ class CodexIsolatedWorkWorker:
                 isolated_codex_home.mkdir()
                 isolated_agent_home.mkdir()
                 SafeProjectBundle(self._source_root).copy_to(baseline)
+                project_baseline = build_project_baseline(baseline)
                 shutil.copytree(baseline, workspace)
                 copy_control_plane_auth(self._codex_home, isolated_codex_home)
 
@@ -188,6 +190,7 @@ class CodexIsolatedWorkWorker:
                     limitations=limitations,
                     worker="codex-isolated-work",
                     model=self._model,
+                    project_baseline=project_baseline,
                 )
         except WorkerUnavailableError:
             raise

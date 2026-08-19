@@ -204,8 +204,12 @@ maturity = "shadow"
 evidence = [
   "docs/work-orchestration.md",
   "docs/adr/0025-isolated-lifecycle-shadow-bridge.md",
+  "docs/adr/0026-project-baseline-and-adoption-crash-recovery.md",
+  "src/companion/project_baseline.py",
   "tests/unit/test_work_orchestration.py",
   "tests/unit/test_isolated_lifecycle_bridge.py",
+  "tests/unit/test_change_adoption.py",
+  "tests/unit/test_project_baseline.py",
 ]
 dependencies = ["self_model", "capability_registry", "improvement_ledger"]
 sync_status = true

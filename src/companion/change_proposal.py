@@ -17,6 +17,11 @@ from companion.isolated_work import (
     IsolatedWorkResult,
     VerificationResult,
 )
+from companion.project_baseline import (
+    ProjectBaseline,
+    ProjectBaselineError,
+    ProjectFileDigest,
+)
 
 _PROPOSAL_STATUSES = frozenset(
     {
@@ -743,7 +748,35 @@ def _result_from_payload(payload: object) -> IsolatedWorkResult:
         limitations=tuple(_string_items(payload["limitations"])),
         worker=_text(payload["worker"]),
         model=_text(payload["model"]),
+        project_baseline=_project_baseline_from_payload(
+            payload.get("project_baseline")
+        ),
     )
+
+
+def _project_baseline_from_payload(payload: object) -> ProjectBaseline | None:
+    if payload is None:
+        return None
+    if not isinstance(payload, dict):
+        raise ChangeProposalError("저장된 project baseline이 올바르지 않습니다.")
+    try:
+        files = tuple(
+            ProjectFileDigest(
+                path=_text(item["path"]),
+                sha256=_text(item["sha256"]),
+                size=int(item["size"]),
+            )
+            for item in _dict_items(payload["files"])
+        )
+        return ProjectBaseline(
+            files=files,
+            manifest_sha256=_text(payload["manifest_sha256"]),
+            total_bytes=int(payload["total_bytes"]),
+        )
+    except (KeyError, TypeError, ValueError, ProjectBaselineError) as error:
+        raise ChangeProposalError(
+            "저장된 project baseline이 손상되었습니다."
+        ) from error
 
 
 def _explanation_from_payload(payload: object) -> ChangeExplanation:

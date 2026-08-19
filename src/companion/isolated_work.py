@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
+from companion.project_baseline import ProjectBaseline
+
 _VERIFICATION_PROFILES = frozenset({"python_unittest"})
 _EDITABLE_SUFFIXES = frozenset(
     {
@@ -114,6 +116,7 @@ class IsolatedWorkResult:
     limitations: tuple[str, ...]
     worker: str
     model: str
+    project_baseline: ProjectBaseline | None = None
 
     def __post_init__(self) -> None:
         if self.status not in {"awaiting_adoption", "verification_failed"}:

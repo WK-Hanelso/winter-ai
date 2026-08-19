@@ -14,6 +14,7 @@ from companion.isolated_work import (
     IsolatedWorkResult,
     VerificationResult,
 )
+from companion.project_baseline import build_project_baseline
 
 
 def _authorization() -> ImplementationAuthorization:
@@ -122,6 +123,28 @@ def test_repository_preserves_same_explanation_and_target_after_restart(
     assert loaded is not None
     assert loaded.explanation.adoption_question == "이 수정안을 실제 코드에 적용할까?"
     assert reopened.list_events(stored.proposal_id)[0].status == "awaiting_adoption"
+
+
+def test_repository_preserves_privacy_safe_project_baseline(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = source / "src" / "calc.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("return left - right\n", encoding="utf-8")
+    result = _result()
+    result = IsolatedWorkResult(
+        **{
+            **result.__dict__,
+            "project_baseline": build_project_baseline(source),
+        }
+    )
+    path = tmp_path / "proposals.sqlite"
+    stored = SqliteChangeProposalRepository(path).record(_authorization(), result)
+
+    reopened = SqliteChangeProposalRepository(path).get(stored.proposal_id)
+
+    assert reopened == stored
+    assert reopened is not None
+    assert reopened.result.project_baseline == result.project_baseline
 
 
 def test_repository_rejects_reusing_proposal_id_with_different_patch(
