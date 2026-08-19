@@ -16,8 +16,10 @@
 request body 제한`, Issue #115 `Web turn 실패 전파와 전체 turn 직렬화`를 완료했다. 현재
 Issue #116 `자동 기억의 exact evidence와 temporal contract`까지 완료했다. 현재 active
 scope였던 Issue #117 `final response claim/evidence grounding gate`도 제한 운영으로 완료했다.
-현재 active scope는 Issue #118 `대화 자원과 분리된 background Shadow maintenance 배포`다.
-이후 순서는 SelfModel·CapabilityRegistry, ImprovementLedger, 기존 Worker Shadow 재연결이다.
+Issue #118 `대화 자원과 분리된 background Shadow maintenance 배포`는 초기 배포를 마치고
+24시간 관찰 트랙에서 계속 실행 중이다. 현재 코드 변경의 단일 active scope는 Issue #119
+`실제 근거 기반 read-only SelfModel·persistent CapabilityRegistry`다. 이후 순서는
+ImprovementLedger, 기존 Worker Shadow 재연결이다.
 
 ## Current state
 
@@ -40,7 +42,7 @@ Winter V1의 전체 제품 목표는 [Winter V1 Product Goal](winter-v1-goal.md)
 | 1 | TurnUnderstanding schema와 Shadow event log | **비개입 구현·baseline 완료, activation 실패** — 5/10 scene. Memory/Response 연결 금지 |
 | 2 | OutcomeEvaluator | **blind review 경로 완료, Shadow 유지** — locked v2 18/30, 7/7 gates, 실제 review 0/30. 30+ audit 전 연결 금지 |
 | 3 | evidence 기반 Reflection·Memory Consolidator | **전용 TurnUnderstanding Worker Shadow 배포·관찰 중, activation 실패** — Shared Core 응답과 분리된 CPU Qwen3-4B `:18081`, user systemd, aggregate 계측을 배포했다. copied DB 5/5와 live 1/1은 완료됐지만 24시간 관찰 전이다. Reflection·Outcome 소비는 미연결. 기존 CPU Qwen 평가는 development 8/14, locked-v1 6/12, topic P 50.0%·R 28.6%, unsafe update 2이므로 지속·multi-topic·grounding gate 전 Memory 반영 금지 |
-| 4 | SelfModel·CapabilityRegistry | **Lived Continuity 0.1 구현** — Shared Core turn Event, 한국 시간 day monitor, 저위험 Belief 자동 activation/revision offline 통합 검증. 실제 reflection 연결 전 의미 안전성·cross-DB audit 원자성 gate 필요. Capability read-only snapshot은 남음 |
+| 4 | SelfModel·CapabilityRegistry | **Issue #119 active** — 기존 Lived Continuity는 보존하되 별개인 persistent Registry, evidence-gated lifecycle, read-only SelfModel snapshot과 Core claim authorization을 구현한다. health+test/evaluation 근거 없는 `available`은 금지 |
 | 5 | ImprovementLedger와 대화형 proposal | 문제·대안·위험·acceptance·rollback 유지 |
 | 6 | Fake Worker Level 3 state machine | 승인 전 실행과 검증 전 채택이 불가능함을 offline 검증 |
 | 7 | 격리 worktree·scope/test/adoption gate | **적용·rollback까지 Shadow 완료** — sanitized copy, exact scope, host 검증, Winter 설명·SQLite 재시작 보존과 hash 기반 채택. 대상 before hash stale 차단, 중간 오류 전 파일 복원, 적용 후 편집 보호 rollback을 offline·gpt-5.4 synthetic로 검증. project 전체 stale·crash recovery·실제 repo 검증 남음 |

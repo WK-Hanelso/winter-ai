@@ -379,3 +379,7 @@ voice, Reference 연구와 다수의 안전 계약은 재사용 가치가 높다
 - 2026-08-19: 실제 maintenance process를 inference 도중 재시작했다. 130초 stop budget 안에서
   기존 process가 현재 cycle을 67.0초에 완료하고 pending `190→189`로 한 번만 전이한 뒤 정상
   종료했으며 새 PID가 기동했다. failed·중복 완료·강제 kill은 없었다.
+- 2026-08-19: #118 초기 구현은 24시간 관찰 트랙에 남기고 코드 active scope를 Issue #119
+  read-only SelfModel·persistent CapabilityRegistry로 전환했다. `available`은 health와
+  test/evaluation 근거를 모두 요구하며, 이번 범위에는 capability 채택·권한 변경·Worker 실행과
+  Shadow 분석 activation을 포함하지 않는다.
