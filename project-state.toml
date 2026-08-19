@@ -1,6 +1,6 @@
 schema_version = 1
 current_phase = "foundation_recovery"
-active_issue = 122
+active_issue = 123
 active_work = ["work_orchestration"]
 
 # These files define mission, current product target, maturity and the audit baseline.
