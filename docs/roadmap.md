@@ -24,10 +24,11 @@ Issue #118의 deferred row queue starvation은 운영에서 다음 row 진행까
 `Fake Worker Level 3 lifecycle` Shadow 검증과 #122 `approved lifecycle과 isolated
 implementation Shadow 연결`과 #123 `project baseline·post-apply verification·process crash
 recovery`와 #124 `exact lifecycle-to-source capability cycle`도 완료했다. 현재 단일 active
-scope는 Issue #125 `sandbox adoption verifier and adversarial suite`다. 로컬 범위는 구현·검증을
-완료했으며 Issue 완료 처리 전이다. 기존 bubblewrap 독립 검증을 source-adoption verifier에
-재사용하고 hostile fixture에서 path/network/write/credential/prompt-injection 경계를
-증명했지만 운영 source에는 연결하지 않았다.
+scope는 Issue #126 `Winter-owned real repository diagnosis canary`다. #125의 공용
+bubblewrap 격리와 hostile suite는 완료했다. 이제 새 기반을 더 만들지 않고 천우의 평범한
+repository 진단 요청 한 건을 Local Core의 제한된 목적 정리, typed read-only Worker와
+근거 기반 최종 판단으로 연결해 실제 사용 가치를 확인한다. 첫 canary가 유용하지 않으면
+prompt 예외나 orchestration 코드를 누적하지 않고 실패로 기록한다.
 
 ## Current state
 
@@ -57,6 +58,7 @@ Winter V1의 전체 제품 목표는 [Winter V1 Product Goal](winter-v1-goal.md)
 | 7 | 격리 worktree·scope/test/adoption gate | **Issue #123 범위 구현** — privacy-safe project baseline drift 차단, 필수 post-apply command verifier, `applying`/`rolling_back`의 all-before·all-after·mixed 복구와 unknown bytes 무덮어쓰기를 임시 fixture에서 검증. 운영 source·대화 route·Capability 연결 금지 |
 | 7a | exact lifecycle-to-source capability cycle | **Issue #124 범위 구현** — 채택 승인과 완료를 분리하고 exact Improvement/validation/patch/baseline/capability identity로 source 적용, Registry available, 최종 adopted와 rollback을 하나의 synthetic cycle로 검증. 운영 source·사용자 route 금지 |
 | 7b | sandboxed adoption verifier + adversarial suite | **Issue #125 로컬 범위 구현·검증 완료** — 공용 bubblewrap 경계에서 read-only source, private `/tmp`, no-network/no-HOME/credential, fixed argv, timeout과 no-host-fallback을 검증. 실제 hostile probe에서 source/host write·symlink secret·network를 차단. 운영 source·사용자 route 금지 |
+| 7c | Winter-owned real repository diagnosis canary | **Issue #126 active** — Worker 이름 없는 명확한 진단 요청 한 건만 Local Core의 단순 목적 정리→typed read-only Worker→근거 검수→겨울이 최종 설명으로 연결. 새 기반·write·일반 자동 위임 금지 |
 | 8 | 승인된 Worker Adapter 하나 연결 | **read-only 0.1 완료** — explicit Codex route, sanitized text bundle, ephemeral/read-only 실행, structured provenance와 실제 1회 성공. write/adoption이 아니라 분석 capability만 제한 운영 |
 | 8a | Winter-owned Work Orchestration | **typed provider Shadow 구현, activation 실패** — Qwen 46/66, Gemma 40/66. 빈 agent cwd, shell/web 차단, `env -i` MCP와 목록·검색·읽기, snapshot/evidence/audit offline 17개 + gpt-5.4 synthetic live 1/1. 공격 suite·실제 20 task 필요 |
 | 9 | 실제 capability 전체 cycle | 제안→승인→구현→검증→채택→재평가→rollback 완주 |

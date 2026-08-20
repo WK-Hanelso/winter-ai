@@ -602,12 +602,12 @@ CapabilityRegistry`, #120 `persistent conversational ImprovementLedger`와 #118 
 fairness의 구현·운영 검증을 완료했다. #118은 24시간 관찰 트랙에 남고 결과 품질 gate는 실패
 상태다. #121 Fake Worker lifecycle, #122 isolated lifecycle bridge와 #123 project baseline·source
 adoption crash recovery와 #124 exact lifecycle-to-source capability cycle의 Shadow 범위를
-완료했다. 현재 단일 active scope는 Issue #125 `sandbox adoption verifier and adversarial
-suite`이며 로컬 구현·검증을 완료하고 Issue 완료 처리 전이다. 공용 bubblewrap 경계를
-source-adoption verifier에 재사용했고 read-only source, no-network/no-HOME/credential,
-fixed argv, timeout/no-host-fallback과 실제 hostile fixture 차단을 증명했다.
-실제 Worker, 운영 Winter source, 사용자 route, 계정 권한, 외부 write와 TurnUnderstanding
-자동 등록은 금지한다.
+완료했다. #125 `sandbox adoption verifier and adversarial suite`도 실제 hostile fixture와
+전체 회귀를 통과해 종료했다. 현재 단일 active scope는 Issue #126 `Winter-owned real
+repository diagnosis canary`다. 천우가 Worker 이름을 말하지 않은 명확한 repository 진단
+요청 한 건에서만 기존 Local Core, typed read-only Worker와 evidence review를 연결해 실제
+사용 가치를 확인한다. 새 sandbox·ledger·registry·state machine·모델 탐색, 실제 source
+write, Capability activation과 일반 자동 위임은 금지한다.
 아래 Work Orchestration 계약과 실패 기준선은 그대로 보존한다.
 
 1. 현재 혼합 worktree의 사용자·Claude·Codex 변경을 보존한다.
