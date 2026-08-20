@@ -210,6 +210,8 @@ evidence = [
   "docs/adr/0029-winter-owned-real-work-canary.md",
   "docs/adr/0030-nonblocking-winter-owned-work.md",
   "src/companion/owned_work.py",
+  "src/companion/owned_work_repository.py",
+  "src/companion/model_priority.py",
   "src/companion/capability_adoption.py",
   "src/companion/project_baseline.py",
   "src/companion/verification_sandbox.py",
@@ -221,6 +223,8 @@ evidence = [
   "tests/unit/test_project_baseline.py",
   "tests/unit/test_verification_sandbox.py",
   "tests/unit/test_owned_work.py",
+  "tests/unit/test_owned_work_repository.py",
+  "tests/unit/test_model_priority.py",
 ]
 dependencies = ["self_model", "capability_registry", "improvement_ledger"]
 sync_status = true

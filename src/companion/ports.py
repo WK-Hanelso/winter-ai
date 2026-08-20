@@ -88,6 +88,16 @@ class OwnedWorkInbox(Protocol):
     def acknowledge(self, update_id: str) -> None: ...
 
 
+class OwnedWorkJobRepository(OwnedWorkInbox, Protocol):
+    """Durable queue boundary used by the non-blocking coordinator."""
+
+    def enqueue(self, work_id: str, request: WorkRequest) -> None: ...
+
+    def claim_pending(self) -> tuple[str, WorkRequest] | None: ...
+
+    def complete(self, update: OwnedWorkUpdate) -> None: ...
+
+
 class WinterExecutive(Protocol):
     """The single Core Model authority for work intent and final judgment."""
 

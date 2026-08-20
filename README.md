@@ -140,8 +140,10 @@ Issue #126에서는 이 경로를 개발용 feature flag 아래 실제 repositor
 즉시 끝내고 전문 작업을 background로 보낸다. 실제 재실행에서 접수 text 0.000초, 그 직후
 일반 대화 2.138초, 접수 첫 문장 Chatterbox 합성 2.450초였고 작업 자체는 82.83초였다.
 Web은 2초마다 완료 inbox를 확인해 천우가 다른 대화를 마친 뒤 겨울이 text와 voice로 결과를
-가져온다. 다만 job/inbox가 아직 process memory에만 있고 실제 phone에는 배포하지 않았으므로
-정상 사용 경로로 표기하지 않는다. 상세 계약은
+가져온다. 후속 구현은 job과 미전달 결과를 SQLite에 보존해 process crash 뒤 다시 시작하며,
+대기 중인 일반 대화가 background Local 분석보다 먼저 모델을 사용하게 한다. offline 재시작과
+우선순위 검증은 통과했지만 이미 시작한 generation은 중단하지 못하고 실제 phone에는 배포하지
+않았으므로 정상 사용 경로로 표기하지 않는다. 상세 계약은
 [ADR-0030](docs/adr/0030-nonblocking-winter-owned-work.md)에 있다.
 
 새 Orchestration용 typed gateway는 arbitrary shell을 주지 않고 `list_files`,
@@ -631,10 +633,11 @@ docker compose run --rm dev mypy src
 8. exact 채택 승인→source 적용→Capability 등록→rollback synthetic cycle — **#124 범위 구현**
 9. adoption verifier bubblewrap 격리와 공격 suite — **#125 완료**
 10. Worker 이름 없는 실제 repository 진단 한 건 — **#126 비차단 Shadow 성공, 결과 partial**
-11. persistent job/inbox와 foreground Local 대화 우선권으로 재시작·자원 충돌 제거
-12. semantic·권한 gate 합격 후 read-only 실제 작업 20개를 사람 평가
-13. 검증된 WinterDecision을 기존 Codex read-only route 앞뒤에 Shadow로 연결
-14. 실제 작은 capability의 제안→승인→구현→검증→채택→재평가→rollback 완주
+11. persistent job/inbox와 foreground Local 대화 우선권 — **offline 범위 완료**
+12. 실제 phone에서 작업 중 대화 최대 대기와 first-play 측정
+13. semantic·권한 gate 합격 후 read-only 실제 작업 20개를 사람 평가
+14. 검증된 WinterDecision을 기존 Codex read-only route 앞뒤에 Shadow로 연결
+15. 실제 작은 capability의 제안→승인→구현→검증→채택→재평가→rollback 완주
 
 ## 15. 주요 문서 인덱스
 

@@ -607,8 +607,11 @@ adoption crash recovery와 #124 exact lifecycle-to-source capability cycle의 Sh
 repository diagnosis canary`다. 첫 동기식 98.77초와 근거 밖 추천은 실패했다. 후속 Shadow는
 single-job background coordinator와 evidence-backed claim 선택으로 접수 0.000초, 직후 일반
 대화 2.138초, 접수 TTS 2.450초, 작업 전체 82.83초를 냈다. 대화 비차단과 새 사실 차단은
-성공했지만 최종 결과는 다음 한 가지를 확정하지 못해 partial이고, in-memory job restart와
-실제 phone 검증이 남았다. 개발용 flag만 보존하며 기본 CLI/Web와 service에는 켜지 않는다.
+성공했지만 최종 결과는 다음 한 가지를 확정하지 못해 partial이다. 후속 SQLite job/inbox는
+dead-process request와 미전달 결과를 복구하고 foreground-first scheduler는 작업 접수·phone
+녹음 시작을 보호한다. 다만 실제 phone 동시 사용과 이미 시작한 generation preemption은
+미검증이다. 개발용 flag만 보존하며 기본
+CLI/Web와 service에는 켜지 않는다.
 새 sandbox·ledger·registry·prompt 예외·동급 모델 순회, 실제 source write, Capability
 activation과 일반 자동 위임은 금지한다.
 아래 Work Orchestration 계약과 실패 기준선은 그대로 보존한다.
@@ -672,6 +675,12 @@ activation과 일반 자동 위임은 금지한다.
     대화 첫 반응 SLA로 보고하지 않는다.
 20. claim 선택 gate는 근거 밖 action 생성을 막았지만 결과가 partial이었다. SQLite job/inbox,
     foreground model 우선권과 actual phone first-play 검증 전에는 activation하지 않는다.
+21. SQLite job/inbox는 실제 child-process crash 뒤 running request 재개와 미전달 결과 복구를
+    통과했다. queued foreground 대화는 background보다 먼저 Local model에 들어가며 작업 접수,
+    대화 종료와 phone 녹음 시작 뒤 6초 quiet window를 둔다. 이미 실행 중인 generation
+    preemption, lease heartbeat와 actual phone 동시 사용은 미검증이므로 activation하지 않는다.
+    실제 `:18080` 겹침 probe에서는 background를 먼저 제출했어도 0.2초 뒤 foreground가
+    0.498초에 먼저 끝났고 background는 6.855초에 끝났다.
 
 TurnUnderstanding과 Reflection의 기존 품질 gate는 그대로 유지한다. 자동 Belief 정책이
 있다는 이유만으로 검증되지 않은 LLM candidate를 active로 만들거나 write Worker를 자동

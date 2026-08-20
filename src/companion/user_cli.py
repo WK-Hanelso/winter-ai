@@ -83,6 +83,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     args.identity_path = DATA / "identity.json"
     args.conversation_db = DATA / "conversations.sqlite"
+    args.owned_work_db = DATA / "owned_work.sqlite"
     args.memory_db = DATA / "memories.sqlite"
     args.capability_db = DATA / "capabilities.sqlite"
     args.improvement_db = DATA / "improvements.sqlite"

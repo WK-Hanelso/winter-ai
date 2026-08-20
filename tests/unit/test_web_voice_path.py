@@ -72,6 +72,34 @@ def test_direct_voice_path_emits_stage_one_without_conversion() -> None:
     assert base64.b64decode(str(audio["wav"])) == b"direct-wav"
 
 
+def test_recording_activity_reaches_foreground_scheduler(tmp_path: Path) -> None:
+    activity_seen = threading.Event()
+    companion = Companion(  # type: ignore[arg-type]
+        OneSentenceCore(),
+        AnyVoice(),
+        None,
+        UnusedStt(),
+        foreground_activity=activity_seen.set,
+    )
+    repository = SqliteVoiceLatencyRepository(tmp_path / "voice-latency.sqlite")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(companion, repository))
+    serving = threading.Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    connection = HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+    try:
+        connection.request("POST", "/activity")
+        response = connection.getresponse()
+        response.read()
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        serving.join(timeout=2)
+
+    assert response.status == 204
+    assert activity_seen.is_set()
+
+
 def test_web_delivers_and_acknowledges_background_winter_result(
     tmp_path: Path,
 ) -> None:

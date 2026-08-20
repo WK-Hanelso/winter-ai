@@ -77,6 +77,7 @@ from companion.lived_continuity import (
     summarize_lived_continuity,
 )
 from companion.memory import ActiveMemoryRetriever, MemoryRepositoryError, SqliteMemoryRepository
+from companion.model_priority import ForegroundPriorityChatScheduler
 from companion.open_loops import (
     ActiveOpenLoopRetriever,
     OpenLoopRepositoryError,
@@ -93,6 +94,10 @@ from companion.owned_work import (
     AsyncOwnedWorkCoordinator,
     OwnedWorkUpdate,
     WinterOwnedProjectCanary,
+)
+from companion.owned_work_repository import (
+    OwnedWorkRepositoryError,
+    SqliteOwnedWorkRepository,
 )
 from companion.ports import ChatModel, ConversationRepository
 from companion.reflection import (
@@ -314,6 +319,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--conversation-db",
         type=Path,
         help="explicit local SQLite path for persistent conversation history",
+    )
+    parser.add_argument(
+        "--owned-work-db",
+        type=Path,
+        help="local SQLite path for pending Winter-owned work and results",
     )
     parser.add_argument(
         "--context-max-messages",
@@ -605,11 +615,26 @@ def run(
             return 1
         print(render_lived_continuity(summary), file=stdout)
         return 0
-    chat_model = build_chat_model(args)
+    base_chat_model = build_chat_model(args)
+    priority_scheduler = (
+        ForegroundPriorityChatScheduler(base_chat_model)
+        if getattr(args, "winter_work_canary", False) and args.prompt is None
+        else None
+    )
+    chat_model = (
+        priority_scheduler.foreground()
+        if priority_scheduler is not None
+        else base_chat_model
+    )
+    work_chat_model = (
+        priority_scheduler.background()
+        if priority_scheduler is not None
+        else base_chat_model
+    )
     owned_work_canary = (
         WinterOwnedProjectCanary(
             Path.cwd(),
-            BoundedProjectInspectionExecutive(chat_model),
+            BoundedProjectInspectionExecutive(work_chat_model),
             CodexTypedProjectWorker(
                 Path.cwd(),
                 executable=getattr(args, "codex_executable", "codex"),
@@ -627,10 +652,25 @@ def run(
             repository.append(ConversationMessage("assistant", update.text))
             print(f"\nCompanion> {update.text}", file=stdout, flush=True)
 
-        owned_work_coordinator = AsyncOwnedWorkCoordinator(
-            owned_work_canary,
-            completion_sink=notify_owned_work,
-        )
+        try:
+            owned_work_path = getattr(args, "owned_work_db", None)
+            owned_work_coordinator = AsyncOwnedWorkCoordinator(
+                owned_work_canary,
+                completion_sink=notify_owned_work,
+                repository=(
+                    SqliteOwnedWorkRepository(owned_work_path)
+                    if owned_work_path is not None
+                    else None
+                ),
+                foreground_activity=(
+                    priority_scheduler.mark_foreground_activity
+                    if priority_scheduler is not None
+                    else None
+                ),
+            )
+        except OwnedWorkRepositoryError as error:
+            print(f"Winter owned work unavailable: {error}", file=stdout)
+            return 1
         owned_work_executor = None
     core = CompanionCore(
         chat_model,

@@ -89,6 +89,7 @@ from companion.memory import (
     MemoryRepositoryError,
     SqliteMemoryRepository,
 )
+from companion.model_priority import ForegroundPriorityChatScheduler
 from companion.open_loops import (
     ActiveOpenLoopRetriever,
     OpenLoopRepositoryError,
@@ -99,6 +100,10 @@ from companion.owned_work import (
     AsyncOwnedWorkCoordinator,
     OwnedWorkUpdate,
     WinterOwnedProjectCanary,
+)
+from companion.owned_work_repository import (
+    OwnedWorkRepositoryError,
+    SqliteOwnedWorkRepository,
 )
 from companion.ports import OwnedWorkInbox, SpeechToText
 from companion.turn_understanding import (
@@ -141,6 +146,7 @@ DEFAULT_DAY_REFLECTIONS = DEFAULT_DATA / "day_reflections.sqlite"
 DEFAULT_OUTCOMES = DEFAULT_DATA / "outcomes.sqlite"
 DEFAULT_WINTER_EVENTS = DEFAULT_DATA / "winter_events.sqlite"
 DEFAULT_VOICE_METRICS = DEFAULT_DATA / "voice_latency.sqlite"
+DEFAULT_OWNED_WORK = DEFAULT_DATA / "owned_work.sqlite"
 PAGE = Path(__file__).resolve().parent / "static" / "index.html"
 
 
@@ -159,17 +165,24 @@ class Companion:
         converter: SeedVcVoiceConverter | None,
         stt: SpeechToText,
         owned_work_inbox: OwnedWorkInbox | None = None,
+        foreground_activity: Callable[[], None] | None = None,
     ) -> None:
         self._core = core
         self._tts = tts
         self._converter = converter
         self._stt = stt
         self._owned_work_inbox = owned_work_inbox
+        self._foreground_activity = foreground_activity
         self._lock = threading.Lock()
         self._work_updates_inflight: set[str] = set()
 
     def hear(self, audio: bytes, filename: str) -> str:
+        self.mark_foreground_activity()
         return self._stt.transcribe(AudioInput(data=audio, media_type="audio/webm")).text
+
+    def mark_foreground_activity(self) -> None:
+        if self._foreground_activity is not None:
+            self._foreground_activity()
 
     def work_updates(self) -> tuple[dict[str, object], ...]:
         """Render ready background results without interrupting an active turn."""
@@ -223,6 +236,7 @@ class Companion:
 
     def answer(self, text: str, emit: Emit) -> None:
         """Answer once, emitting each sentence and then its audio."""
+        self.mark_foreground_activity()
         started = time.perf_counter()
         prosody = ProsodyPlanner().plan(classify_dialogue_act(text))
         with self._lock:
@@ -413,6 +427,10 @@ def make_handler(
             self.send_error(404)
 
         def do_POST(self) -> None:  # noqa: N802
+            if self.path == "/activity":
+                companion.mark_foreground_activity()
+                self._send(204, b"", "text/plain")
+                return
             if self.path not in ("/listen", "/turn", "/voice-metric"):
                 self.send_error(404)
                 return
@@ -607,6 +625,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_VOICE_METRICS,
     )
+    parser.add_argument(
+        "--owned-work-path",
+        type=Path,
+        default=DEFAULT_OWNED_WORK,
+    )
     parser.add_argument("--style", choices=ALLOWED_PROFILES, default="reference_conversation")
     return parser
 
@@ -693,29 +716,54 @@ def main(argv: Sequence[str] | None = None) -> int:
     except VoiceLatencyRepositoryError as error:
         print(f"Voice 성능 기록을 열지 못했습니다: {error}", file=sys.stderr)
         return 1
-    chat_model = LlamaCppHttpChatModel(base_url=arguments.model_url)
+    base_chat_model = LlamaCppHttpChatModel(base_url=arguments.model_url)
+    priority_scheduler = (
+        ForegroundPriorityChatScheduler(base_chat_model)
+        if arguments.winter_work_canary
+        else None
+    )
+    chat_model = (
+        priority_scheduler.foreground()
+        if priority_scheduler is not None
+        else base_chat_model
+    )
+    work_chat_model = (
+        priority_scheduler.background()
+        if priority_scheduler is not None
+        else base_chat_model
+    )
 
     def store_owned_work_update(update: OwnedWorkUpdate) -> None:
         conversation_repository.append(
             ConversationMessage("assistant", update.text)
         )
 
-    owned_work_coordinator = (
-        AsyncOwnedWorkCoordinator(
-            WinterOwnedProjectCanary(
-                Path.cwd(),
-                BoundedProjectInspectionExecutive(chat_model),
-                CodexTypedProjectWorker(
+    try:
+        owned_work_coordinator = (
+            AsyncOwnedWorkCoordinator(
+                WinterOwnedProjectCanary(
                     Path.cwd(),
-                    executable=arguments.codex_executable,
-                    model=arguments.codex_model,
+                    BoundedProjectInspectionExecutive(work_chat_model),
+                    CodexTypedProjectWorker(
+                        Path.cwd(),
+                        executable=arguments.codex_executable,
+                        model=arguments.codex_model,
+                    ),
                 ),
-            ),
-            completion_sink=store_owned_work_update,
+                completion_sink=store_owned_work_update,
+                repository=SqliteOwnedWorkRepository(arguments.owned_work_path),
+                foreground_activity=(
+                    priority_scheduler.mark_foreground_activity
+                    if priority_scheduler is not None
+                    else None
+                ),
+            )
+            if arguments.winter_work_canary
+            else None
         )
-        if arguments.winter_work_canary
-        else None
-    )
+    except OwnedWorkRepositoryError as error:
+        print(f"겨울이 작업 기록을 열지 못했습니다: {error}", file=sys.stderr)
+        return 1
     core = CompanionCore(
         chat_model,
         conversation_repository,
@@ -760,6 +808,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         else SeedVcVoiceConverter(base_url=arguments.vc_url),
         stt,
         owned_work_coordinator,
+        (
+            priority_scheduler.mark_foreground_activity
+            if priority_scheduler is not None
+            else None
+        ),
     )
     server = ThreadingHTTPServer(
         (arguments.host, arguments.port),

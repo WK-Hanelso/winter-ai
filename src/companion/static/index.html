@@ -218,6 +218,9 @@ let recorder = null;
 let chunks = [];
 async function startRecording() {
   if (recorder) return;
+  // Tell the shared Local model that a real conversation turn is beginning
+  // before STT has enough audio to reach the server.
+  fetch("/activity", { method: "POST" }).catch(() => {});
   try {
     const media = await navigator.mediaDevices.getUserMedia({ audio: true });
     recorder = new MediaRecorder(media);

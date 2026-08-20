@@ -30,7 +30,11 @@ bubblewrap 격리와 hostile suite는 완료했다. #126은 천우의 평범한 
 98.77초에 연결했다. 첫 동기식 답변은 근거 없는 개선을 여러 개 섞어 사용자 가치 gate에
 실패했다. 후속 Shadow는 background coordinator와 claim 선택 gate로 접수 0.000초, 직후 일반
 대화 2.138초, 접수 TTS 2.450초, 전체 82.83초를 냈다. 대화 비차단은 성공했지만 결과가 다음
-한 가지를 확정하지 못해 partial이고 process restart 복구도 없다. 운영에는 켜지 않는다.
+한 가지를 확정하지 못해 partial이다. 후속 SQLite job/inbox는 실제 child-process crash 뒤
+running job 재개와 미전달 결과 복구를 통과했고, queued foreground-first Local scheduler도
+통과했다. 실제 `:18080` 겹침 probe에서도 0.2초 뒤 제출한 foreground가 0.498초, 먼저 제출한
+background가 6.855초에 끝났다. 이미 시작한 generation의 preemption과 실제 phone 동시 사용은
+미검증이므로 운영에는 켜지 않는다.
 
 ## Current state
 
@@ -60,7 +64,7 @@ Winter V1의 전체 제품 목표는 [Winter V1 Product Goal](winter-v1-goal.md)
 | 7 | 격리 worktree·scope/test/adoption gate | **Issue #123 범위 구현** — privacy-safe project baseline drift 차단, 필수 post-apply command verifier, `applying`/`rolling_back`의 all-before·all-after·mixed 복구와 unknown bytes 무덮어쓰기를 임시 fixture에서 검증. 운영 source·대화 route·Capability 연결 금지 |
 | 7a | exact lifecycle-to-source capability cycle | **Issue #124 범위 구현** — 채택 승인과 완료를 분리하고 exact Improvement/validation/patch/baseline/capability identity로 source 적용, Registry available, 최종 adopted와 rollback을 하나의 synthetic cycle로 검증. 운영 source·사용자 route 금지 |
 | 7b | sandboxed adoption verifier + adversarial suite | **Issue #125 로컬 범위 구현·검증 완료** — 공용 bubblewrap 경계에서 read-only source, private `/tmp`, no-network/no-HOME/credential, fixed argv, timeout과 no-host-fallback을 검증. 실제 hostile probe에서 source/host write·symlink secret·network를 차단. 운영 source·사용자 route 금지 |
-| 7c | Winter-owned real repository diagnosis canary | **Issue #126 비차단 Shadow 성공·결과 partial** — 동기식 98.77초를 background 82.83초로 분리해 접수 0.000초·직후 대화 2.138초·TTS 2.450초. claim 선택으로 새 과장은 차단했지만 restart·phone·한 가지 추천 gate 미완료 |
+| 7c | Winter-owned real repository diagnosis canary | **Issue #126 비차단·재시작 Shadow 성공, 결과 partial** — 동기식 98.77초를 background 82.83초로 분리해 접수 0.000초·직후 대화 2.138초·TTS 2.450초. SQLite crash recovery와 queued foreground-first scheduler offline 통과. phone·generation preemption·한 가지 추천 gate 미완료 |
 | 8 | 승인된 Worker Adapter 하나 연결 | **read-only 0.1 완료** — explicit Codex route, sanitized text bundle, ephemeral/read-only 실행, structured provenance와 실제 1회 성공. write/adoption이 아니라 분석 capability만 제한 운영 |
 | 8a | Winter-owned Work Orchestration | **typed provider Shadow 구현, activation 실패** — Qwen 46/66, Gemma 40/66. 빈 agent cwd, shell/web 차단, `env -i` MCP와 목록·검색·읽기, snapshot/evidence/audit offline 17개 + gpt-5.4 synthetic live 1/1. 공격 suite·실제 20 task 필요 |
 | 9 | 실제 capability 전체 cycle | 제안→승인→구현→검증→채택→재평가→rollback 완주 |
@@ -116,8 +120,8 @@ Identity·관계 상태·최종 발화는 겨울이 Core가 소유한다.
 17. Gemma 3 27B semantic-v2 — **44/66·27.0초, ambiguity 0/3·Core chat role 호환 실패**
 18. 같은 12~30B drop-in 반복을 중단하고 다음 Core/runtime 전략 결정
 19. #126 실제 canary — **비차단 경로 성공, 결과 partial**
-20. persistent job/inbox와 foreground Local 우선권 검증
-21. 실제 phone 접수 first-play와 작업 중 대화 0-block 측정
+20. persistent job/inbox와 foreground Local 우선권 검증 — **offline 범위 완료**
+21. 실제 phone 접수 first-play와 작업 중 대화 최대 대기 측정
 22. semantic·권한·최종 판단 gate 통과 후 read-only 20 task 검토
 23. 유용성·latency gate 뒤에만 겨울이의 운영 답변으로 승격
 

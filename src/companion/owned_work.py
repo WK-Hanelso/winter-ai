@@ -8,7 +8,12 @@ from pathlib import Path
 import threading
 from uuid import uuid4
 
-from companion.ports import EvidenceWorker, OwnedWorkExecutor, WinterExecutive
+from companion.ports import (
+    EvidenceWorker,
+    OwnedWorkExecutor,
+    OwnedWorkJobRepository,
+    WinterExecutive,
+)
 from companion.project_baseline import ProjectBaselineError, build_project_baseline
 from companion.work_orchestration import WorkRequest, build_worker_task
 from companion.worker import (
@@ -175,13 +180,25 @@ class AsyncOwnedWorkCoordinator:
         executor: OwnedWorkExecutor,
         *,
         completion_sink: Callable[[OwnedWorkUpdate], None] | None = None,
+        repository: OwnedWorkJobRepository | None = None,
+        foreground_activity: Callable[[], None] | None = None,
     ) -> None:
         self._executor = executor
         self._completion_sink = completion_sink
+        self._repository = repository
+        self._foreground_activity = foreground_activity
         self._lock = threading.Lock()
         self._active_id: str | None = None
         self._updates: dict[str, OwnedWorkUpdate] = {}
         self._threads: dict[str, threading.Thread] = {}
+        if self._repository is not None:
+            claimed = self._repository.claim_pending()
+            if claimed is not None:
+                work_id, request = claimed
+                if self._foreground_activity is not None:
+                    self._foreground_activity()
+                with self._lock:
+                    self._start_locked(work_id, request)
 
     def submit(self, request: WorkRequest) -> OwnedWorkReceipt:
         with self._lock:
@@ -194,22 +211,37 @@ class AsyncOwnedWorkCoordinator:
                     "아직 전달하지 못한 작업 결과가 너무 많습니다."
                 )
             work_id = str(uuid4())
-            self._active_id = work_id
-            thread = threading.Thread(
-                target=self._run,
-                args=(work_id, request),
-                daemon=True,
-                name=f"winter-owned-work-{work_id[:8]}",
-            )
-            self._threads[work_id] = thread
-            thread.start()
+            if self._repository is not None:
+                try:
+                    self._repository.enqueue(work_id, request)
+                    claimed = self._repository.claim_pending()
+                except Exception as error:  # noqa: BLE001 - port failure is unavailable
+                    raise WorkerUnavailableError(
+                        "작업을 안전하게 저장하지 못했습니다."
+                    ) from error
+                if claimed is None or claimed[0] != work_id:
+                    raise WorkerUnavailableError(
+                        "저장한 작업을 정확히 시작하지 못했습니다."
+                    )
+            if self._foreground_activity is not None:
+                self._foreground_activity()
+            self._start_locked(work_id, request)
         return OwnedWorkReceipt(work_id)
 
     def ready(self) -> tuple[OwnedWorkUpdate, ...]:
         with self._lock:
-            return tuple(self._updates.values())
+            memory_updates = tuple(self._updates.values())
+        if self._repository is None:
+            return memory_updates
+        persistent = self._repository.ready()
+        persistent_ids = {update.id for update in persistent}
+        return persistent + tuple(
+            update for update in memory_updates if update.id not in persistent_ids
+        )
 
     def acknowledge(self, update_id: str) -> None:
+        if self._repository is not None:
+            self._repository.acknowledge(update_id)
         with self._lock:
             self._updates.pop(update_id, None)
             self._threads.pop(update_id, None)
@@ -243,21 +275,53 @@ class AsyncOwnedWorkCoordinator:
                     "지금 대화는 그대로 이어갈 수 있어."
                 ),
             )
-        if self._completion_sink is not None:
+        persisted = False
+        if self._repository is not None:
             try:
-                self._completion_sink(update)
-            except Exception:  # noqa: BLE001 - delivery remains visible in the inbox
+                self._repository.complete(update)
+                persisted = True
+            except Exception:  # noqa: BLE001 - keep a visible fail-closed update
                 update = OwnedWorkUpdate(
-                    id=update.id,
-                    status=update.status,
-                    text=update.text,
-                    evidence=update.evidence,
-                    limitations=update.limitations
-                    + ("대화 기록에는 저장하지 못했어.",),
+                    id=work_id,
+                    status="failed",
+                    text=(
+                        "작업은 끝났지만 결과를 안전하게 저장하지 못했어. "
+                        "완료한 척하지 않을게."
+                    ),
                 )
+        if persisted or self._repository is None:
+            if self._completion_sink is not None:
+                try:
+                    self._completion_sink(update)
+                except Exception:  # noqa: BLE001 - inbox still owns the result
+                    update = OwnedWorkUpdate(
+                        id=update.id,
+                        status=update.status,
+                        text=update.text,
+                        evidence=update.evidence,
+                        limitations=update.limitations
+                        + ("대화 기록에는 저장하지 못했어.",),
+                    )
+                    if self._repository is not None:
+                        try:
+                            self._repository.complete(update)
+                        except Exception:  # noqa: BLE001 - original result is durable
+                            pass
         with self._lock:
-            self._updates[work_id] = update
+            if not persisted:
+                self._updates[work_id] = update
             self._active_id = None
+
+    def _start_locked(self, work_id: str, request: WorkRequest) -> None:
+        self._active_id = work_id
+        thread = threading.Thread(
+            target=self._run,
+            args=(work_id, request),
+            daemon=True,
+            name=f"winter-owned-work-{work_id[:8]}",
+        )
+        self._threads[work_id] = thread
+        thread.start()
 
 
 def _owned_work_answer(result: ReadOnlyWorkerResult) -> str:

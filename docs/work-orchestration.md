@@ -244,5 +244,13 @@ Winter가 evidence-backed Worker claim 중 핵심 판단과 action을 선택하�
 최종 review 자유 작문도 사용하지 않는다. Local Core는 EvidenceReport claim 중 핵심과 추천
 하나를 선택하고, response와 evidence ID는 코드가 선택된 claim에서 만든다. 실제 재실행은
 새 개선을 지어내지 않았지만 근거 부족으로 한 가지 추천을 확정하지 못해 partial이다.
-in-memory job 유실, Local model priority와 실제 phone 측정이 남았으므로 기본 경로에는 켜지
-않는다. 상세 결정은 [ADR-0030](adr/0030-nonblocking-winter-owned-work.md)을 따른다.
+
+후속 범위는 job과 delivery acknowledgement를 SQLite에 남긴다. 실제 child process가 job을
+claim하고 종료된 뒤 새 coordinator가 같은 request를 재개했으며, 완료 결과는 재시작 뒤에도
+acknowledge 전까지 남았다. 살아 있는 process가 소유한 job은 다른 repository instance가
+requeue하지 않는다. 같은 Local model 앞에는 queued foreground 대화가 background보다 먼저
+들어간다. 작업 접수·foreground 종료 뒤 6초 동안 새 background generation을 열지 않고,
+폰 녹음 시작도 `/activity`로 즉시 이 보호 구간을 갱신한다.
+다만 이미 시작한 generation preemption, lease heartbeat와 실제 phone 측정이 남았으므로 기본
+경로에는 켜지 않는다. 상세 결정은
+[ADR-0030](adr/0030-nonblocking-winter-owned-work.md)을 따른다.

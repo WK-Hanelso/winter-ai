@@ -225,6 +225,22 @@ def test_async_coordinator_returns_before_slow_work_and_delivers_once() -> None:
     assert coordinator.ready() == ()
 
 
+def test_async_coordinator_marks_user_activity_before_background_starts() -> None:
+    executor = _BlockingExecutor()
+    activity_seen = threading.Event()
+    coordinator = AsyncOwnedWorkCoordinator(  # type: ignore[arg-type]
+        executor,
+        foreground_activity=activity_seen.set,
+    )
+
+    coordinator.submit(WorkRequest("코드 지연을 진단해줘"))
+
+    assert activity_seen.is_set()
+    assert executor.started.wait(timeout=1)
+    executor.release.set()
+    assert coordinator.wait_for_idle(timeout=2)
+
+
 def test_async_coordinator_reports_failure_without_fake_result() -> None:
     executor = _BlockingExecutor(fail=True)
     coordinator = AsyncOwnedWorkCoordinator(executor)  # type: ignore[arg-type]
