@@ -8,6 +8,7 @@ import threading
 import pytest
 
 from companion.contracts import AudioInput, AudioOutput, SpeechRequest, Transcript
+from companion.owned_work import OwnedWorkUpdate
 from companion.voice_latency import SqliteVoiceLatencyRepository
 from companion.web import Companion, make_handler
 
@@ -36,6 +37,29 @@ class UnusedStt:
         return Transcript("안녕")
 
 
+class WorkInbox:
+    def __init__(self) -> None:
+        self.updates = (
+            OwnedWorkUpdate(
+                id="job-1",
+                status="completed",
+                text="확인 끝났어. 다음은 실제 표본을 더 모으는 게 맞아.",
+                evidence=("docs/realtime.md:1",),
+                limitations=("표본은 네 턴뿐이야.",),
+            ),
+        )
+        self.acknowledged: list[str] = []
+
+    def ready(self) -> tuple[OwnedWorkUpdate, ...]:
+        return self.updates
+
+    def acknowledge(self, update_id: str) -> None:
+        self.acknowledged.append(update_id)
+        self.updates = tuple(
+            update for update in self.updates if update.id != update_id
+        )
+
+
 def test_direct_voice_path_emits_stage_one_without_conversion() -> None:
     events: list[tuple[str, dict[str, str | float]]] = []
     companion = Companion(  # type: ignore[arg-type]
@@ -46,6 +70,54 @@ def test_direct_voice_path_emits_stage_one_without_conversion() -> None:
 
     audio = next(payload for event, payload in events if event == "audio")
     assert base64.b64decode(str(audio["wav"])) == b"direct-wav"
+
+
+def test_web_delivers_and_acknowledges_background_winter_result(
+    tmp_path: Path,
+) -> None:
+    inbox = WorkInbox()
+    companion = Companion(  # type: ignore[arg-type]
+        OneSentenceCore(), AnyVoice(), None, UnusedStt(), inbox
+    )
+    repository = SqliteVoiceLatencyRepository(tmp_path / "voice-latency.sqlite")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(companion, repository))
+    serving = threading.Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    connection = HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+    try:
+        connection.request("GET", "/work-updates")
+        response = connection.getresponse()
+        payload = json.loads(response.read())
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        serving.join(timeout=2)
+
+    assert response.status == 200
+    assert payload["updates"][0]["id"] == "job-1"
+    assert payload["updates"][0]["text"].startswith("확인 끝났어")
+    assert base64.b64decode(payload["updates"][0]["wav"]).startswith(
+        "확인 끝났어".encode()
+    )
+    assert payload["updates"][0]["evidence"] == ["docs/realtime.md:1"]
+    assert payload["updates"][0]["limitations"] == ["표본은 네 턴뿐이야."]
+    assert inbox.acknowledged == ["job-1"]
+
+
+def test_background_update_is_not_rendered_twice_before_ack() -> None:
+    inbox = WorkInbox()
+    companion = Companion(  # type: ignore[arg-type]
+        OneSentenceCore(), AnyVoice(), None, UnusedStt(), inbox
+    )
+
+    first = companion.work_updates()
+    second = companion.work_updates()
+
+    assert len(first) == 1
+    assert second == ()
+    companion.release_work_updates(("job-1",))
+    assert len(companion.work_updates()) == 1
 
 
 class FailingCore:

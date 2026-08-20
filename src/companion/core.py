@@ -44,6 +44,7 @@ from companion.ports import (
     MemoryCandidateRepository,
     OutcomeRepository,
     OwnedWorkExecutor,
+    OwnedWorkSubmitter,
     ReadOnlyWorker,
     TurnUnderstandingRepository,
     WinterEventRepository,
@@ -123,6 +124,7 @@ class CompanionCore:
         read_only_worker: ReadOnlyWorker | None = None,
         worker_routing_policy: ExplicitCodexRoutingPolicy | None = None,
         owned_work_executor: OwnedWorkExecutor | None = None,
+        owned_work_submitter: OwnedWorkSubmitter | None = None,
         owned_work_routing_policy: ReadOnlyProjectCanaryPolicy | None = None,
         response_claim_gate: ResponseClaimGate | None = None,
         self_model_provider: SelfModelProvider | None = None,
@@ -161,6 +163,7 @@ class CompanionCore:
             worker_routing_policy or ExplicitCodexRoutingPolicy()
         )
         self._owned_work_executor = owned_work_executor
+        self._owned_work_submitter = owned_work_submitter
         self._owned_work_routing_policy = (
             owned_work_routing_policy or ReadOnlyProjectCanaryPolicy()
         )
@@ -206,6 +209,11 @@ class CompanionCore:
                 on_sentence(sentence)
             return response
         if turn.owned_work_request is not None:
+            if self._owned_work_submitter is not None:
+                response = self._respond_with_owned_work(turn)
+                for sentence in split_sentences(response.text):
+                    on_sentence(sentence)
+                return response
             on_sentence("잠깐만, 내가 현재 코드와 기록을 확인해볼게.")
             if on_status is not None:
                 on_status("내가 코드와 기록을 확인하고 있어.")
@@ -277,6 +285,23 @@ class CompanionCore:
         request = turn.owned_work_request
         if request is None:
             raise RuntimeError("owned work response requires a routed request")
+        if self._owned_work_submitter is not None:
+            try:
+                self._owned_work_submitter.submit(request)
+            except WorkerUnavailableError:
+                return self._finish(
+                    turn,
+                    "지금은 이미 확인 중인 일이 있어. 그게 끝나면 다시 맡아볼게.",
+                    preserve_full=True,
+                    worker_name="winter-owned-work-background",
+                    worker_error=True,
+                )
+            return self._finish(
+                turn,
+                "응, 내가 확인해볼게. 끝나면 내가 다시 말해줄게.",
+                preserve_full=True,
+                worker_name="winter-owned-work-background",
+            )
         if self._owned_work_executor is None:
             return self._finish(
                 turn,
@@ -541,7 +566,10 @@ class CompanionCore:
         owned_work_request = (
             self._owned_work_routing_policy.route(text)
             if explicit_worker_request is None
-            and self._owned_work_executor is not None
+            and (
+                self._owned_work_executor is not None
+                or self._owned_work_submitter is not None
+            )
             else None
         )
         return _Turn(

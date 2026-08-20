@@ -91,7 +91,8 @@ pool, streaming 시작 시점, browser buffering을 함께 제시했다. 인용�
 - 운영 Web/Voice에서의 실제 사용성
 
 따라서 #126 구현은 Shadow evidence로 보존하되 운영 activation, service restart와 20-task
-확장을 하지 않는다. 다음 작업은 prompt 문구를 더 누적하는 일이 아니다. Winter 최종 판단이
-근거에 없는 action을 추가하지 못하도록 **판단 단위를 evidence-backed claim 선택으로
-구조화할지**, 또는 이 gate를 실제로 통과하는 새 Core/runtime 근거를 먼저 확보할지 결정해야
-한다. 어떤 경우에도 Worker 보고서를 그대로 읽는 것을 Winter의 판단으로 부르지 않는다.
+확장을 하지 않는다. 다음 작업은 prompt 문구를 더 누적하는 일이 아니다. 후속
+[ADR-0030](0030-nonblocking-winter-owned-work.md)은 판단 단위를 evidence-backed claim
+선택으로 제한하고 전문 작업을 background로 분리했다. 새 사실 생성은 막았지만 결과는
+partial이므로, 어떤 경우에도 Worker 보고서를 그대로 읽는 것을 Winter의 완성된 판단으로
+부르지 않는다.

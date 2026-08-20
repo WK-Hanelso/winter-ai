@@ -208,6 +208,7 @@ evidence = [
   "docs/adr/0027-exact-lifecycle-source-capability-cycle.md",
   "docs/adr/0028-sandboxed-adoption-verification.md",
   "docs/adr/0029-winter-owned-real-work-canary.md",
+  "docs/adr/0030-nonblocking-winter-owned-work.md",
   "src/companion/owned_work.py",
   "src/companion/capability_adoption.py",
   "src/companion/project_baseline.py",

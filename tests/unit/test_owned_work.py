@@ -1,8 +1,10 @@
 from pathlib import Path
+import threading
 
 import pytest
 
 from companion.owned_work import (
+    AsyncOwnedWorkCoordinator,
     ReadOnlyProjectCanaryPolicy,
     WinterOwnedProjectCanary,
 )
@@ -171,3 +173,67 @@ def test_canary_fails_closed_when_project_baseline_is_unavailable(
 
     with pytest.raises(WorkerUnavailableError, match="기준선을 만들지 못했습니다"):
         canary.execute(WorkRequest("코드 원인을 분석해줘"))
+
+
+class _BlockingExecutor:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.fail = fail
+
+    def execute(self, request: WorkRequest):  # type: ignore[no-untyped-def]
+        self.started.set()
+        assert self.release.wait(timeout=2)
+        if self.fail:
+            raise WorkerUnavailableError("worker failed")
+        return type(
+            "Result",
+            (),
+            {
+                "answer": "내가 확인한 결론이야.",
+                "evidence": ("docs/result.md:1",),
+                "limitations": ("표본은 작아.",),
+            },
+        )()
+
+
+def test_async_coordinator_returns_before_slow_work_and_delivers_once() -> None:
+    executor = _BlockingExecutor()
+    delivered = []
+    coordinator = AsyncOwnedWorkCoordinator(  # type: ignore[arg-type]
+        executor,
+        completion_sink=delivered.append,
+    )
+
+    receipt = coordinator.submit(WorkRequest("코드 지연을 진단해줘"))
+
+    assert executor.started.wait(timeout=1)
+    assert coordinator.ready() == ()
+    with pytest.raises(WorkerUnavailableError, match="이미 확인 중"):
+        coordinator.submit(WorkRequest("다른 코드도 진단해줘"))
+    executor.release.set()
+    assert coordinator.wait_for_idle(timeout=2)
+    updates = coordinator.ready()
+    assert len(updates) == 1
+    assert updates[0].id == receipt.id
+    assert updates[0].status == "partial"
+    assert updates[0].text == "내가 확인한 결론이야. 다만 표본은 작아."
+    assert delivered == [updates[0]]
+
+    coordinator.acknowledge(receipt.id)
+
+    assert coordinator.ready() == ()
+
+
+def test_async_coordinator_reports_failure_without_fake_result() -> None:
+    executor = _BlockingExecutor(fail=True)
+    coordinator = AsyncOwnedWorkCoordinator(executor)  # type: ignore[arg-type]
+
+    coordinator.submit(WorkRequest("코드 지연을 진단해줘"))
+    assert executor.started.wait(timeout=1)
+    executor.release.set()
+    assert coordinator.wait_for_idle(timeout=2)
+
+    update = coordinator.ready()[0]
+    assert update.status == "failed"
+    assert "확인한 척하지 않을게" in update.text

@@ -56,6 +56,7 @@ from companion.capabilities import (
     SqliteCapabilityRegistry,
 )
 from companion.context import ConversationContextBuilder
+from companion.contracts import ConversationMessage
 from companion.core import CompanionCore
 from companion.day_reflection import (
     ActiveDayReflectionRetriever,
@@ -88,7 +89,11 @@ from companion.outcome import (
     SqliteOutcomeRepository,
 )
 from companion.outcome_review import build_audit, print_audit, run_blind_review
-from companion.owned_work import WinterOwnedProjectCanary
+from companion.owned_work import (
+    AsyncOwnedWorkCoordinator,
+    OwnedWorkUpdate,
+    WinterOwnedProjectCanary,
+)
 from companion.ports import ChatModel, ConversationRepository
 from companion.reflection import (
     ConversationHistoryBackfill,
@@ -601,7 +606,7 @@ def run(
         print(render_lived_continuity(summary), file=stdout)
         return 0
     chat_model = build_chat_model(args)
-    owned_work_executor = (
+    owned_work_canary = (
         WinterOwnedProjectCanary(
             Path.cwd(),
             BoundedProjectInspectionExecutive(chat_model),
@@ -614,6 +619,19 @@ def run(
         if getattr(args, "winter_work_canary", False)
         else None
     )
+    owned_work_coordinator = None
+    owned_work_executor = owned_work_canary
+    if owned_work_canary is not None and args.prompt is None:
+
+        def notify_owned_work(update: OwnedWorkUpdate) -> None:
+            repository.append(ConversationMessage("assistant", update.text))
+            print(f"\nCompanion> {update.text}", file=stdout, flush=True)
+
+        owned_work_coordinator = AsyncOwnedWorkCoordinator(
+            owned_work_canary,
+            completion_sink=notify_owned_work,
+        )
+        owned_work_executor = None
     core = CompanionCore(
         chat_model,
         repository,
@@ -646,6 +664,7 @@ def run(
             else None
         ),
         owned_work_executor=owned_work_executor,
+        owned_work_submitter=owned_work_coordinator,
     )
     if args.prompt is not None:
         return _run_turn(

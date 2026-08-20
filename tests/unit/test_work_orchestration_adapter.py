@@ -152,13 +152,9 @@ def test_bounded_inspection_review_returns_winter_answer_with_caveats() -> None:
             json.dumps(
                 {
                     "assessment": "supported",
-                    "judgment": "STT 이후 구간이 더 크다.",
-                    "evidence_ids": ["E1"],
+                    "judgment_claim": "STT 이후가 더 크다.",
+                    "recommendation_claim": "Core와 TTS 시간을 나눠 기록한다.",
                     "unresolved": ["Core와 TTS 비중은 아직 분리되지 않았다."],
-                    "final_response": (
-                        "지금은 STT 이후 구간이 더 커 보여. "
-                        "다음에는 Core와 TTS 시간을 나눠 기록하는 게 맞아."
-                    ),
                 },
                 ensure_ascii=False,
             )
@@ -172,7 +168,11 @@ def test_bounded_inspection_review_returns_winter_answer_with_caveats() -> None:
             "summary": "STT 이후 구간이 더 크다.",
             "evidence": [{"evidence_id": "E1", "locator": "docs/realtime.md:1"}],
             "claims": [
-                {"content": "STT 이후가 더 크다.", "evidence_ids": ["E1"]}
+                {"content": "STT 이후가 더 크다.", "evidence_ids": ["E1"]},
+                {
+                    "content": "Core와 TTS 시간을 나눠 기록한다.",
+                    "evidence_ids": ["E1"],
+                },
             ],
             "actions_performed": ["latency 기록을 읽었다."],
             "checks": [
@@ -189,7 +189,44 @@ def test_bounded_inspection_review_returns_winter_answer_with_caveats() -> None:
     assert decision.next_action == "answer"
     assert decision.final_response is not None
     assert "Core와 TTS 시간을 나눠" in decision.final_response
+    assert decision.evidence_used == ("E1",)
     assert model.requests[0].max_tokens == 300
+
+
+def test_bounded_review_rejects_a_recommendation_not_in_worker_claims() -> None:
+    model = ScriptedChatModel(
+        [
+            json.dumps(
+                {
+                    "assessment": "supported",
+                    "judgment_claim": "STT 이후가 더 크다.",
+                    "recommendation_claim": "TTS warm pool을 추가한다.",
+                    "unresolved": [],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+    executive = BoundedProjectInspectionExecutive(model)  # type: ignore[arg-type]
+    report = EvidenceReport.from_dict(
+        {
+            "schema_version": 2,
+            "summary": "STT 이후 구간이 더 크다.",
+            "evidence": [{"evidence_id": "E1", "locator": "docs/realtime.md:1"}],
+            "claims": [
+                {"content": "STT 이후가 더 크다.", "evidence_ids": ["E1"]}
+            ],
+            "actions_performed": ["latency 기록을 읽었다."],
+            "checks": [
+                {"name": "근거 비교", "status": "pass", "evidence_ids": ["E1"]}
+            ],
+            "limitations": [],
+            "unresolved": [],
+        }
+    )
+
+    with pytest.raises(WorkOrchestrationError, match="select a report claim"):
+        executive.review(_bounded_brief(), report)
 
 
 def _bounded_brief():  # type: ignore[no-untyped-def]

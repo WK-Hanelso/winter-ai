@@ -11,6 +11,7 @@ from companion.work_orchestration import (
     CAPABILITY_KINDS,
     RESOURCE_KINDS,
     AnswerAction,
+    DecisionAction,
     EvidenceReport,
     IntentBrief,
     IntentProposal,
@@ -65,12 +66,12 @@ _BOUNDED_REVIEW_PROMPT = """너는 겨울이의 단 하나의 Core Model이다.
 
 규칙:
 - assessment는 supported, partial, unsupported 중 하나다.
-- evidence_ids는 report에 실제로 있는 ID만 사용한다.
-- judgment는 근거로 확인한 핵심 판단 한 문장이다.
+- judgment_claim은 report claims에서 근거로 확인한 핵심 하나를 **원문 그대로** 고른다.
+- recommendation_claim은 천우에게 권할 다음 행동 하나를 report claims에서 **원문 그대로**
+  고른다. 근거 있는 다음 행동 claim이 없으면 빈 문자열이다.
 - unresolved는 아직 확인하지 못한 것만 최대 2개다.
-- final_response는 Worker를 언급하거나 보고서를 중계하지 말고, 겨울이 자신의 결론과
-  가장 중요한 추천을 최대 3문장으로 말한다.
-- 근거가 부족하면 단정하지 말고 한계를 final_response에도 밝힌다.
+- 새로운 원인, 수치, 구현 방법이나 추천을 만들지 마. 최종 문장은 정책 코드가 선택한
+  claim만으로 만든다.
 - JSON 밖의 설명은 쓰지 마."""
 
 
@@ -189,11 +190,11 @@ class BoundedProjectInspectionExecutive(StructuredChatWinterExecutive):
                 "intent_brief": brief.to_dict(),
                 "worker_report": report.to_dict(),
             },
-            _bounded_review_response_format(report.evidence_ids),
+            _bounded_review_response_format(report),
             max_tokens=300,
         )
-        assessment, judgment, evidence_ids, unresolved, final_response = (
-            _bounded_review_fields(decoded, known_evidence=report.evidence_ids)
+        assessment, judgment, recommendation, evidence_ids, unresolved = (
+            _bounded_review_fields(decoded, report=report)
         )
         failed_check = any(check.status != "pass" for check in report.checks)
         if failed_check:
@@ -202,11 +203,14 @@ class BoundedProjectInspectionExecutive(StructuredChatWinterExecutive):
             report.limitations or report.unresolved or unresolved
         ):
             assessment = "partial"
-        action = (
-            RetryAction("추가 근거가 필요해.")
-            if assessment == "unsupported"
-            else AnswerAction(final_response)
-        )
+        action: DecisionAction
+        if assessment == "unsupported":
+            action = RetryAction("추가 근거가 필요해.")
+        else:
+            response = f"내가 확인한 핵심은 이거야. {judgment}"
+            if recommendation and recommendation != judgment:
+                response += f" 그래서 지금 한 가지는 {recommendation}"
+            action = AnswerAction(response)
         return WinterDecision(
             schema_version=2,
             worker_assessment=assessment,
@@ -317,15 +321,17 @@ def _bounded_inspection_response_format() -> dict[str, object]:
     )
 
 
-def _bounded_review_response_format(
-    known_evidence: frozenset[str],
-) -> dict[str, object]:
+def _bounded_review_response_format(report: EvidenceReport) -> dict[str, object]:
+    claims = [claim.content for claim in report.claims]
+    if not claims:
+        raise WorkOrchestrationError(
+            "bounded project review requires at least one evidence-backed claim"
+        )
     fields = (
         "assessment",
-        "judgment",
-        "evidence_ids",
+        "judgment_claim",
+        "recommendation_claim",
         "unresolved",
-        "final_response",
     )
     return _format(
         "winter_bounded_project_review_v1",
@@ -335,10 +341,12 @@ def _bounded_review_response_format(
                     "type": "string",
                     "enum": ["supported", "partial", "unsupported"],
                 },
-                "judgment": _string(),
-                "evidence_ids": _evidence_id_array(known_evidence),
+                "judgment_claim": {"type": "string", "enum": claims},
+                "recommendation_claim": {
+                    "type": "string",
+                    "enum": [""] + claims,
+                },
                 "unresolved": _strings(maximum=2),
-                "final_response": _string(),
             },
             fields,
         ),
@@ -384,39 +392,54 @@ def _bounded_string(value: object, name: str) -> str:
 def _bounded_review_fields(
     value: object,
     *,
-    known_evidence: frozenset[str],
-) -> tuple[str, str, tuple[str, ...], tuple[str, ...], str]:
+    report: EvidenceReport,
+) -> tuple[str, str, str, tuple[str, ...], tuple[str, ...]]:
     if not isinstance(value, dict):
         raise WorkOrchestrationError("bounded project review must be an object")
     expected = {
         "assessment",
-        "judgment",
-        "evidence_ids",
+        "judgment_claim",
+        "recommendation_claim",
         "unresolved",
-        "final_response",
     }
     if set(value) != expected:
         raise WorkOrchestrationError("bounded project review has unexpected fields")
     assessment = _bounded_string(value["assessment"], "assessment")
     if assessment not in {"supported", "partial", "unsupported"}:
         raise WorkOrchestrationError("bounded project review assessment is invalid")
-    evidence_ids = _bounded_string_list(
-        value["evidence_ids"], "evidence_ids", maximum=len(known_evidence)
-    )
-    unknown = set(evidence_ids) - known_evidence
-    if unknown:
+    claims = {claim.content: claim for claim in report.claims}
+    judgment = _bounded_string(value["judgment_claim"], "judgment_claim")
+    if judgment not in claims:
         raise WorkOrchestrationError(
-            f"bounded project review has unknown evidence ids: {sorted(unknown)}"
+            "bounded project review judgment must select a report claim"
         )
+    raw_recommendation = value["recommendation_claim"]
+    if not isinstance(raw_recommendation, str):
+        raise WorkOrchestrationError(
+            "bounded project review recommendation must be a string"
+        )
+    recommendation = raw_recommendation.strip()
+    if recommendation and recommendation not in claims:
+        raise WorkOrchestrationError(
+            "bounded project review recommendation must select a report claim"
+        )
+    selected = (judgment,) + ((recommendation,) if recommendation else ())
+    evidence_ids = tuple(
+        dict.fromkeys(
+            evidence_id
+            for content in selected
+            for evidence_id in claims[content].evidence_ids
+        )
+    )
     unresolved = _bounded_string_list(
         value["unresolved"], "unresolved", maximum=2
     )
     return (
         assessment,
-        _bounded_string(value["judgment"], "judgment"),
+        judgment,
+        recommendation,
         evidence_ids,
         unresolved,
-        _bounded_string(value["final_response"], "final_response"),
     )
 
 

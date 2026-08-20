@@ -604,12 +604,13 @@ fairness의 구현·운영 검증을 완료했다. #118은 24시간 관찰 트�
 adoption crash recovery와 #124 exact lifecycle-to-source capability cycle의 Shadow 범위를
 완료했다. #125 `sandbox adoption verifier and adversarial suite`도 실제 hostile fixture와
 전체 회귀를 통과해 종료했다. 현재 단일 active scope는 Issue #126 `Winter-owned real
-repository diagnosis canary`다. Worker 이름 없는 실제 진단은 세 번째 시도에서 98.77초에
-기술적으로 완주했지만, 같은 Local Core의 최종 답변이 근거로 분리하지 못한 TTS warm pool,
-streaming과 browser buffering을 함께 추천해 사용자 가치 gate는 실패했다. 개발용 flag와
-실패 근거만 Shadow로 보존하며 기본 CLI/Web와 service에는 켜지 않는다. 새 sandbox·ledger·
-registry·state machine·prompt 예외·동급 모델 순회, 실제 source write, Capability activation과
-일반 자동 위임은 금지한다.
+repository diagnosis canary`다. 첫 동기식 98.77초와 근거 밖 추천은 실패했다. 후속 Shadow는
+single-job background coordinator와 evidence-backed claim 선택으로 접수 0.000초, 직후 일반
+대화 2.138초, 접수 TTS 2.450초, 작업 전체 82.83초를 냈다. 대화 비차단과 새 사실 차단은
+성공했지만 최종 결과는 다음 한 가지를 확정하지 못해 partial이고, in-memory job restart와
+실제 phone 검증이 남았다. 개발용 flag만 보존하며 기본 CLI/Web와 service에는 켜지 않는다.
+새 sandbox·ledger·registry·prompt 예외·동급 모델 순회, 실제 source write, Capability
+activation과 일반 자동 위임은 금지한다.
 아래 Work Orchestration 계약과 실패 기준선은 그대로 보존한다.
 
 1. 현재 혼합 worktree의 사용자·Claude·Codex 변경을 보존한다.
@@ -666,6 +667,11 @@ registry·state machine·prompt 예외·동급 모델 순회, 실제 source writ
 18. 다음 실험은 최종 판단을 evidence-backed claim 선택으로 제한하는 작은 계약과 기존 실패
     축을 해결할 근거가 있는 Core/runtime의 비교다. Worker 보고서 단순 중계나 prompt 예외
     누적으로 우회하지 않는다.
+19. #126 후속 실제 canary는 background 접수와 직후 일반 대화가 각각 0.000초·2.138초로
+    비차단임을 보였다. 접수 TTS는 2.450초, 전체 task는 82.83초였다. 전문 작업 완료 시간을
+    대화 첫 반응 SLA로 보고하지 않는다.
+20. claim 선택 gate는 근거 밖 action 생성을 막았지만 결과가 partial이었다. SQLite job/inbox,
+    foreground model 우선권과 actual phone first-play 검증 전에는 activation하지 않는다.
 
 TurnUnderstanding과 Reflection의 기존 품질 gate는 그대로 유지한다. 자동 Belief 정책이
 있다는 이유만으로 검증되지 않은 LLM candidate를 active로 만들거나 write Worker를 자동

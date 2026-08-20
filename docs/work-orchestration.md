@@ -235,3 +235,14 @@ TTS warm pool·streaming·browser buffering을 동시에 추천했다. 보고서
 Winter가 evidence-backed Worker claim 중 핵심 판단과 action을 선택하게 한 뒤 코드가 그
 선택 밖의 새 action을 차단하는 계약과 새 Core/runtime 후보를 작은 동일 canary로 비교한다.
 자세한 실행 결과는 [ADR-0029](adr/0029-winter-owned-real-work-canary.md)에 남긴다.
+
+동기식 turn은 최종 구조에서 폐기한다. 후속 Shadow는 접수 답변을 즉시 저장·재생하고
+전문 작업을 single-job background coordinator로 보낸다. Web은 active turn과 음성 재생이
+없을 때 `/work-updates`를 poll해 완료 결과를 겨울이 voice로 전달한다. 실제 동일 task는 접수
+0.000초, 직후 일반 대화 2.138초, 접수 TTS 2.450초, 전체 82.83초였다.
+
+최종 review 자유 작문도 사용하지 않는다. Local Core는 EvidenceReport claim 중 핵심과 추천
+하나를 선택하고, response와 evidence ID는 코드가 선택된 claim에서 만든다. 실제 재실행은
+새 개선을 지어내지 않았지만 근거 부족으로 한 가지 추천을 확정하지 못해 partial이다.
+in-memory job 유실, Local model priority와 실제 phone 측정이 남았으므로 기본 경로에는 켜지
+않는다. 상세 결정은 [ADR-0030](adr/0030-nonblocking-winter-owned-work.md)을 따른다.

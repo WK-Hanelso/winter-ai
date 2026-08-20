@@ -70,7 +70,7 @@ from companion.capabilities import (
     SqliteCapabilityRegistry,
 )
 from companion.context import ConversationContextBuilder
-from companion.contracts import AudioInput, SpeechRequest
+from companion.contracts import AudioInput, ConversationMessage, SpeechRequest
 from companion.core import CompanionCore
 from companion.day_reflection import (
     ActiveDayReflectionRetriever,
@@ -95,8 +95,12 @@ from companion.open_loops import (
     SqliteOpenLoopRepository,
 )
 from companion.outcome import OutcomeRepositoryError, SqliteOutcomeRepository
-from companion.owned_work import WinterOwnedProjectCanary
-from companion.ports import SpeechToText
+from companion.owned_work import (
+    AsyncOwnedWorkCoordinator,
+    OwnedWorkUpdate,
+    WinterOwnedProjectCanary,
+)
+from companion.ports import OwnedWorkInbox, SpeechToText
 from companion.turn_understanding import (
     SqliteTurnUnderstandingRepository,
     TurnUnderstandingRepositoryError,
@@ -154,15 +158,68 @@ class Companion:
         tts: HttpSpeechModel,
         converter: SeedVcVoiceConverter | None,
         stt: SpeechToText,
+        owned_work_inbox: OwnedWorkInbox | None = None,
     ) -> None:
         self._core = core
         self._tts = tts
         self._converter = converter
         self._stt = stt
+        self._owned_work_inbox = owned_work_inbox
         self._lock = threading.Lock()
+        self._work_updates_inflight: set[str] = set()
 
     def hear(self, audio: bytes, filename: str) -> str:
         return self._stt.transcribe(AudioInput(data=audio, media_type="audio/webm")).text
+
+    def work_updates(self) -> tuple[dict[str, object], ...]:
+        """Render ready background results without interrupting an active turn."""
+        if self._owned_work_inbox is None:
+            return ()
+        rendered: list[dict[str, object]] = []
+        with self._lock:
+            updates = tuple(
+                update
+                for update in self._owned_work_inbox.ready()
+                if update.id not in self._work_updates_inflight
+            )
+            self._work_updates_inflight.update(update.id for update in updates)
+            for update in updates:
+                prosody = ProsodyPlanner().plan(classify_dialogue_act(update.text))
+                audio = self._tts.synthesize(
+                    SpeechRequest(
+                        text=update.text,
+                        emotion=prosody.emotion,
+                        pace=1.0,
+                        energy=prosody.energy,
+                        pitch_offset=prosody.pitch_offset,
+                    )
+                )
+                if self._converter is not None:
+                    audio = self._converter.convert(audio)
+                rendered.append(
+                    {
+                        "id": update.id,
+                        "status": update.status,
+                        "text": update.text,
+                        "wav": base64.b64encode(audio.data).decode(),
+                        "evidence": update.evidence,
+                        "limitations": update.limitations,
+                    }
+                )
+        return tuple(rendered)
+
+    def acknowledge_work_updates(self, update_ids: tuple[str, ...]) -> None:
+        if self._owned_work_inbox is None:
+            return
+        with self._lock:
+            self._work_updates_inflight.difference_update(update_ids)
+            for update_id in update_ids:
+                self._owned_work_inbox.acknowledge(update_id)
+
+    def release_work_updates(self, update_ids: tuple[str, ...]) -> None:
+        """Make a response that failed before delivery visible to the next poll."""
+        with self._lock:
+            self._work_updates_inflight.difference_update(update_ids)
 
     def answer(self, text: str, emit: Emit) -> None:
         """Answer once, emitting each sentence and then its audio."""
@@ -332,6 +389,26 @@ def make_handler(
                     json.dumps(summary).encode(),
                     "application/json",
                 )
+                return
+            if self.path == "/work-updates":
+                update_ids: tuple[str, ...] = ()
+                try:
+                    updates = companion.work_updates()
+                    update_ids = tuple(str(update["id"]) for update in updates)
+                    body = json.dumps(
+                        {"updates": updates}, ensure_ascii=False
+                    ).encode()
+                    self._send(200, body, "application/json")
+                    companion.acknowledge_work_updates(update_ids)
+                except Exception as error:  # noqa: BLE001 - local Shadow endpoint
+                    companion.release_work_updates(update_ids)
+                    self._send(
+                        503,
+                        json.dumps(
+                            {"error": str(error)}, ensure_ascii=False
+                        ).encode(),
+                        "application/json",
+                    )
                 return
             self.send_error(404)
 
@@ -617,15 +694,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Voice 성능 기록을 열지 못했습니다: {error}", file=sys.stderr)
         return 1
     chat_model = LlamaCppHttpChatModel(base_url=arguments.model_url)
-    owned_work_executor = (
-        WinterOwnedProjectCanary(
-            Path.cwd(),
-            BoundedProjectInspectionExecutive(chat_model),
-            CodexTypedProjectWorker(
+
+    def store_owned_work_update(update: OwnedWorkUpdate) -> None:
+        conversation_repository.append(
+            ConversationMessage("assistant", update.text)
+        )
+
+    owned_work_coordinator = (
+        AsyncOwnedWorkCoordinator(
+            WinterOwnedProjectCanary(
                 Path.cwd(),
-                executable=arguments.codex_executable,
-                model=arguments.codex_model,
+                BoundedProjectInspectionExecutive(chat_model),
+                CodexTypedProjectWorker(
+                    Path.cwd(),
+                    executable=arguments.codex_executable,
+                    model=arguments.codex_model,
+                ),
             ),
+            completion_sink=store_owned_work_update,
         )
         if arguments.winter_work_canary
         else None
@@ -658,7 +744,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if arguments.codex_worker
             else None
         ),
-        owned_work_executor=owned_work_executor,
+        owned_work_submitter=owned_work_coordinator,
     )
     if arguments.stt_backend == "sensevoice":
         stt: SpeechToText = SenseVoiceSpeechToText(
@@ -673,6 +759,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.no_voice_conversion
         else SeedVcVoiceConverter(base_url=arguments.vc_url),
         stt,
+        owned_work_coordinator,
     )
     server = ThreadingHTTPServer(
         (arguments.host, arguments.port),

@@ -1,5 +1,8 @@
+import threading
+
 from companion.adapters.fake import FakeChatModel, InMemoryConversationRepository
 from companion.core import CompanionCore
+from companion.owned_work import AsyncOwnedWorkCoordinator
 from companion.work_orchestration import WorkRequest
 from companion.worker import ReadOnlyWorkerRequest, ReadOnlyWorkerResult
 
@@ -195,3 +198,42 @@ def test_owned_work_failure_is_truthful_and_does_not_fallback() -> None:
     )
     assert "should-not-appear" not in response.text
     assert response.worker_error is True
+
+
+class BlockingOwnedWork:
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def execute(self, request: WorkRequest) -> ReadOnlyWorkerResult:
+        self.started.set()
+        assert self.release.wait(timeout=2)
+        return ReadOnlyWorkerResult(
+            answer="확인이 끝났어.",
+            evidence=("README.md:1",),
+            limitations=(),
+            worker="typed-worker",
+            model="test",
+        )
+
+
+def test_background_owned_work_ack_does_not_wait_and_chat_continues() -> None:
+    executor = BlockingOwnedWork()
+    coordinator = AsyncOwnedWorkCoordinator(executor)
+    model = FakeChatModel(prefix="일반 대화: ")
+    core = CompanionCore(
+        model,
+        InMemoryConversationRepository(),
+        owned_work_submitter=coordinator,
+    )
+
+    ack = core.respond_to_text("현재 코드 latency 원인을 분석해줘")
+    assert executor.started.wait(timeout=1)
+    ordinary = core.respond_to_text("그동안 오늘 운동 이야기하자")
+
+    assert ack.text == "응, 내가 확인해볼게. 끝나면 내가 다시 말해줄게."
+    assert ack.worker_name == "winter-owned-work-background"
+    assert ordinary.text.startswith("일반 대화:")
+    executor.release.set()
+    assert coordinator.wait_for_idle(timeout=2)
+    assert coordinator.ready()[0].text == "확인이 끝났어."

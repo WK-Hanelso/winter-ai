@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from companion.beliefs import Belief
     from companion.memory import DirectMemoryStatement, Memory
     from companion.outcome import OutcomeMemoryClaim, ShadowOutcomeEvent
+    from companion.owned_work import OwnedWorkReceipt, OwnedWorkUpdate
     from companion.turn_understanding import (
         ShadowTurnEvent,
         TurnInterpretationRequest,
@@ -71,6 +72,20 @@ class OwnedWorkExecutor(Protocol):
     """A bounded Winter-owned task that returns a reviewed user-facing result."""
 
     def execute(self, request: WorkRequest) -> ReadOnlyWorkerResult: ...
+
+
+class OwnedWorkSubmitter(Protocol):
+    """Accept a bounded task without waiting for specialist completion."""
+
+    def submit(self, request: WorkRequest) -> OwnedWorkReceipt: ...
+
+
+class OwnedWorkInbox(Protocol):
+    """Expose completed Winter-owned work until the interface acknowledges it."""
+
+    def ready(self) -> tuple[OwnedWorkUpdate, ...]: ...
+
+    def acknowledge(self, update_id: str) -> None: ...
 
 
 class WinterExecutive(Protocol):
