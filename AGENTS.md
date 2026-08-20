@@ -600,10 +600,12 @@ Task 001과 초기 Milestone 기반은 완료되었다. 기존 저장소를 다�
 2026-08-19 전체 감사의 prerequisite 복구 순서에 따라 #119 `read-only SelfModel + persistent
 CapabilityRegistry`, #120 `persistent conversational ImprovementLedger`와 #118 deferred queue
 fairness의 구현·운영 검증을 완료했다. #118은 24시간 관찰 트랙에 남고 결과 품질 gate는 실패
-상태다. 현재 단일 active scope는 Issue #121 `Fake Worker Level 3 lifecycle`이다. approved
-Improvement의 exact version/hash에서만 deterministic Fake Worker를 호출하고, 독립 검증·별도
-채택 승인·rollback까지 상태 경계를 offline으로 증명한다. 실제 Worker, source 변경,
-Capability `available`, 계정 권한, 외부 write와 TurnUnderstanding 자동 등록은 금지한다.
+상태다. #121 Fake Worker lifecycle, #122 isolated lifecycle bridge와 #123 project baseline·source
+adoption crash recovery의 Shadow 범위를 완료했다. 현재 단일 active scope는 Issue #124
+`exact lifecycle-to-source capability cycle`이다. 한 번의 exact 채택 승인을 source 적용,
+Capability Registry 등록과 최종 `adopted` 완료로 연결하고 rollback까지 임시 synthetic
+project에서 증명한다. 실제 Worker, 운영 Winter source, 사용자 route, 계정 권한, 외부 write와
+TurnUnderstanding 자동 등록은 금지한다.
 아래 Work Orchestration 계약과 실패 기준선은 그대로 보존한다.
 
 1. 현재 혼합 worktree의 사용자·Claude·Codex 변경을 보존한다.
