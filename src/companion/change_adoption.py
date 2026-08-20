@@ -24,6 +24,7 @@ from companion.project_baseline import (
     build_project_baseline,
     is_safe_project_path,
 )
+from companion.verification_sandbox import BubblewrapVerificationSandbox
 
 _HUNK_HEADER = re.compile(
     r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?:.*)\n?$"
@@ -56,6 +57,7 @@ class CommandRepositoryVerifier:
         commands: tuple[VerificationCommand, ...],
         *,
         timeout_seconds: int = 300,
+        sandbox_executable: str = "bwrap",
         runner: Callable[..., object] = subprocess.run,
     ) -> None:
         if not commands or any(
@@ -66,20 +68,16 @@ class CommandRepositoryVerifier:
                 "full repository verification command가 올바르지 않습니다."
             )
         self._commands = commands
-        self._timeout_seconds = timeout_seconds
-        self._runner = runner
+        self._sandbox = BubblewrapVerificationSandbox(
+            sandbox_executable=sandbox_executable,
+            timeout_seconds=timeout_seconds,
+            runner=runner,
+        )
 
     def verify(self, source_root: Path) -> tuple[VerificationResult, ...]:
         results: list[VerificationResult] = []
         for item in self._commands:
-            completed = self._runner(
-                list(item.command),
-                cwd=source_root,
-                text=True,
-                capture_output=True,
-                timeout=self._timeout_seconds,
-                check=False,
-            )
+            completed = self._sandbox.run(source_root, item.command)
             exit_code = int(getattr(completed, "returncode", 1))
             stdout = str(getattr(completed, "stdout", ""))
             stderr = str(getattr(completed, "stderr", ""))
@@ -461,11 +459,17 @@ class ChangeAdoptionService:
         if self._repository_verifier is None:
             raise ChangeAdoptionError("full repository verifier가 없습니다.")
         try:
+            source_before = build_project_baseline(self._source_root)
             results = self._repository_verifier.verify(self._source_root)
+            source_after = build_project_baseline(self._source_root)
         except Exception as error:
             raise ChangeAdoptionError(
                 f"full repository verifier 실행 실패: {type(error).__name__}"
             ) from error
+        if source_after != source_before:
+            raise ChangeAdoptionError(
+                "full repository verifier가 project source를 변경했습니다."
+            )
         if not results:
             raise ChangeAdoptionError("full repository verifier 결과가 없습니다.")
         summary = ", ".join(

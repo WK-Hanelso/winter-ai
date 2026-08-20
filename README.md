@@ -56,12 +56,12 @@ V1의 목표 자율성은 **Level 3 — 천우가 승인한 변경만 Worker가 
 | Background Maintenance | Shadow 운영 관찰 중 | 전용 CPU 모델이 응답과 분리되어 TurnUnderstanding queue를 자동 소비 | 5건 copied-DB·1건 live canary만 통과, 24시간 관찰과 결과 품질 audit 전 |
 | Grounded Self-Presence | 제한 운영 | 직접 초대받은 턴에서 겨울이 쪽 판단·가치·반응 표현 | 사람 판정 4/12, 완성된 자아가 아님 |
 | Response Claim Gate | 제한 운영 | 최종 답변의 신체 행동·바깥 사건·기억·외부 능력을 deterministic evidence와 대조 | locked-v2 14장면과 실제 Core 임시 평가 범위이며 범용 사실성 보장 아님 |
-| SelfModel / Capability Registry | 제한 운영 | Identity와 health·test 근거가 있는 실제 대화·Memory 능력을 매 turn 읽고, 등록되지 않은 기능 주장을 차단 | runtime 장애 자동 degraded 전이와 capability 채택 cycle은 아직 없음 |
-| Improvement Ledger | 기반 운영 + lifecycle Shadow | 문제 근거·토론·proposal revision·구현 승인에 이어 격리 수정안 identity·독립 host 검증·별도 채택 승인·rollback을 재시작 뒤에도 공유 | 실제 source 적용·Capability 연결과 자동 대화 추출은 금지 |
+| SelfModel / Capability Registry | 제한 운영 | Identity와 health·test 근거가 있는 실제 대화·Memory 능력을 매 turn 읽고, 등록되지 않은 기능 주장을 차단. 합성 cycle에서는 exact source 채택·rollback과 temporary capability 상태를 연결 | runtime 장애 자동 degraded 전이와 실제 runtime capability 연결은 아직 없음 |
+| Improvement Ledger | 기반 운영 + lifecycle Shadow | 문제 근거·토론·proposal revision·구현 승인에 이어 exact source 적용·격리 검증·Capability 등록·별도 채택 승인·rollback을 재시작 뒤에도 공유 | 운영 source·사용자 대화 route와 자동 대화 추출은 금지 |
 | Winter Event/Day | turn 기록 운영 | 실제 turn을 한국 시간의 겨울이 하루로 기록 | 기존 대화 소급 없음, event 종류 확장 중 |
 | Winter Belief | manual 운영 / autonomous Shadow | 근거·수정 이력, 저위험 자동 activation 계약 | LLM 후보와 activator 운영 연결 전 |
 | Voice Identity | 제한 운영 | Chatterbox S3Gen Reference 직접 합성 | 사람으로 착각할 자연스러움에 미달 |
-| Worker | read-only 제한 운영 + write Shadow | 명시적으로 부른 Codex 분석. 별도 합성 경로에서는 승인 파일만 격리 수정·독립 검증하고, exact patch 설명·채택·실제 적용·rollback 상태를 SQLite에 보존 | write Shadow는 대화·실제 Winter 검증 profile에 미연결, 실제 작업 평가 없음 |
+| Worker | read-only 제한 운영 + write Shadow | 명시적으로 부른 Codex 분석. 별도 합성 경로에서는 승인 파일만 격리 수정하고, source 채택 뒤 검증도 read-only/no-network/no-HOME bubblewrap에서 실행해 exact 적용·Capability 등록·rollback을 보존 | 운영 write Worker·대화 route·실제 capability 평가는 미연결. CPU·memory limit과 concurrent writer lock 없음 |
 | Winter Work Orchestration | Shadow, semantic activation 실패 | V2.1 계약, Qwen 14B·30B-A3B와 Gemma 12B·27B semantic-v2, typed Codex provider. shell/web 없는 MCP로 목록·검색·텍스트 읽기만 허용하고 stable evidence/audit 검증 | 네 후보 모두 ambiguity 0/3·review assessment 3/6. Qwen 30B 46/66, Gemma 27B 44/66·27초로 크기 확대도 실패. synthetic live 1건뿐이며 기존 Codex V0와 현재 답변에는 미연결 |
 
 “구현됨”과 “완성됨”은 다르다. 단일 테스트나 한 번의 성공으로 성숙도를 올리지 않으며,
@@ -141,11 +141,12 @@ route에는 연결하지 않았다.
 구현 승인 + 정확한 파일/line 범위
 → 개인정보 없는 baseline과 writable copy
 → Codex가 copy 안에서 수정·로컬 테스트
-→ Winter가 network·HOME 없는 sandbox에서 독립 unittest·Python 구조를 재검증
+→ Winter가 network·HOME 없는 공용 bubblewrap sandbox에서 독립 unittest·Python 구조를 재검증
 → 실제 diff·검증 범위·한계를 Winter 설명으로 구성
 → source는 건드리지 않고 patch와 설명을 SQLite에 보존
 → 천우의 채택/재작업 결정을 exact patch hash에 묶어 기록
 → 채택 뒤 대상 파일이 그대로일 때만 임시 파일 교체로 적용
+→ 적용 뒤 전체 검증도 source read-only·network/HOME 없는 같은 sandbox에서 실행
 → 적용 전 bytes를 보존하고, 실패 또는 rollback 때 복원
 ```
 
@@ -153,11 +154,13 @@ route에는 연결하지 않았다.
 통과했고 원본은 그대로였다. process 재시작 뒤에도 같은 patch·설명·상태가 남으며, 천우의
 `적용해`/`다시 고쳐줘` 결정도 기록할 수 있다. 채택된 patch는 대상 파일의 exact baseline이
 같을 때 실제 적용되고, 적용 후 새 편집이 없으면 재시작 뒤에도 rollback할 수 있다. 합성
-실제 probe에서 적용과 원본 복원을 완주했다. 다만 아직 일반 대화에서 이 경로를 호출하지
-않고 실제 Winter 전체 검증 profile도 없다. 따라서 현재 폰에서 “고쳐줘”라고 말하면 이
+실제 probe에서 적용과 원본 복원을 완주했다. hostile probe에서는 source/host write,
+symlink secret 탈출, credential environment와 외부 network를 모두 차단했다. 다만 아직 일반
+대화에서 이 경로를 호출하지 않고 실제 Winter 전체 검증 profile도 없다. 따라서 현재 폰에서 “고쳐줘”라고 말하면 이
 경로가 실행되는 상태는 아니다. 격리 경계는 [ADR-0018](docs/adr/0018-isolated-codex-implementation-proposal.md),
 설명·영속화는 [ADR-0019](docs/adr/0019-persist-and-explain-change-proposals.md), 적용·rollback은
-[ADR-0020](docs/adr/0020-fail-closed-change-adoption-and-rollback.md)을 따른다.
+[ADR-0020](docs/adr/0020-fail-closed-change-adoption-and-rollback.md), 채택 검증 격리는
+[ADR-0028](docs/adr/0028-sandboxed-adoption-verification.md)을 따른다.
 
 기본 Local LLM 주소는 `http://127.0.0.1:18080`이다. 다른 주소는 `.env`의
 `WINTER_LLM_URL`로 명시한다. Local 모델이 실패해도 fake 답변으로 몰래 전환하지 않는다.
@@ -610,7 +613,7 @@ docker compose run --rm dev mypy src
 6. Work Orchestration V2.1 안전 계약과 기존 모델 baseline — **구현 완료, activation 실패**
 7. project 전체 stale 판정·process crash 복구·실제 Winter 검증 profile — **#123 범위 구현**
 8. exact 채택 승인→source 적용→Capability 등록→rollback synthetic cycle — **#124 범위 구현**
-9. adoption verifier bubblewrap 격리와 공격 suite — **#125 진행 중**
+9. adoption verifier bubblewrap 격리와 공격 suite — **#125 로컬 범위 구현·검증 완료, Issue 완료 처리 전**
 10. 새 Core/runtime가 기존 ambiguity·grounding gate를 해결한다는 근거 확보
 11. semantic·권한 gate 합격 후 read-only 실제 작업 20개를 사람 평가
 12. 검증된 WinterDecision을 기존 Codex read-only route 앞뒤에 Shadow로 연결
@@ -630,6 +633,7 @@ docker compose run --rm dev mypy src
 | 승인된 개선과 격리 수정안은 어떻게 같은 작업임을 증명하는가? | [ADR-0025 Isolated lifecycle bridge](docs/adr/0025-isolated-lifecycle-shadow-bridge.md) |
 | source 적용 전 project drift와 crash는 어떻게 막는가? | [ADR-0026 Project baseline and crash recovery](docs/adr/0026-project-baseline-and-adoption-crash-recovery.md) |
 | 채택 승인과 실제 source·Capability 완료는 어떻게 하나로 묶는가? | [ADR-0027 Exact lifecycle-to-source capability cycle](docs/adr/0027-exact-lifecycle-source-capability-cycle.md) |
+| 채택 뒤 검증 코드의 host 권한은 어떻게 차단하는가? | [ADR-0028 Sandboxed adoption verification](docs/adr/0028-sandboxed-adoption-verification.md) |
 | 왜 자동 Belief에 이런 gate가 있는가? | [ADR-0011](docs/adr/0011-evidence-backed-lived-continuity.md) |
 | LLM 관점 후보는 어떻게 검증하는가? | [Belief Reflection](docs/belief-reflection.md), [ADR-0012](docs/adr/0012-shadow-belief-semantic-review.md) |
 | 어제의 겨울이가 오늘로 어떻게 이어지는가? | [Day Reflection](docs/day-reflection.md), [ADR-0013](docs/adr/0013-daily-continuity-before-autonomous-analysis.md) |

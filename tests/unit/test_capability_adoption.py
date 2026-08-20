@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -12,7 +13,11 @@ from companion.capability_adoption import (
     CapabilitySpec,
     ExactCapabilityAdoption,
 )
-from companion.change_adoption import ChangeAdoptionService
+from companion.change_adoption import (
+    ChangeAdoptionService,
+    CommandRepositoryVerifier,
+    VerificationCommand,
+)
 from companion.change_proposal import SqliteChangeProposalRepository
 from companion.improvements import SqliteImprovementLedger
 from companion.isolated_lifecycle_bridge import IsolatedLifecycleBridge
@@ -178,7 +183,9 @@ def _spec(*, version: str = "1") -> CapabilitySpec:
 
 
 def _coordinator(
-    cycle: _Cycle, *, verifier: _RepositoryVerifier | None = None
+    cycle: _Cycle,
+    *,
+    verifier: _RepositoryVerifier | CommandRepositoryVerifier | None = None,
 ) -> ExactCapabilityAdoption:
     proposals = SqliteChangeProposalRepository(cycle.change_path)
     return ExactCapabilityAdoption(
@@ -260,6 +267,68 @@ def test_one_approval_reaches_source_capability_and_adopted_idempotently(
             capability=_spec(version="2"),
             observed_at="2026-08-20T00:00:00+00:00",
         )
+
+
+def test_exact_cycle_runs_adoption_verification_inside_sandbox(
+    tmp_path: Path,
+) -> None:
+    calls: list[list[str]] = []
+
+    def runner(command: list[str], **kwargs: object) -> object:
+        calls.append(command)
+        return SimpleNamespace(returncode=0, stdout="OK", stderr="")
+
+    cycle = _ready_cycle(tmp_path)
+    coordinator = _coordinator(
+        cycle,
+        verifier=CommandRepositoryVerifier(
+            (
+                VerificationCommand(
+                    "full_repository",
+                    ("python", "-m", "unittest", "discover"),
+                ),
+            ),
+            sandbox_executable="winter-bwrap",
+            runner=runner,
+        ),
+    )
+    approval_hash = _approve(cycle, coordinator)
+
+    completed = coordinator.complete(
+        cycle.improvement_id,
+        proposal_version=cycle.proposal_version,
+        proposal_hash=cycle.proposal_hash,
+        adoption_approval_hash=approval_hash,
+        capability=_spec(),
+        observed_at="2026-08-20T00:00:00+00:00",
+    )
+
+    assert completed.improvement_status == "adopted"
+    assert cycle.target.read_text(encoding="utf-8") == "return left + right\n"
+    assert len(calls) == 1
+    assert "--unshare-all" in calls[0]
+    assert calls[0][calls[0].index(str(cycle.source.resolve())) - 1] == "--ro-bind"
+    assert calls[0][calls[0].index("--") + 2 :] == [
+        "-m",
+        "unittest",
+        "discover",
+    ]
+    ledger = SqliteImprovementLedger(cycle.improvement_path)
+    completion = ledger.latest_cycle_record(cycle.improvement_id, "adoption_completion")
+    assert completion is not None
+
+    rolled_back = coordinator.rollback(
+        cycle.improvement_id,
+        proposal_version=cycle.proposal_version,
+        proposal_hash=cycle.proposal_hash,
+        adoption_completion_hash=completion.record_hash,
+        capability=_spec(),
+        reason="sandbox exact cycle rollback",
+        evidence=("test:sandbox-exact-cycle:rollback",),
+    )
+
+    assert rolled_back.improvement_status == "rolled_back"
+    assert cycle.target.read_text(encoding="utf-8") == "return left - right\n"
 
 
 def test_exact_capability_binding_mismatch_fails_before_source_write(

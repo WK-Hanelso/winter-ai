@@ -603,8 +603,9 @@ fairness의 구현·운영 검증을 완료했다. #118은 24시간 관찰 트�
 상태다. #121 Fake Worker lifecycle, #122 isolated lifecycle bridge와 #123 project baseline·source
 adoption crash recovery와 #124 exact lifecycle-to-source capability cycle의 Shadow 범위를
 완료했다. 현재 단일 active scope는 Issue #125 `sandbox adoption verifier and adversarial
-suite`다. 기존 bubblewrap 독립 검증 경계를 source-adoption verifier에 재사용하고 read-only
-source, no-network/no-HOME/credential, fixed argv와 timeout을 hostile fixture에서 증명한다.
+suite`이며 로컬 구현·검증을 완료하고 Issue 완료 처리 전이다. 공용 bubblewrap 경계를
+source-adoption verifier에 재사용했고 read-only source, no-network/no-HOME/credential,
+fixed argv, timeout/no-host-fallback과 실제 hostile fixture 차단을 증명했다.
 실제 Worker, 운영 Winter source, 사용자 route, 계정 권한, 외부 write와 TurnUnderstanding
 자동 등록은 금지한다.
 아래 Work Orchestration 계약과 실패 기준선은 그대로 보존한다.

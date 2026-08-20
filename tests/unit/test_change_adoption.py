@@ -3,6 +3,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -21,6 +22,7 @@ from companion.isolated_work import (
     VerificationResult,
 )
 from companion.project_baseline import build_project_baseline
+from companion.verification_sandbox import VerificationSandboxError
 
 
 class _Verifier:
@@ -39,6 +41,20 @@ class _Verifier:
                 output="OK" if self.passed else "FAILED",
             ),
         )
+
+
+class _MutatingVerifier:
+    def verify(self, source_root: Path) -> tuple[VerificationResult, ...]:
+        (source_root / "src" / "calc.py").write_text(
+            "return 999\n", encoding="utf-8"
+        )
+        return (VerificationResult("malicious", "pass", 0, "OK"),)
+
+
+class _EmptyVerifier:
+    def verify(self, source_root: Path) -> tuple[VerificationResult, ...]:
+        assert source_root.is_dir()
+        return ()
 
 
 def _sha(data: bytes) -> str:
@@ -532,3 +548,105 @@ def test_command_verifier_runs_fixed_commands_without_shell_and_stops_on_failure
     assert len(calls) == 2
     assert all("shell" not in kwargs for _, kwargs in calls)
     assert all(kwargs["cwd"] == tmp_path for _, kwargs in calls)
+    assert all("--unshare-all" in command for command, _ in calls)
+    assert all(
+        command[command.index("/workspace") - 2] == "--ro-bind"
+        for command, _ in calls
+    )
+    assert calls[0][0][calls[0][0].index("--") + 2 :] == [
+        "-m",
+        "pytest",
+        "-q",
+    ]
+
+
+def test_command_verifier_fails_closed_without_sandbox(tmp_path: Path) -> None:
+    with pytest.raises(VerificationSandboxError, match="unavailable"):
+        CommandRepositoryVerifier(
+            (VerificationCommand("python", ("python", "-V")),),
+            sandbox_executable="/missing/winter-bwrap",
+        ).verify(tmp_path)
+
+
+def test_apply_detects_mutating_verifier_and_restores_source(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = source / "src" / "calc.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("return left - right\n", encoding="utf-8")
+    repository = SqliteChangeProposalRepository(tmp_path / "proposals.sqlite")
+    proposal_id, patch_sha256 = _store_proposal(
+        source,
+        repository,
+        {"src/calc.py": ("return left - right\n", "return left + right\n")},
+    )
+
+    with pytest.raises(ChangeAdoptionError, match="source를 변경"):
+        ChangeAdoptionService(
+            source,
+            repository,
+            repository_verifier=_MutatingVerifier(),
+        ).apply(proposal_id, expected_patch_sha256=patch_sha256)
+
+    assert target.read_text(encoding="utf-8") == "return left - right\n"
+    assert repository.get(proposal_id).status == "apply_failed"  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize("failure", ("missing", "timeout"))
+def test_apply_restores_source_when_sandbox_cannot_complete(
+    tmp_path: Path,
+    failure: str,
+) -> None:
+    source = tmp_path / "source"
+    target = source / "src" / "calc.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("return left - right\n", encoding="utf-8")
+    repository = SqliteChangeProposalRepository(tmp_path / "proposals.sqlite")
+    proposal_id, patch_sha256 = _store_proposal(
+        source,
+        repository,
+        {"src/calc.py": ("return left - right\n", "return left + right\n")},
+    )
+
+    def timeout_runner(command: list[str], **kwargs: object) -> object:
+        raise subprocess.TimeoutExpired(command, timeout=1)
+
+    verifier = CommandRepositoryVerifier(
+        (VerificationCommand("python", ("python", "-V")),),
+        timeout_seconds=1,
+        sandbox_executable=(
+            "/missing/winter-bwrap" if failure == "missing" else "winter-bwrap"
+        ),
+        runner=subprocess.run if failure == "missing" else timeout_runner,
+    )
+    with pytest.raises(ChangeAdoptionError, match="실행 실패"):
+        ChangeAdoptionService(
+            source,
+            repository,
+            repository_verifier=verifier,
+        ).apply(proposal_id, expected_patch_sha256=patch_sha256)
+
+    assert target.read_text(encoding="utf-8") == "return left - right\n"
+    assert repository.get(proposal_id).status == "apply_failed"  # type: ignore[union-attr]
+
+
+def test_apply_restores_source_when_verifier_returns_no_result(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = source / "src" / "calc.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("return left - right\n", encoding="utf-8")
+    repository = SqliteChangeProposalRepository(tmp_path / "proposals.sqlite")
+    proposal_id, patch_sha256 = _store_proposal(
+        source,
+        repository,
+        {"src/calc.py": ("return left - right\n", "return left + right\n")},
+    )
+
+    with pytest.raises(ChangeAdoptionError, match="결과가 없습니다"):
+        ChangeAdoptionService(
+            source,
+            repository,
+            repository_verifier=_EmptyVerifier(),
+        ).apply(proposal_id, expected_patch_sha256=patch_sha256)
+
+    assert target.read_text(encoding="utf-8") == "return left - right\n"
+    assert repository.get(proposal_id).status == "apply_failed"  # type: ignore[union-attr]

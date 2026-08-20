@@ -26,6 +26,10 @@ from companion.isolated_work import (
     VerificationResult,
 )
 from companion.project_baseline import build_project_baseline
+from companion.verification_sandbox import (
+    BubblewrapVerificationSandbox,
+    VerificationSandboxError,
+)
 from companion.worker import WorkerUnavailableError
 
 _REPORT_SCHEMA = {
@@ -91,14 +95,13 @@ class CodexIsolatedWorkWorker:
         self._executable = shutil.which(executable) or executable
         self._model = model
         self._timeout_seconds = timeout_seconds
-        self._verification_timeout_seconds = verification_timeout_seconds
         self._runner = runner
-        self._verification_runner = verification_runner
         self._python_executable = python_executable
-        self._verification_sandbox_executable = shutil.which(
-            verification_sandbox_executable
+        self._verification_sandbox = BubblewrapVerificationSandbox(
+            sandbox_executable=verification_sandbox_executable,
+            timeout_seconds=verification_timeout_seconds,
+            runner=verification_runner,
         )
-        self._verification_sandbox_name = verification_sandbox_executable
 
     def execute(self, authorization: ImplementationAuthorization) -> IsolatedWorkResult:
         try:
@@ -248,80 +251,24 @@ class CodexIsolatedWorkWorker:
     def _verify(self, workspace: Path, profile: str) -> VerificationResult:
         if profile != "python_unittest":
             raise WorkerUnavailableError("등록되지 않은 독립 검증 profile입니다.")
-        if (
-            self._verification_sandbox_executable is None
-            and self._verification_runner is subprocess.run
-        ):
+        if not self._verification_sandbox.available:
             raise WorkerUnavailableError(
                 "독립 검증 sandbox가 없어 Worker 코드를 실행하지 않았습니다."
             )
-        sandbox = (
-            self._verification_sandbox_executable
-            or self._verification_sandbox_name
-        )
-        python = Path(self._python_executable).resolve()
-        runtime = python.parent.parent
-        sandbox_python = Path("/runtime/bin") / python.name
-        command = [
-            sandbox,
-            "--die-with-parent",
-            "--new-session",
-            "--unshare-all",
-            "--ro-bind",
-            "/usr",
-            "/usr",
-            "--ro-bind",
-            "/bin",
-            "/bin",
-            "--ro-bind",
-            "/lib",
-            "/lib",
-            "--ro-bind-try",
-            "/lib64",
-            "/lib64",
-            "--ro-bind",
-            "/etc",
-            "/etc",
-            "--ro-bind",
-            str(runtime),
-            "/runtime",
-            "--bind",
-            str(workspace),
-            "/workspace",
-            "--tmpfs",
-            "/tmp",
-            "--proc",
-            "/proc",
-            "--dev",
-            "/dev",
-            "--chdir",
-            "/workspace",
-            "--setenv",
-            "HOME",
-            "/nonexistent",
-            "--setenv",
-            "PATH",
-            "/runtime/bin:/usr/bin:/bin",
-            str(sandbox_python),
-            "-m",
-            "unittest",
-            "discover",
-            "-s",
-            "tests",
-        ]
-        completed = self._verification_runner(
-            command,
-            text=True,
-            capture_output=True,
-            timeout=self._verification_timeout_seconds,
-            cwd=workspace,
-            env={
-                "LANG": "C.UTF-8",
-                "PATH": os.defpath,
-                "PYTHONUTF8": "1",
-            },
-            check=False,
-        )
+        try:
+            completed = self._verification_sandbox.run(
+                workspace,
+                (
+                    self._python_executable,
+                    "-m",
+                    "unittest",
+                    "discover",
+                    "-s",
+                    "tests",
+                ),
+            )
+        except VerificationSandboxError as error:
+            raise WorkerUnavailableError(str(error)) from error
         exit_code = int(getattr(completed, "returncode", 1))
         output = (
             str(getattr(completed, "stdout", ""))

@@ -185,7 +185,8 @@ def test_worker_modifies_only_copy_and_returns_verified_adoption_proposal(
     assert parent_env["HOME"] != str(Path.home())
     verification_command = captured["verification_command"]
     assert "--unshare-all" in verification_command
-    assert "--bind" in verification_command
+    workspace_index = verification_command.index("/workspace")
+    assert verification_command[workspace_index - 2] == "--ro-bind"
     assert str(source) not in verification_command
     assert "/workspace" in verification_command
 

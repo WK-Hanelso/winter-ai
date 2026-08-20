@@ -24,9 +24,10 @@ Issue #118의 deferred row queue starvation은 운영에서 다음 row 진행까
 `Fake Worker Level 3 lifecycle` Shadow 검증과 #122 `approved lifecycle과 isolated
 implementation Shadow 연결`과 #123 `project baseline·post-apply verification·process crash
 recovery`와 #124 `exact lifecycle-to-source capability cycle`도 완료했다. 현재 단일 active
-scope는 Issue #125 `sandbox adoption verifier and adversarial suite`다. 기존 bubblewrap
-독립 검증을 source-adoption verifier에 재사용하고 hostile fixture에서 path/network/write/
-credential/prompt-injection 경계를 증명하되 운영 source에는 연결하지 않는다.
+scope는 Issue #125 `sandbox adoption verifier and adversarial suite`다. 로컬 범위는 구현·검증을
+완료했으며 Issue 완료 처리 전이다. 기존 bubblewrap 독립 검증을 source-adoption verifier에
+재사용하고 hostile fixture에서 path/network/write/credential/prompt-injection 경계를
+증명했지만 운영 source에는 연결하지 않았다.
 
 ## Current state
 
@@ -55,7 +56,7 @@ Winter V1의 전체 제품 목표는 [Winter V1 Product Goal](winter-v1-goal.md)
 | 6a | Improvement lifecycle ↔ isolated implementation bridge | **Issue #122 Shadow 범위 완료** — exact 승인에서만 격리 수정안 생성, Worker result와 독립 host verification identity를 persistent lifecycle에 연결. 저장된 patch는 Worker 재호출 없이 복원하고, patch 없는 `implementing`은 재실행하지 않는 fail-closed 경계. source 적용·Capability 등록 제외 |
 | 7 | 격리 worktree·scope/test/adoption gate | **Issue #123 범위 구현** — privacy-safe project baseline drift 차단, 필수 post-apply command verifier, `applying`/`rolling_back`의 all-before·all-after·mixed 복구와 unknown bytes 무덮어쓰기를 임시 fixture에서 검증. 운영 source·대화 route·Capability 연결 금지 |
 | 7a | exact lifecycle-to-source capability cycle | **Issue #124 범위 구현** — 채택 승인과 완료를 분리하고 exact Improvement/validation/patch/baseline/capability identity로 source 적용, Registry available, 최종 adopted와 rollback을 하나의 synthetic cycle로 검증. 운영 source·사용자 route 금지 |
-| 7b | sandboxed adoption verifier + adversarial suite | **Issue #125 active** — 기존 bubblewrap 검증 경계를 공용화하고 read-only source, no-network/no-HOME/credential, fixed argv, timeout과 no-host-fallback을 hostile fixture에서 검증. 운영 source·사용자 route 금지 |
+| 7b | sandboxed adoption verifier + adversarial suite | **Issue #125 로컬 범위 구현·검증 완료** — 공용 bubblewrap 경계에서 read-only source, private `/tmp`, no-network/no-HOME/credential, fixed argv, timeout과 no-host-fallback을 검증. 실제 hostile probe에서 source/host write·symlink secret·network를 차단. 운영 source·사용자 route 금지 |
 | 8 | 승인된 Worker Adapter 하나 연결 | **read-only 0.1 완료** — explicit Codex route, sanitized text bundle, ephemeral/read-only 실행, structured provenance와 실제 1회 성공. write/adoption이 아니라 분석 capability만 제한 운영 |
 | 8a | Winter-owned Work Orchestration | **typed provider Shadow 구현, activation 실패** — Qwen 46/66, Gemma 40/66. 빈 agent cwd, shell/web 차단, `env -i` MCP와 목록·검색·읽기, snapshot/evidence/audit offline 17개 + gpt-5.4 synthetic live 1/1. 공격 suite·실제 20 task 필요 |
 | 9 | 실제 capability 전체 cycle | 제안→승인→구현→검증→채택→재평가→rollback 완주 |
@@ -103,8 +104,8 @@ Identity·관계 상태·최종 발화는 겨울이 Core가 소유한다.
 9. isolated implementation proposal — **Shadow 범위 완료**, gpt-5.4 synthetic 최소 수정·독립 검증·원본 불변 1/1
 10. proposal persistence·근거 기반 Winter 설명·exact hash 채택 결정 — **Shadow 범위 완료**
 11. 대상 stale 차단·오류 시 전 파일 복원·적용/rollback — **Shadow 범위 완료**
-12. project 전체 stale·process crash 복구·실제 Winter 검증 profile
-13. path/network/write·project prompt-injection 격리 공격 suite
+12. project 전체 stale·process crash 복구 — **#123 범위 완료**, 실제 Winter 검증 profile은 미연결
+13. path/network/write·project prompt-injection 격리 공격 suite — **#125 로컬 범위 완료**
 14. 실제 A.X 저장소 task 1건 — **Intent gate 실패**, 외부 Worker 미실행·repository 미전송
 15. A.X 간소 Intent 6장면 — **schema 6/6·4.9초지만 ambiguity 0/2·usable 1/6으로 실패**
 16. Qwen3-30B-A3B semantic-v2·대화 비교 — **46/66·5.5초지만 ambiguity 0/3, 대화 grounding 사람 검토 실패**
