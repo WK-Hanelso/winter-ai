@@ -251,6 +251,8 @@ acknowledge 전까지 남았다. 살아 있는 process가 소유한 job은 다�
 requeue하지 않는다. 같은 Local model 앞에는 queued foreground 대화가 background보다 먼저
 들어간다. 작업 접수·foreground 종료 뒤 6초 동안 새 background generation을 열지 않고,
 폰 녹음 시작도 `/activity`로 즉시 이 보호 구간을 갱신한다.
-다만 이미 시작한 generation preemption, lease heartbeat와 실제 phone 측정이 남았으므로 기본
-경로에는 켜지 않는다. 상세 결정은
+2026-08-21 repository 기본 unit은 그대로 두고 `126-owned-work-canary.conf` drop-in으로 실제
+phone canary를 켰다. service restart 뒤 loopback과 Tailscale HTTPS health, 빈 persistent inbox를
+확인했다. 다만 이미 시작한 generation preemption, lease heartbeat와 천우의 실제 phone 동시
+대화 표본이 남았으므로 기본 경로로 승격하지 않는다. 상세 결정은
 [ADR-0030](adr/0030-nonblocking-winter-owned-work.md)을 따른다.

@@ -209,6 +209,7 @@ evidence = [
   "docs/adr/0028-sandboxed-adoption-verification.md",
   "docs/adr/0029-winter-owned-real-work-canary.md",
   "docs/adr/0030-nonblocking-winter-owned-work.md",
+  "deploy/systemd/winter-web.service.d/126-owned-work-canary.conf",
   "src/companion/owned_work.py",
   "src/companion/owned_work_repository.py",
   "src/companion/model_priority.py",

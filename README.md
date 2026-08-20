@@ -62,7 +62,7 @@ V1의 목표 자율성은 **Level 3 — 천우가 승인한 변경만 Worker가 
 | Winter Belief | manual 운영 / autonomous Shadow | 근거·수정 이력, 저위험 자동 activation 계약 | LLM 후보와 activator 운영 연결 전 |
 | Voice Identity | 제한 운영 | Chatterbox S3Gen Reference 직접 합성 | 사람으로 착각할 자연스러움에 미달 |
 | Worker | read-only 제한 운영 + write Shadow | 명시적으로 부른 Codex 분석. 별도 합성 경로에서는 승인 파일만 격리 수정하고, source 채택 뒤 검증도 read-only/no-network/no-HOME bubblewrap에서 실행해 exact 적용·Capability 등록·rollback을 보존 | 운영 write Worker·대화 route·실제 capability 평가는 미연결. CPU·memory limit과 concurrent writer lock 없음 |
-| Winter Work Orchestration | Shadow, 비차단 성공·결과 partial | 느린 전문 작업을 background로 보내 접수 text 0.000초, 직후 일반 대화 2.138초, 접수 TTS 2.450초. 전체 작업은 82.83초지만 대화를 막지 않음. 최종 판단은 evidence-backed claim 선택으로 제한 | process 재시작 시 job 유실, 같은 Local LLM 자원 충돌 가능, 실제 phone 미배포. 결과가 한 가지 개선을 확정하지 못해 20-task gate 진입 불가 |
+| Winter Work Orchestration | Shadow, 실제 phone canary 대기 | 느린 전문 작업을 background로 보내 접수 text 0.000초, 직후 일반 대화 2.138초, 접수 TTS 2.450초. SQLite 재시작 복구와 foreground-first scheduler 적용. 최종 판단은 evidence-backed claim 선택으로 제한 | 이미 시작한 Local generation preemption과 실제 phone 동시 사용 미검증. 결과가 한 가지 개선을 확정하지 못해 20-task gate 진입 불가 |
 
 “구현됨”과 “완성됨”은 다르다. 단일 테스트나 한 번의 성공으로 성숙도를 올리지 않으며,
 실패한 평가도 [Maturity Ledger](docs/v1-maturity-ledger.md)에 기준선으로 남긴다.
@@ -132,8 +132,9 @@ Issue #126에서는 이 경로를 개발용 feature flag 아래 실제 repositor
 겨울이가 먼저 “내가 현재 코드와 기록을 확인해볼게”라고 말하고, 사용자 원문 대신 제한된
 목적을 typed Worker에 보낸 뒤 같은 Local Core가 최종 답변을 만들었다. 세 번째 실행은
 98.77초에 기술적으로 완주했지만, 근거로 분리하지 못한 TTS·streaming·browser 개선을 한꺼번에
-추천해 사람 품질 gate에 실패했다. 따라서 `--winter-work-canary`는 Shadow 검증 전용이며
-정상 사용 명령이나 systemd에는 켜지 않는다. 세 번의 결과와 중단 기준은
+추천해 사람 품질 gate에 실패했다. 따라서 `--winter-work-canary`는 Shadow 검증 전용이다.
+repository 기본 unit에는 켜지 않으며, 2026-08-21부터 되돌릴 수 있는 #126 user-service
+drop-in에만 명시적으로 켰다. 세 번의 결과와 중단 기준은
 [ADR-0029](docs/adr/0029-winter-owned-real-work-canary.md)에 있다.
 
 동기식 98.77초 대기는 제품 구조로 채택하지 않았다. 같은 flag의 후속 Shadow는 접수 turn을
@@ -142,8 +143,9 @@ Issue #126에서는 이 경로를 개발용 feature flag 아래 실제 repositor
 Web은 2초마다 완료 inbox를 확인해 천우가 다른 대화를 마친 뒤 겨울이 text와 voice로 결과를
 가져온다. 후속 구현은 job과 미전달 결과를 SQLite에 보존해 process crash 뒤 다시 시작하며,
 대기 중인 일반 대화가 background Local 분석보다 먼저 모델을 사용하게 한다. offline 재시작과
-우선순위 검증은 통과했지만 이미 시작한 generation은 중단하지 못하고 실제 phone에는 배포하지
-않았으므로 정상 사용 경로로 표기하지 않는다. 상세 계약은
+우선순위 검증은 통과했고 #126 전용 drop-in으로 실제 phone canary를 배포했다. loopback과
+Tailscale HTTPS health는 통과했지만 천우의 실제 동시 대화 표본은 아직 0건이다. 이미 시작한
+generation도 중단하지 못하므로 정상 사용 경로로 표기하지 않는다. 상세 계약은
 [ADR-0030](docs/adr/0030-nonblocking-winter-owned-work.md)에 있다.
 
 새 Orchestration용 typed gateway는 arbitrary shell을 주지 않고 `list_files`,

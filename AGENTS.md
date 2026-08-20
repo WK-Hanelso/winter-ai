@@ -610,8 +610,9 @@ single-job background coordinator와 evidence-backed claim 선택으로 접수 0
 성공했지만 최종 결과는 다음 한 가지를 확정하지 못해 partial이다. 후속 SQLite job/inbox는
 dead-process request와 미전달 결과를 복구하고 foreground-first scheduler는 작업 접수·phone
 녹음 시작을 보호한다. 다만 실제 phone 동시 사용과 이미 시작한 generation preemption은
-미검증이다. 개발용 flag만 보존하며 기본
-CLI/Web와 service에는 켜지 않는다.
+미검증이다. 2026-08-21 repository 기본 unit은 유지한 채 #126 user-service drop-in으로 actual
+phone canary를 켰고 loopback/Tailscale HTTPS health를 확인했다. 실제 사용자 표본 전에는 기본
+CLI/Web/service 계약으로 승격하지 않는다.
 새 sandbox·ledger·registry·prompt 예외·동급 모델 순회, 실제 source write, Capability
 activation과 일반 자동 위임은 금지한다.
 아래 Work Orchestration 계약과 실패 기준선은 그대로 보존한다.
@@ -681,6 +682,9 @@ activation과 일반 자동 위임은 금지한다.
     preemption, lease heartbeat와 actual phone 동시 사용은 미검증이므로 activation하지 않는다.
     실제 `:18080` 겹침 probe에서는 background를 먼저 제출했어도 0.2초 뒤 foreground가
     0.498초에 먼저 끝났고 background는 6.855초에 끝났다.
+22. actual phone canary는 repository 기본 unit이 아닌
+    `~/.config/systemd/user/winter-web.service.d/126-owned-work-canary.conf`로만 켠다. 실제 표본이
+    실패하거나 rollback이 필요하면 drop-in을 제거하고 daemon-reload/restart한다.
 
 TurnUnderstanding과 Reflection의 기존 품질 gate는 그대로 유지한다. 자동 Belief 정책이
 있다는 이유만으로 검증되지 않은 LLM candidate를 active로 만들거나 write Worker를 자동

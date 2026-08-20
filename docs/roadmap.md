@@ -34,7 +34,9 @@ bubblewrap 격리와 hostile suite는 완료했다. #126은 천우의 평범한 
 running job 재개와 미전달 결과 복구를 통과했고, queued foreground-first Local scheduler도
 통과했다. 실제 `:18080` 겹침 probe에서도 0.2초 뒤 제출한 foreground가 0.498초, 먼저 제출한
 background가 6.855초에 끝났다. 이미 시작한 generation의 preemption과 실제 phone 동시 사용은
-미검증이므로 운영에는 켜지 않는다.
+미검증이다. 2026-08-21 repository 기본 unit은 그대로 둔 채 #126 user-service drop-in으로
+실제 phone canary를 켰고 loopback/Tailscale HTTPS health를 확인했다. 실제 동시 대화 표본은
+아직 0건이므로 기본 운영으로 승격하지 않는다.
 
 ## Current state
 
@@ -64,7 +66,7 @@ Winter V1의 전체 제품 목표는 [Winter V1 Product Goal](winter-v1-goal.md)
 | 7 | 격리 worktree·scope/test/adoption gate | **Issue #123 범위 구현** — privacy-safe project baseline drift 차단, 필수 post-apply command verifier, `applying`/`rolling_back`의 all-before·all-after·mixed 복구와 unknown bytes 무덮어쓰기를 임시 fixture에서 검증. 운영 source·대화 route·Capability 연결 금지 |
 | 7a | exact lifecycle-to-source capability cycle | **Issue #124 범위 구현** — 채택 승인과 완료를 분리하고 exact Improvement/validation/patch/baseline/capability identity로 source 적용, Registry available, 최종 adopted와 rollback을 하나의 synthetic cycle로 검증. 운영 source·사용자 route 금지 |
 | 7b | sandboxed adoption verifier + adversarial suite | **Issue #125 로컬 범위 구현·검증 완료** — 공용 bubblewrap 경계에서 read-only source, private `/tmp`, no-network/no-HOME/credential, fixed argv, timeout과 no-host-fallback을 검증. 실제 hostile probe에서 source/host write·symlink secret·network를 차단. 운영 source·사용자 route 금지 |
-| 7c | Winter-owned real repository diagnosis canary | **Issue #126 비차단·재시작 Shadow 성공, 결과 partial** — 동기식 98.77초를 background 82.83초로 분리해 접수 0.000초·직후 대화 2.138초·TTS 2.450초. SQLite crash recovery와 queued foreground-first scheduler offline 통과. phone·generation preemption·한 가지 추천 gate 미완료 |
+| 7c | Winter-owned real repository diagnosis canary | **Issue #126 actual-phone canary 배포·결과 partial** — 동기식 98.77초를 background 82.83초로 분리. SQLite recovery와 foreground-first scheduler 통과, 제한 drop-in health 확인. actual phone 동시 대화·generation preemption·한 가지 추천 gate 미완료 |
 | 8 | 승인된 Worker Adapter 하나 연결 | **read-only 0.1 완료** — explicit Codex route, sanitized text bundle, ephemeral/read-only 실행, structured provenance와 실제 1회 성공. write/adoption이 아니라 분석 capability만 제한 운영 |
 | 8a | Winter-owned Work Orchestration | **typed provider Shadow 구현, activation 실패** — Qwen 46/66, Gemma 40/66. 빈 agent cwd, shell/web 차단, `env -i` MCP와 목록·검색·읽기, snapshot/evidence/audit offline 17개 + gpt-5.4 synthetic live 1/1. 공격 suite·실제 20 task 필요 |
 | 9 | 실제 capability 전체 cycle | 제안→승인→구현→검증→채택→재평가→rollback 완주 |

@@ -94,7 +94,8 @@ offline 회귀 820개, Ruff와 `mypy src` 107개 source file이 통과했다.
   강제로 중단하지 않는다. 실제 동시 phone turn에서 최대 대기 시간을 아직 측정하지 않았다.
 - SQLite 완료 저장과 Conversation DB append는 하나의 atomic transaction이 아니므로 그 사이
   hard crash에서는 inbox 결과는 보존되지만 대화 history에는 늦게 반영될 수 있다.
-- Web polling과 completion voice는 offline HTTP 회귀만 통과했고 실제 phone에는 배포하지 않았다.
+- Web polling과 completion voice는 2026-08-21 #126 전용 user-service drop-in으로 배포했고
+  loopback/Tailscale HTTPS health를 통과했다. 천우의 실제 동시 대화 표본은 아직 0건이다.
 - Worker report claim과 source text의 의미 일치는 provider와 사람 평가가 필요하다. stable
   evidence ID만으로 의미적 참을 완전히 증명하지 못한다.
 - 취소, 진행률, timeout 뒤 재개와 persistent retry가 없다.
@@ -102,7 +103,8 @@ offline 회귀 820개, Ruff와 `mypy src` 107개 source file이 통과했다.
 
 ## 다음 gate
 
-이 경로를 운영에 켜기 전에 다음을 순서대로 확인한다.
+이 경로를 기본 운영에 승격하기 전에 다음을 순서대로 확인한다. 현재 배포는 repository 기본
+unit을 바꾸지 않는 `126-owned-work-canary.conf` 한정 canary이며 drop-in 제거로 rollback한다.
 
 1. ~~SQLite job/inbox로 process restart 뒤 pending·completed 결과를 복구한다.~~ offline
    actual-process crash simulation 통과.
