@@ -201,15 +201,19 @@ def test_bridge_persists_identity_validates_and_never_applies_source(
         item.id, "validation_report"
     )
     assert report is not None
-    adopted = SqliteImprovementLedger(improvement_path).approve_adoption(
+    approved = SqliteImprovementLedger(improvement_path).approve_adoption(
         item.id,
         proposal_version=proposal.version,
         proposal_hash=proposal.proposal_hash,
         validation_report_hash=report.record_hash,
+        change_proposal_id=stored.proposal_id,
+        patch_sha256=stored.patch_sha256,
+        project_baseline_sha256="b" * 64,
+        capability_spec_sha256="c" * 64,
         decided_by="cheonu",
         evidence="conversation:adoption-approval:122",
     )
-    assert adopted.status == "adopted"
+    assert approved.status == "adoption_approved"
     assert SqliteChangeProposalRepository(change_path).get(stored.proposal_id) == stored
     assert source.read_bytes() == original
 
@@ -300,6 +304,10 @@ def test_failed_host_verification_cannot_reach_adoption(tmp_path: Path) -> None:
             proposal_version=proposal.version,
             proposal_hash=proposal.proposal_hash,
             validation_report_hash="not-adoptable",
+            change_proposal_id="proposal-linked-1",
+            patch_sha256="not-adoptable",
+            project_baseline_sha256="b" * 64,
+            capability_spec_sha256="c" * 64,
             decided_by="cheonu",
             evidence="conversation:adoption-approval:122",
         )

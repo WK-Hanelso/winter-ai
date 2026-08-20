@@ -22,6 +22,8 @@ IMPROVEMENT_STATUSES = frozenset(
         "implementing",
         "validating",
         "ready_to_adopt",
+        "adoption_approved",
+        "adoption_failed",
         "validation_failed",
         "adopted",
         "rolled_back",
@@ -35,7 +37,9 @@ _TRANSITIONS: dict[str, frozenset[str]] = {
     "approved": frozenset({"implementing"}),
     "implementing": frozenset({"validating", "validation_failed"}),
     "validating": frozenset({"ready_to_adopt", "validation_failed"}),
-    "ready_to_adopt": frozenset({"adopted"}),
+    "ready_to_adopt": frozenset({"adoption_approved"}),
+    "adoption_approved": frozenset({"adopted", "adoption_failed"}),
+    "adoption_failed": frozenset({"discussing"}),
     "validation_failed": frozenset({"discussing"}),
     "adopted": frozenset({"rolled_back"}),
     "rolled_back": frozenset(),
@@ -171,6 +175,12 @@ class ImprovementSnapshot:
                 lines.append("  Worker 결과만 있으며 독립 검증 전이라 채택할 수 없어.")
             elif item.status == "ready_to_adopt":
                 lines.append("  독립 검증은 통과했지만 천우의 별도 채택 승인 전이야.")
+            elif item.status == "adoption_approved":
+                lines.append(
+                    "  채택 승인은 받았지만 source 적용과 Capability 등록 완료 전이야."
+                )
+            elif item.status == "adoption_failed":
+                lines.append("  승인된 채택 적용에 실패해 능력으로 등록하지 않았어.")
             elif item.status == "validation_failed":
                 lines.append("  독립 검증에 실패해 채택할 수 없고 재논의가 필요해.")
             elif item.status == "adopted":
@@ -422,7 +432,7 @@ class SqliteImprovementLedger:
             "summary": _required(summary, "worker result summary"),
             "evidence": _evidence_items(evidence),
             "artifact_id": _required(artifact_id, "worker artifact id"),
-            "artifact_hash": _required(artifact_hash, "worker artifact hash"),
+            "artifact_hash": _sha256_digest(artifact_hash, "worker artifact hash"),
         }
         return self._record_and_transition(
             improvement_id,
@@ -486,12 +496,16 @@ class SqliteImprovementLedger:
         proposal_version: int,
         proposal_hash: str,
         validation_report_hash: str,
+        change_proposal_id: str,
+        patch_sha256: str,
+        project_baseline_sha256: str,
+        capability_spec_sha256: str,
         decided_by: str,
         evidence: str,
     ) -> ImprovementItem:
         decided_by = _required(decided_by, "adoption approver")
         evidence = _stable_evidence(evidence, "adoption approval evidence")
-        validation_report_hash = _required(
+        validation_report_hash = _sha256_digest(
             validation_report_hash, "validation report hash"
         )
         report = self.latest_cycle_record(improvement_id, "validation_report")
@@ -501,17 +515,111 @@ class SqliteImprovementLedger:
             )
         if report.payload.get("passed") is not True:
             raise ImprovementLedgerError("a failed validation cannot be adopted")
+        worker = self.latest_cycle_record(improvement_id, "worker_result")
+        if worker is None or report.payload.get("worker_result_hash") != worker.record_hash:
+            raise ImprovementLedgerError(
+                "adoption approval requires the validation report's Worker result"
+            )
+        change_proposal_id = _required(change_proposal_id, "change proposal id")
+        patch_sha256 = _sha256_digest(patch_sha256, "patch hash")
+        if worker.payload.get("artifact_id") != change_proposal_id:
+            raise ImprovementLedgerError(
+                "adoption approval change proposal differs from the Worker artifact"
+            )
+        if worker.payload.get("artifact_hash") != patch_sha256:
+            raise ImprovementLedgerError(
+                "adoption approval patch differs from the Worker artifact"
+            )
         return self._decision_record_and_transition(
             improvement_id,
             expected_status="ready_to_adopt",
-            to_status="adopted",
+            to_status="adoption_approved",
             proposal_version=proposal_version,
             proposal_hash=proposal_hash,
             kind="adoption_approval",
             decided_by=decided_by,
             evidence=evidence,
-            payload={"validation_report_hash": validation_report_hash},
+            payload={
+                "validation_report_hash": validation_report_hash,
+                "worker_result_hash": worker.record_hash,
+                "change_proposal_id": change_proposal_id,
+                "patch_sha256": patch_sha256,
+                "project_baseline_sha256": _sha256_digest(
+                    project_baseline_sha256, "project baseline hash"
+                ),
+                "capability_spec_sha256": _sha256_digest(
+                    capability_spec_sha256, "capability specification hash"
+                ),
+            },
             reason="explicit adoption approval",
+        )
+
+    def complete_adoption(
+        self,
+        improvement_id: str,
+        *,
+        proposal_version: int,
+        proposal_hash: str,
+        adoption_approval_hash: str,
+        source_reference: str,
+        capability_reference: str,
+    ) -> ImprovementItem:
+        approval = self.latest_cycle_record(improvement_id, "adoption_approval")
+        if approval is None or approval.record_hash != _sha256_digest(
+            adoption_approval_hash, "adoption approval hash"
+        ):
+            raise ImprovementLedgerError(
+                "adoption completion must target the persisted approval"
+            )
+        return self._record_and_transition(
+            improvement_id,
+            expected_status="adoption_approved",
+            to_status="adopted",
+            proposal_version=proposal_version,
+            proposal_hash=proposal_hash,
+            kind="adoption_completion",
+            payload={
+                "adoption_approval_hash": adoption_approval_hash,
+                "source_reference": _stable_evidence(
+                    source_reference, "source adoption evidence"
+                ),
+                "capability_reference": _stable_evidence(
+                    capability_reference, "capability adoption evidence"
+                ),
+            },
+            reason="source applied and capability became available",
+        )
+
+    def fail_adoption(
+        self,
+        improvement_id: str,
+        *,
+        proposal_version: int,
+        proposal_hash: str,
+        adoption_approval_hash: str,
+        reason: str,
+        evidence: tuple[str, ...],
+    ) -> ImprovementItem:
+        approval = self.latest_cycle_record(improvement_id, "adoption_approval")
+        if approval is None or approval.record_hash != _sha256_digest(
+            adoption_approval_hash, "adoption approval hash"
+        ):
+            raise ImprovementLedgerError(
+                "adoption failure must target the persisted approval"
+            )
+        return self._record_and_transition(
+            improvement_id,
+            expected_status="adoption_approved",
+            to_status="adoption_failed",
+            proposal_version=proposal_version,
+            proposal_hash=proposal_hash,
+            kind="adoption_failure",
+            payload={
+                "adoption_approval_hash": adoption_approval_hash,
+                "reason": _required(reason, "adoption failure reason"),
+                "evidence": _evidence_items(evidence),
+            },
+            reason="approved adoption failed before capability activation",
         )
 
     def rollback_adoption(
@@ -523,9 +631,9 @@ class SqliteImprovementLedger:
         reason: str,
         evidence: tuple[str, ...],
     ) -> ImprovementItem:
-        adoption = self.latest_cycle_record(improvement_id, "adoption_approval")
+        adoption = self.latest_cycle_record(improvement_id, "adoption_completion")
         if adoption is None:
-            raise ImprovementLedgerError("rollback requires a persisted adoption")
+            raise ImprovementLedgerError("rollback requires a completed adoption")
         return self._record_and_transition(
             improvement_id,
             expected_status="adopted",
@@ -574,9 +682,13 @@ class SqliteImprovementLedger:
         try:
             with self._connect() as connection:
                 row = self._item_row(connection, improvement_id)
-                if row["status"] not in {"proposed", "validation_failed"}:
+                if row["status"] not in {
+                    "proposed",
+                    "validation_failed",
+                    "adoption_failed",
+                }:
                     raise ImprovementLedgerError(
-                        "revision requires a proposed or failed validation"
+                        "revision requires a proposed or failed adoption cycle"
                     )
                 proposal = self._proposal_row(
                     connection, improvement_id, proposal_version
@@ -1174,6 +1286,15 @@ def _required(value: str, field: str) -> str:
     normalized = value.strip()
     if not normalized:
         raise ImprovementLedgerError(f"{field} is required")
+    return normalized
+
+
+def _sha256_digest(value: str, field: str) -> str:
+    normalized = _required(value, field)
+    if len(normalized) != 64 or any(
+        character not in "0123456789abcdef" for character in normalized
+    ):
+        raise ImprovementLedgerError(f"{field} must be a SHA-256 digest")
     return normalized
 
 
