@@ -601,11 +601,12 @@ Task 001과 초기 Milestone 기반은 완료되었다. 기존 저장소를 다�
 CapabilityRegistry`, #120 `persistent conversational ImprovementLedger`와 #118 deferred queue
 fairness의 구현·운영 검증을 완료했다. #118은 24시간 관찰 트랙에 남고 결과 품질 gate는 실패
 상태다. #121 Fake Worker lifecycle, #122 isolated lifecycle bridge와 #123 project baseline·source
-adoption crash recovery의 Shadow 범위를 완료했다. 현재 단일 active scope는 Issue #124
-`exact lifecycle-to-source capability cycle`이다. 한 번의 exact 채택 승인을 source 적용,
-Capability Registry 등록과 최종 `adopted` 완료로 연결하고 rollback까지 임시 synthetic
-project에서 증명한다. 실제 Worker, 운영 Winter source, 사용자 route, 계정 권한, 외부 write와
-TurnUnderstanding 자동 등록은 금지한다.
+adoption crash recovery와 #124 exact lifecycle-to-source capability cycle의 Shadow 범위를
+완료했다. 현재 단일 active scope는 Issue #125 `sandbox adoption verifier and adversarial
+suite`다. 기존 bubblewrap 독립 검증 경계를 source-adoption verifier에 재사용하고 read-only
+source, no-network/no-HOME/credential, fixed argv와 timeout을 hostile fixture에서 증명한다.
+실제 Worker, 운영 Winter source, 사용자 route, 계정 권한, 외부 write와 TurnUnderstanding
+자동 등록은 금지한다.
 아래 Work Orchestration 계약과 실패 기준선은 그대로 보존한다.
 
 1. 현재 혼합 worktree의 사용자·Claude·Codex 변경을 보존한다.
