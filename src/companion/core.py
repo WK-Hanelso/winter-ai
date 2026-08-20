@@ -35,6 +35,7 @@ from companion.open_loops import (
     open_loop_context,
 )
 from companion.outcome import OutcomeMemoryClaim
+from companion.owned_work import ReadOnlyProjectCanaryPolicy
 from companion.ports import (
     BeliefRetriever,
     ChatModel,
@@ -42,6 +43,7 @@ from companion.ports import (
     ConversationRepository,
     MemoryCandidateRepository,
     OutcomeRepository,
+    OwnedWorkExecutor,
     ReadOnlyWorker,
     TurnUnderstandingRepository,
     WinterEventRepository,
@@ -52,6 +54,7 @@ from companion.speech_segments import split_sentences
 from companion.turn_understanding import TurnInterpretationRequest
 from companion.verbal_style import VerbalStylePlanner
 from companion.voice_profile import ProsodyPlanner
+from companion.work_orchestration import WorkOrchestrationError, WorkRequest
 from companion.worker import (
     ExplicitCodexRoutingPolicy,
     ReadOnlyWorkerRequest,
@@ -87,6 +90,7 @@ class _Turn:
     maintenance_route: MaintenanceRoute
     experience_id: str
     worker_request: ReadOnlyWorkerRequest | None
+    owned_work_request: WorkRequest | None
 
 
 class CompanionCore:
@@ -118,6 +122,8 @@ class CompanionCore:
         day_reflection_retriever: ActiveDayReflectionRetriever | None = None,
         read_only_worker: ReadOnlyWorker | None = None,
         worker_routing_policy: ExplicitCodexRoutingPolicy | None = None,
+        owned_work_executor: OwnedWorkExecutor | None = None,
+        owned_work_routing_policy: ReadOnlyProjectCanaryPolicy | None = None,
         response_claim_gate: ResponseClaimGate | None = None,
         self_model_provider: SelfModelProvider | None = None,
         improvement_snapshot_provider: ImprovementSnapshotProvider | None = None,
@@ -154,6 +160,10 @@ class CompanionCore:
         self._worker_routing_policy = (
             worker_routing_policy or ExplicitCodexRoutingPolicy()
         )
+        self._owned_work_executor = owned_work_executor
+        self._owned_work_routing_policy = (
+            owned_work_routing_policy or ReadOnlyProjectCanaryPolicy()
+        )
         self._response_claim_gate = response_claim_gate or ResponseClaimGate()
         self._self_model_provider = self_model_provider
         self._improvement_snapshot_provider = improvement_snapshot_provider
@@ -162,6 +172,8 @@ class CompanionCore:
         turn = self._prepare(text)
         if turn.worker_request is not None:
             return self._respond_with_worker(turn)
+        if turn.owned_work_request is not None:
+            return self._respond_with_owned_work(turn)
         if turn.dialogue_plan.behavior == "acknowledge_memory":
             return self._finish(turn, "")
         result = self._chat_model.generate(turn.request)
@@ -190,6 +202,14 @@ class CompanionCore:
             if on_status is not None:
                 on_status("코덱스로 확인하고 있어.")
             response = self._respond_with_worker(turn)
+            for sentence in split_sentences(response.text):
+                on_sentence(sentence)
+            return response
+        if turn.owned_work_request is not None:
+            on_sentence("잠깐만, 내가 현재 코드와 기록을 확인해볼게.")
+            if on_status is not None:
+                on_status("내가 코드와 기록을 확인하고 있어.")
+            response = self._respond_with_owned_work(turn)
             for sentence in split_sentences(response.text):
                 on_sentence(sentence)
             return response
@@ -244,6 +264,39 @@ class CompanionCore:
                 worker_error=True,
             )
         answer = f"코덱스로 확인했어. {result.answer.strip()}"
+        if result.limitations:
+            answer += " 다만 " + " ".join(result.limitations)
+        return self._finish(
+            turn,
+            answer,
+            preserve_full=True,
+            worker_result=result,
+        )
+
+    def _respond_with_owned_work(self, turn: _Turn) -> CompanionResponse:
+        request = turn.owned_work_request
+        if request is None:
+            raise RuntimeError("owned work response requires a routed request")
+        if self._owned_work_executor is None:
+            return self._finish(
+                turn,
+                "지금은 코드 확인 경로가 연결되어 있지 않아. 확인한 척하지 않을게.",
+                preserve_full=True,
+                worker_name="winter-owned-work",
+                worker_error=True,
+            )
+        try:
+            result = self._owned_work_executor.execute(request)
+        except (WorkerUnavailableError, WorkOrchestrationError):
+            return self._finish(
+                turn,
+                "요청을 안전하게 정리하거나 코드 근거를 확인하지 못했어. "
+                "확인한 척하지 않을게.",
+                preserve_full=True,
+                worker_name="winter-owned-work",
+                worker_error=True,
+            )
+        answer = result.answer.strip()
         if result.limitations:
             answer += " 다만 " + " ".join(result.limitations)
         return self._finish(
@@ -484,6 +537,13 @@ class CompanionCore:
             ConversationMessage("system", final_instruction)
         )
         messages = tuple(system_messages) + messages
+        explicit_worker_request = self._worker_routing_policy.route(text)
+        owned_work_request = (
+            self._owned_work_routing_policy.route(text)
+            if explicit_worker_request is None
+            and self._owned_work_executor is not None
+            else None
+        )
         return _Turn(
             request=ChatRequest(
                 prompt=text,
@@ -515,7 +575,8 @@ class CompanionCore:
             shadow_turn_id=shadow_turn_id,
             maintenance_route=maintenance_route,
             experience_id=str(uuid4()),
-            worker_request=self._worker_routing_policy.route(text),
+            worker_request=explicit_worker_request,
+            owned_work_request=owned_work_request,
         )
 
     def _finish(

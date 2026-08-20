@@ -67,6 +67,12 @@ class EvidenceWorker(Protocol):
     def execute(self, packet: WorkerTaskPacket) -> GatewayWorkerResult: ...
 
 
+class OwnedWorkExecutor(Protocol):
+    """A bounded Winter-owned task that returns a reviewed user-facing result."""
+
+    def execute(self, request: WorkRequest) -> ReadOnlyWorkerResult: ...
+
+
 class WinterExecutive(Protocol):
     """The single Core Model authority for work intent and final judgment."""
 

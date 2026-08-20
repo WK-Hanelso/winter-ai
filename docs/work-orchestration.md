@@ -215,3 +215,23 @@ llama.cpp에는 Qwen3.5 aarch64 Q4 crash 보고와 hybrid/recurrent server conte
 6. Qwen과 Gemma의 의미 실패가 확장 장면에서 반복됐다. 모델 label과 별도의 typed
    project gateway와 Codex provider adapter를 Shadow 구현했다. synthetic live 1건 뒤에도
    activation하지 않으며 격리 공격 suite와 다음 후보를 같은 semantic-v2로 비교한다.
+
+## Issue #126 실제 작업 canary
+
+기반을 더 확장하기 전에 Worker 이름 없는 실제 repository 지연 진단 한 건을 개발용 flag로
+연결했다. deterministic 정책은 일반 대화, write, private context를 제외하고
+`project.inspect` / `project` 권한만 부여한다. 같은 Local Core는 권한을 다시 결정하지 않고
+목적·원하는 결과·최대 3개 완료 조건만 정리한다. typed Codex Worker 뒤에는 같은 Core가
+assessment, 근거 ID, unresolved와 최종 문장을 만든다. Worker 전후 project baseline이
+달라지면 답변하지 않으며 자동 retry도 하지 않는다.
+
+실제 세 번 중 첫 실행은 evidence ID 연결 실패, 두 번째는 review JSON truncation으로
+fail-closed했다. 세 번째는 98.77초에 완주했지만, 근거가 확인한 “음성 입출력 병목”을 넘어
+TTS warm pool·streaming·browser buffering을 동시에 추천했다. 보고서 한계는 이 구간들을
+분리할 수 없다고 명시했으므로 사람 품질 gate에서 실패했다.
+
+이 결과는 실행 경로보다 **겨울이의 최종 판단 grounding**이 현재 병목임을 보여 준다.
+기본 CLI/Web와 service에는 flag를 켜지 않는다. 다음에는 prompt 예외를 추가하지 않고,
+Winter가 evidence-backed Worker claim 중 핵심 판단과 action을 선택하게 한 뒤 코드가 그
+선택 밖의 새 action을 차단하는 계약과 새 Core/runtime 후보를 작은 동일 canary로 비교한다.
+자세한 실행 결과는 [ADR-0029](adr/0029-winter-owned-real-work-canary.md)에 남긴다.

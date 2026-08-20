@@ -25,10 +25,11 @@ Issue #118의 deferred row queue starvation은 운영에서 다음 row 진행까
 implementation Shadow 연결`과 #123 `project baseline·post-apply verification·process crash
 recovery`와 #124 `exact lifecycle-to-source capability cycle`도 완료했다. 현재 단일 active
 scope는 Issue #126 `Winter-owned real repository diagnosis canary`다. #125의 공용
-bubblewrap 격리와 hostile suite는 완료했다. 이제 새 기반을 더 만들지 않고 천우의 평범한
-repository 진단 요청 한 건을 Local Core의 제한된 목적 정리, typed read-only Worker와
-근거 기반 최종 판단으로 연결해 실제 사용 가치를 확인한다. 첫 canary가 유용하지 않으면
-prompt 예외나 orchestration 코드를 누적하지 않고 실패로 기록한다.
+bubblewrap 격리와 hostile suite는 완료했다. #126은 천우의 평범한 repository 진단 요청 한
+건을 Local Core의 제한된 목적 정리, typed read-only Worker와 같은 Core의 최종 판단으로
+98.77초에 연결했다. 기술 경로와 source 불변은 통과했지만 최종 답변이 근거 없는 개선을
+여러 개 섞어 사용자 가치 gate는 실패했다. 운영에는 켜지 않고 prompt 예외나 orchestration
+기능을 더 누적하지 않는다.
 
 ## Current state
 
@@ -58,7 +59,7 @@ Winter V1의 전체 제품 목표는 [Winter V1 Product Goal](winter-v1-goal.md)
 | 7 | 격리 worktree·scope/test/adoption gate | **Issue #123 범위 구현** — privacy-safe project baseline drift 차단, 필수 post-apply command verifier, `applying`/`rolling_back`의 all-before·all-after·mixed 복구와 unknown bytes 무덮어쓰기를 임시 fixture에서 검증. 운영 source·대화 route·Capability 연결 금지 |
 | 7a | exact lifecycle-to-source capability cycle | **Issue #124 범위 구현** — 채택 승인과 완료를 분리하고 exact Improvement/validation/patch/baseline/capability identity로 source 적용, Registry available, 최종 adopted와 rollback을 하나의 synthetic cycle로 검증. 운영 source·사용자 route 금지 |
 | 7b | sandboxed adoption verifier + adversarial suite | **Issue #125 로컬 범위 구현·검증 완료** — 공용 bubblewrap 경계에서 read-only source, private `/tmp`, no-network/no-HOME/credential, fixed argv, timeout과 no-host-fallback을 검증. 실제 hostile probe에서 source/host write·symlink secret·network를 차단. 운영 source·사용자 route 금지 |
-| 7c | Winter-owned real repository diagnosis canary | **Issue #126 active** — Worker 이름 없는 명확한 진단 요청 한 건만 Local Core의 단순 목적 정리→typed read-only Worker→근거 검수→겨울이 최종 설명으로 연결. 새 기반·write·일반 자동 위임 금지 |
+| 7c | Winter-owned real repository diagnosis canary | **Issue #126 Shadow 경로 완주·품질 실패** — 3회 중 앞의 2회는 invalid evidence/truncated review로 fail-closed, 세 번째는 98.77초 완주. 최종 답변의 추천이 근거를 넘어 운영 activation 금지 |
 | 8 | 승인된 Worker Adapter 하나 연결 | **read-only 0.1 완료** — explicit Codex route, sanitized text bundle, ephemeral/read-only 실행, structured provenance와 실제 1회 성공. write/adoption이 아니라 분석 capability만 제한 운영 |
 | 8a | Winter-owned Work Orchestration | **typed provider Shadow 구현, activation 실패** — Qwen 46/66, Gemma 40/66. 빈 agent cwd, shell/web 차단, `env -i` MCP와 목록·검색·읽기, snapshot/evidence/audit offline 17개 + gpt-5.4 synthetic live 1/1. 공격 suite·실제 20 task 필요 |
 | 9 | 실제 capability 전체 cycle | 제안→승인→구현→검증→채택→재평가→rollback 완주 |
@@ -113,8 +114,10 @@ Identity·관계 상태·최종 발화는 겨울이 Core가 소유한다.
 16. Qwen3-30B-A3B semantic-v2·대화 비교 — **46/66·5.5초지만 ambiguity 0/3, 대화 grounding 사람 검토 실패**
 17. Gemma 3 27B semantic-v2 — **44/66·27.0초, ambiguity 0/3·Core chat role 호환 실패**
 18. 같은 12~30B drop-in 반복을 중단하고 다음 Core/runtime 전략 결정
-19. semantic·권한 gate 통과 후 Codex V0 앞뒤에 Shadow로 연결하고 read-only 20 task 검토
-20. 유용성·latency gate 뒤에만 겨울이의 운영 답변으로 승격
+19. #126 실제 canary — **기술 경로 완주, 최종 판단 grounding 실패**
+20. evidence-backed claim 선택 계약과 새 Core/runtime 중 더 작은 경로를 먼저 비교
+21. semantic·권한·최종 판단 gate 통과 후 read-only 20 task 검토
+22. 유용성·latency gate 뒤에만 겨울이의 운영 답변으로 승격
 
 세부 계약은 [Work Orchestration](work-orchestration.md), 결정 이유는
 [ADR-0015](adr/0015-single-core-work-orchestration.md)를 따른다.

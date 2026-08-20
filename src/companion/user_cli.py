@@ -29,6 +29,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=_enabled("WINTER_CODEX_WORKER"),
     )
     parser.add_argument(
+        "--winter-work-canary",
+        action="store_true",
+        default=_enabled("WINTER_WORK_CANARY"),
+    )
+    parser.add_argument(
         "--codex-executable",
         default=os.environ.get("WINTER_CODEX_BIN", "codex"),
     )

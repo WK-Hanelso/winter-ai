@@ -62,7 +62,7 @@ V1의 목표 자율성은 **Level 3 — 천우가 승인한 변경만 Worker가 
 | Winter Belief | manual 운영 / autonomous Shadow | 근거·수정 이력, 저위험 자동 activation 계약 | LLM 후보와 activator 운영 연결 전 |
 | Voice Identity | 제한 운영 | Chatterbox S3Gen Reference 직접 합성 | 사람으로 착각할 자연스러움에 미달 |
 | Worker | read-only 제한 운영 + write Shadow | 명시적으로 부른 Codex 분석. 별도 합성 경로에서는 승인 파일만 격리 수정하고, source 채택 뒤 검증도 read-only/no-network/no-HOME bubblewrap에서 실행해 exact 적용·Capability 등록·rollback을 보존 | 운영 write Worker·대화 route·실제 capability 평가는 미연결. CPU·memory limit과 concurrent writer lock 없음 |
-| Winter Work Orchestration | Shadow, semantic activation 실패 | V2.1 계약, Qwen 14B·30B-A3B와 Gemma 12B·27B semantic-v2, typed Codex provider. shell/web 없는 MCP로 목록·검색·텍스트 읽기만 허용하고 stable evidence/audit 검증 | 네 후보 모두 ambiguity 0/3·review assessment 3/6. Qwen 30B 46/66, Gemma 27B 44/66·27초로 크기 확대도 실패. synthetic live 1건뿐이며 기존 Codex V0와 현재 답변에는 미연결 |
+| Winter Work Orchestration | Shadow, 실제 canary 품질 실패 | V2.1 계약과 typed Codex provider에 더해 Worker 이름 없는 repository 진단 한 건을 Local Core→typed read-only Worker→같은 Core 검수로 98.77초에 완주. source 불변·근거·한계·fail-closed 유지 | 최종 답변이 근거 없는 TTS warm pool·streaming·browser 개선을 섞어 한 가지 판단에 실패. 기본 CLI/Web와 운영 service에는 미연결 |
 
 “구현됨”과 “완성됨”은 다르다. 단일 테스트나 한 번의 성공으로 성숙도를 올리지 않으며,
 실패한 평가도 [Maturity Ledger](docs/v1-maturity-ledger.md)에 기준선으로 남긴다.
@@ -127,6 +127,14 @@ Worker 이름을 고르고 보고서를 그대로 중계하는 주체는 천우�
 권한은 계속 project read-only이며, 모델별 held-out 평가를 통과하기 전에는 실제 요청을 이
 경로로 자동 전환하지 않는다. 상세 계약과 gate는
 [Winter-owned Work Orchestration](docs/work-orchestration.md)에 있다.
+
+Issue #126에서는 이 경로를 개발용 feature flag 아래 실제 repository 진단 한 건에 연결했다.
+겨울이가 먼저 “내가 현재 코드와 기록을 확인해볼게”라고 말하고, 사용자 원문 대신 제한된
+목적을 typed Worker에 보낸 뒤 같은 Local Core가 최종 답변을 만들었다. 세 번째 실행은
+98.77초에 기술적으로 완주했지만, 근거로 분리하지 못한 TTS·streaming·browser 개선을 한꺼번에
+추천해 사람 품질 gate에 실패했다. 따라서 `--winter-work-canary`는 Shadow 검증 전용이며
+정상 사용 명령이나 systemd에는 켜지 않는다. 세 번의 결과와 중단 기준은
+[ADR-0029](docs/adr/0029-winter-owned-real-work-canary.md)에 있다.
 
 새 Orchestration용 typed gateway는 arbitrary shell을 주지 않고 `list_files`,
 `search_text`, `read_text`만 제공하며 network/write와 project 밖 경로를 구조적으로
@@ -614,8 +622,8 @@ docker compose run --rm dev mypy src
 7. project 전체 stale 판정·process crash 복구·실제 Winter 검증 profile — **#123 범위 구현**
 8. exact 채택 승인→source 적용→Capability 등록→rollback synthetic cycle — **#124 범위 구현**
 9. adoption verifier bubblewrap 격리와 공격 suite — **#125 완료**
-10. Worker 이름 없는 실제 repository 진단 한 건 — **#126 진행 중**, 새 기반 확장 없이 사용자 체감 canary
-11. 새 Core/runtime가 기존 ambiguity·grounding gate를 해결한다는 근거 확보
+10. Worker 이름 없는 실제 repository 진단 한 건 — **#126 Shadow 경로 완주, 사용자 가치 gate 실패**
+11. Winter 최종 판단을 evidence-backed claim 선택으로 제한하는 계약과 새 Core/runtime 중 더 작은 검증 경로 결정
 12. semantic·권한 gate 합격 후 read-only 실제 작업 20개를 사람 평가
 13. 검증된 WinterDecision을 기존 Codex read-only route 앞뒤에 Shadow로 연결
 14. 실제 작은 capability의 제안→승인→구현→검증→채택→재평가→rollback 완주

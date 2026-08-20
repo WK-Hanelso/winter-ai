@@ -89,6 +89,7 @@ def test_codex_worker_separates_control_plane_from_typed_agent_tools(
         command = list(args[0])  # type: ignore[arg-type]
         captured["command"] = command
         captured["env"] = kwargs["env"]
+        captured["prompt"] = kwargs["input"]
         isolated_home = Path(kwargs["env"]["CODEX_HOME"])  # type: ignore[index]
         assert isolated_home != codex_home
         assert (isolated_home / "auth.json").read_text() == '{"private":"credential"}'
@@ -125,6 +126,7 @@ def test_codex_worker_separates_control_plane_from_typed_agent_tools(
         "read_text",
     ]
     assert _config(command, "mcp_servers.winter_project.command") == "/usr/bin/env"
+    assert "every cited ID must also appear exactly once" in captured["prompt"]
     mcp_arguments = _config(command, "mcp_servers.winter_project.args")
     assert mcp_arguments[0] == "-i"
     assert not any(

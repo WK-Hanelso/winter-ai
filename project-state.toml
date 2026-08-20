@@ -207,6 +207,8 @@ evidence = [
   "docs/adr/0026-project-baseline-and-adoption-crash-recovery.md",
   "docs/adr/0027-exact-lifecycle-source-capability-cycle.md",
   "docs/adr/0028-sandboxed-adoption-verification.md",
+  "docs/adr/0029-winter-owned-real-work-canary.md",
+  "src/companion/owned_work.py",
   "src/companion/capability_adoption.py",
   "src/companion/project_baseline.py",
   "src/companion/verification_sandbox.py",
@@ -217,6 +219,7 @@ evidence = [
   "tests/unit/test_capability_adoption.py",
   "tests/unit/test_project_baseline.py",
   "tests/unit/test_verification_sandbox.py",
+  "tests/unit/test_owned_work.py",
 ]
 dependencies = ["self_model", "capability_registry", "improvement_ledger"]
 sync_status = true

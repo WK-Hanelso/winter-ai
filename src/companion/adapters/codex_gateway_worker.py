@@ -308,8 +308,10 @@ def _worker_prompt(packet: WorkerTaskPacket) -> str:
         "read_text. Use them; do not infer file contents without issued evidence. "
         "Each call_id must be unique. Never request network, shell, account, identity, "
         "memory, conversation, credential, Human Reference or audio access. Return "
-        "only the required EvidenceReport JSON. Every claim must cite evidence IDs "
-        "issued by this session's tools. Answer content in concise Korean.\n\n"
+        "only the required EvidenceReport JSON. Use at most 12 project tool calls. "
+        "Every claim and check must cite only evidence IDs issued by this session's "
+        "tools, and every cited ID must also appear exactly once in report.evidence. "
+        "Answer content in concise Korean.\n\n"
         "WorkerTaskPacket:\n"
         + json.dumps(packet.to_dict(), ensure_ascii=False, indent=2)
     )

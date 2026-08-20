@@ -42,6 +42,7 @@ import sys
 import threading
 import time
 
+from companion.adapters.codex_gateway_worker import CodexTypedProjectWorker
 from companion.adapters.codex_worker import CodexReadOnlyWorker
 from companion.adapters.http_speech import STAGE_ONE_URLS, HttpSpeechModel
 from companion.adapters.llama_cpp import LlamaCppHttpChatModel
@@ -55,6 +56,9 @@ from companion.adapters.sqlite_repository import (
 )
 from companion.adapters.whisper_cpp import DEFAULT_SERVER_URL as DEFAULT_STT_URL
 from companion.adapters.whisper_cpp import WhisperCppSpeechToText
+from companion.adapters.work_orchestration import (
+    BoundedProjectInspectionExecutive,
+)
 from companion.beliefs import (
     ActiveBeliefRetriever,
     BeliefRepositoryError,
@@ -91,6 +95,7 @@ from companion.open_loops import (
     SqliteOpenLoopRepository,
 )
 from companion.outcome import OutcomeRepositoryError, SqliteOutcomeRepository
+from companion.owned_work import WinterOwnedProjectCanary
 from companion.ports import SpeechToText
 from companion.turn_understanding import (
     SqliteTurnUnderstandingRepository,
@@ -470,6 +475,12 @@ def build_parser() -> argparse.ArgumentParser:
         in {"1", "true", "yes", "on"},
     )
     parser.add_argument(
+        "--winter-work-canary",
+        action="store_true",
+        default=os.environ.get("WINTER_WORK_CANARY", "").strip().lower()
+        in {"1", "true", "yes", "on"},
+    )
+    parser.add_argument(
         "--codex-executable",
         default=os.environ.get("WINTER_CODEX_BIN", "codex"),
     )
@@ -605,8 +616,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     except VoiceLatencyRepositoryError as error:
         print(f"Voice 성능 기록을 열지 못했습니다: {error}", file=sys.stderr)
         return 1
+    chat_model = LlamaCppHttpChatModel(base_url=arguments.model_url)
+    owned_work_executor = (
+        WinterOwnedProjectCanary(
+            Path.cwd(),
+            BoundedProjectInspectionExecutive(chat_model),
+            CodexTypedProjectWorker(
+                Path.cwd(),
+                executable=arguments.codex_executable,
+                model=arguments.codex_model,
+            ),
+        )
+        if arguments.winter_work_canary
+        else None
+    )
     core = CompanionCore(
-        LlamaCppHttpChatModel(base_url=arguments.model_url),
+        chat_model,
         conversation_repository,
         ConversationContextBuilder(max_messages=12, max_characters=4000),
         identity=identity,
@@ -633,6 +658,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if arguments.codex_worker
             else None
         ),
+        owned_work_executor=owned_work_executor,
     )
     if arguments.stt_backend == "sensevoice":
         stt: SpeechToText = SenseVoiceSpeechToText(

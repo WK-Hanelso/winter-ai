@@ -14,6 +14,7 @@ from companion.adapters.belief_reflection_interpreter import (
     StructuredChatBeliefProposalInterpreter,
     StructuredChatBeliefSafetyReviewer,
 )
+from companion.adapters.codex_gateway_worker import CodexTypedProjectWorker
 from companion.adapters.codex_worker import CodexReadOnlyWorker
 from companion.adapters.day_reflection_interpreter import (
     StructuredChatDayReflectionInterpreter,
@@ -33,6 +34,9 @@ from companion.adapters.sqlite_repository import (
     SqliteConversationRepository,
 )
 from companion.adapters.turn_interpreter import StructuredChatTurnInterpreter
+from companion.adapters.work_orchestration import (
+    BoundedProjectInspectionExecutive,
+)
 from companion.belief_reflection import (
     BeliefEvidenceWindowBuilder,
     BeliefReflectionError,
@@ -84,6 +88,7 @@ from companion.outcome import (
     SqliteOutcomeRepository,
 )
 from companion.outcome_review import build_audit, print_audit, run_blind_review
+from companion.owned_work import WinterOwnedProjectCanary
 from companion.ports import ChatModel, ConversationRepository
 from companion.reflection import (
     ConversationHistoryBackfill,
@@ -121,6 +126,7 @@ from companion.winter_events import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--codex-worker", action="store_true")
+    parser.add_argument("--winter-work-canary", action="store_true")
     parser.add_argument("--codex-executable", default="codex")
     parser.add_argument("--codex-model", default="gpt-5.4")
     parser.add_argument(
@@ -594,8 +600,22 @@ def run(
             return 1
         print(render_lived_continuity(summary), file=stdout)
         return 0
+    chat_model = build_chat_model(args)
+    owned_work_executor = (
+        WinterOwnedProjectCanary(
+            Path.cwd(),
+            BoundedProjectInspectionExecutive(chat_model),
+            CodexTypedProjectWorker(
+                Path.cwd(),
+                executable=getattr(args, "codex_executable", "codex"),
+                model=getattr(args, "codex_model", "gpt-5.4"),
+            ),
+        )
+        if getattr(args, "winter_work_canary", False)
+        else None
+    )
     core = CompanionCore(
-        build_chat_model(args),
+        chat_model,
         repository,
         ConversationContextBuilder(
             max_messages=getattr(args, "context_max_messages", 12),
@@ -625,9 +645,15 @@ def run(
             if getattr(args, "codex_worker", False)
             else None
         ),
+        owned_work_executor=owned_work_executor,
     )
     if args.prompt is not None:
-        return _run_turn(core, args.prompt, stdout)
+        return _run_turn(
+            core,
+            args.prompt,
+            stdout,
+            streaming=getattr(args, "winter_work_canary", False),
+        )
 
     print("winter-ai CLI. 종료하려면 /exit 를 입력하세요.", file=stdout)
     while True:
@@ -640,17 +666,35 @@ def run(
             return 0
         if not text:
             continue
-        if _run_turn(core, text, stdout):
+        if _run_turn(
+            core,
+            text,
+            stdout,
+            streaming=getattr(args, "winter_work_canary", False),
+        ):
             return 1
 
 
-def _run_turn(core: CompanionCore, text: str, stdout: TextIO) -> int:
+def _run_turn(
+    core: CompanionCore,
+    text: str,
+    stdout: TextIO,
+    *,
+    streaming: bool = False,
+) -> int:
     try:
-        response = core.respond_to_text(text)
+        if streaming:
+            response = core.respond_to_text_streaming(
+                text,
+                lambda sentence: print(f"Companion> {sentence}", file=stdout),
+            )
+        else:
+            response = core.respond_to_text(text)
     except AdapterUnavailableError as error:
         print(f"Companion unavailable: {error}", file=stdout)
         return 1
-    print(f"Companion> {response.text}", file=stdout)
+    if not streaming:
+        print(f"Companion> {response.text}", file=stdout)
     for memory_id in response.memory_candidate_ids:
         print(f"Memory {memory_id} is active.", file=stdout)
     for memory_id in response.automatic_memory_ids:
