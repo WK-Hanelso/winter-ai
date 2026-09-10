@@ -498,7 +498,7 @@ def test_core_directs_distress_toward_listening_not_generic_problem_solving() ->
     assert any("해결책부터 내놓지 마" in text for text in instructions)
 
 
-def test_non_explanation_response_is_bounded_to_two_sentences() -> None:
+def test_non_explanation_response_preserves_content_beyond_style_guidance() -> None:
     class LongModel:
         def generate(self, request: ChatRequest) -> ChatResult:
             return ChatResult(text="첫 문장이야. 둘째 문장이야. 셋째 문장이야. 넷째 문장이야.")
@@ -512,11 +512,11 @@ def test_non_explanation_response_is_bounded_to_two_sentences() -> None:
         ),
     ).respond_to_text("오늘 어때?")
 
-    assert response.text == "첫 문장이야. 둘째 문장이야."
+    assert response.text == "첫 문장이야. 둘째 문장이야. 셋째 문장이야. 넷째 문장이야."
     assert repository.list_messages()[-1].content == response.text
 
 
-def test_streaming_never_hands_over_more_than_planned_sentence_limit() -> None:
+def test_streaming_preserves_content_beyond_style_guidance() -> None:
     class LongStreamingModel:
         def generate(self, request: ChatRequest) -> ChatResult:
             raise AssertionError("streaming path should not fall back")
@@ -533,8 +533,8 @@ def test_streaming_never_hands_over_more_than_planned_sentence_limit() -> None:
         ),
     ).respond_to_text_streaming("오늘 어때?", handed.append)
 
-    assert handed == ["첫 문장이야.", "둘째 문장이야."]
-    assert response.text == "첫 문장이야. 둘째 문장이야."
+    assert handed == ["첫 문장이야.", "둘째 문장이야.", "셋째 문장이야."]
+    assert response.text == "첫 문장이야. 둘째 문장이야. 셋째 문장이야."
 
 
 def test_core_repairs_a_stance_that_evades_the_choice() -> None:
@@ -597,15 +597,15 @@ def test_asking_for_an_explanation_widens_the_length_the_model_is_given() -> Non
     assert any("4문장 이내" in text for text in instructions)
 
 
-def test_streaming_hands_over_each_sentence_as_it_is_written() -> None:
-    # The point of streaming: stage 1 starts on the first sentence while the
-    # model is still writing the second.
+def test_streaming_hands_over_sentences_only_after_generation_and_review() -> None:
     class StreamingChatModel:
         def generate(self, request: ChatRequest) -> ChatResult:
             raise AssertionError("streaming path should not fall back")
 
         def generate_stream(self, request: ChatRequest):  # type: ignore[no-untyped-def]
-            yield from ("응, ", "그랬구나. ", "근데 ", "괜찮아?")
+            for piece in ("응, ", "그랬구나. ", "근데 ", "괜찮아?"):
+                assert handed == []
+                yield piece
 
     handed: list[str] = []
     core = CompanionCore(  # type: ignore[arg-type]

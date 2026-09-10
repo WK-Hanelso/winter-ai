@@ -21,8 +21,10 @@ Epic [#127](https://github.com/WK-Hanelso/winter-ai/issues/127)의 목표는 지
 완료했다. 기본값 legacy, 후보는 명시적 실험이며 Docker offline 889개·Ruff·mypy를 통과했다.
 [#132](https://github.com/WK-Hanelso/winter-ai/issues/132)는 실제 A.X 120턴 비교를 완료했지만
 품질 gate는 실패하여 legacy를 유지한다. [실패 원본](evaluations/132-text-policy/README.md)을 보존한다.
-다음 active [#133](https://github.com/WK-Hanelso/winter-ai/issues/133)는 bounded 대화 기록 조회이며
-미착수다. 이 리팩터링만으로 #132 품질 실패가 해결되지는 않는다. Voice는 보류하고 기존 데이터를 보존한다.
+사용자 승인으로 [#134](https://github.com/WK-Hanelso/winter-ai/issues/134) 응답 절단 수정을
+완료했다. 실제 원문 replay, Docker offline 919개·Ruff·mypy 통과이며 새 모델 평가는 아니다.
+다음 active #135 검사 오탐/repair는 미착수다. 이어서 정책/모델 재평가를 우선한다. #133 bounded 조회는 open/미착수
+보류다. Voice는 보류하고 기존 데이터와 #132 실패 원본을 보존한다.
 
 T0 기준 전환 → T1 모듈 추출 → T2 대화 정책 비교 → T3 검색/context → T4 기억 갱신/재시작
 → T5 Codex text 작업 경험 → T6 추가 provider/연속 사용 순서다.

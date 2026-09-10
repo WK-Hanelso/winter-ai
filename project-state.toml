@@ -1,6 +1,6 @@
 schema_version = 1
 current_phase = "text_first_foundation"
-active_issue = 133
+active_issue = 135
 active_work = ["text_first_foundation"]
 
 # These files define mission, current product target, maturity and the audit baseline.
@@ -49,6 +49,9 @@ evidence = [
   "docs/evaluations/132-text-policy/README.md",
   "docs/evaluations/132-text-policy/metrics.json",
   "docs/adr/0035-text-policy-evaluation-verdict.md",
+  "tests/unit/test_response_preservation.py",
+  "docs/evaluations/134-response-preservation.md",
+  "docs/adr/0036-preserve-reviewed-response.md",
 ]
 dependencies = ["shared_core", "persistent_memory"]
 sync_status = true

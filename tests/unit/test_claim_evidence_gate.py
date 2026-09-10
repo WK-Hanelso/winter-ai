@@ -259,7 +259,10 @@ def test_core_repair_failure_persists_only_deterministic_safe_fallback() -> None
 
     assert len(model.requests) == 2
     assert "차" not in response.text
-    assert "직접 할 수는 없어" in response.text
+    # #134 preserves the full safety fallback instead of clipping it. The
+    # unchanged final gate misclassifies its second sentence as capability;
+    # preserve that limitation for the claim/repair follow-up, not a bypass.
+    assert response.text == "그 기능을 실제로 할 수 있다는 근거가 아직 없어."
     assert conversations.list_messages()[-1].content == response.text
     assert ResponseClaimGate().violations(
         response.text,

@@ -1,12 +1,12 @@
 # Text-first Winter 구현 TODO
 
 - 작성일: 2026-09-10
-- 상태: T0/T1/T2 (#128~#132) 작업 범위 완료, T2 후보 품질 gate 실패·legacy 유지. 다음 active T3.1 #133은 미착수다.
+- 상태: #128~#132 및 #134 작업 범위 완료, T2 후보 품질 gate 실패·legacy 유지. 다음 active #135 검사 오탐/repair는 미착수, #133은 open/미착수 보류다.
 - 설계: [Text-first 모듈 설계](text-first-refactoring-design.md).
 - baseline: `0c4f557`, `feat/126-winter-owned-work-canary`.
 - T번호는 계획상의 ID다. Epic #127, T0 #128, T1.1 #129, T1.2 #130, T2.1 #131, T2.2 #132, T3.1 #133을 등록했다.
 - 기록 보존과 재사용: [기록 인계표](text-first-records-handoff.md).
-- 기존 설계의 T0~T6 순서를 유지하고, 각 단계 안에서 작은 Issue로 나눌 단위를 표시한다.
+- 사용자 승인으로 T3 전에 T2.3 응답 절단 → 검사 오탐/repair → 정책/모델 재평가를 우선한다.
 
 ## 작업 원칙
 
@@ -155,6 +155,31 @@ evidence/버전, 다음 turn 상태 반영, repair 재사용과 오류 전파를
 Docker offline 898 passed (40.69초), Ruff 통과, mypy 181 source files 통과.
 Orin 모델은 정상이지만 기본 Host 터널이 없어 임시 18082로 평가했고 종료 후 닫았다.
 서비스·개인 DB·Core 정책은 변경하지 않았다. 다음 #133은 독립적인 bounded 조회다.
+
+### T2.3 — Core 응답 보존 (#134)
+
+- [x] 문장 수 기반 초안/repair/final 절단과 stream 조기 종료를 제거한다.
+- [x] 기존 생성 지침/토큰 예산과 claim 규칙은 유지하고 전체 답변을 검사한다.
+- [x] stream 및 미지원 대체 경로 모두 최종 검사 후 callback으로 전달한다.
+- [x] #132 원문 replay로 전후 비교하고 Docker 회귀/문서/ADR을 기록한다.
+
+**#134 완료:** 실제 원문 2건을 일반/stream/미지원 stream에서 재생해 내용·서식을 보존했다.
+신규 21개 포함 Docker offline 919 passed (65.34초), Ruff/mypy(181 files) 통과.
+테스트 서식만 정리 후 21개·Ruff·mypy 재통과. 신규 서버 호출/개인 DB 변경은 없다.
+[전후 결과](evaluations/134-response-preservation.md), [ADR 0036](adr/0036-preserve-reviewed-response.md).
+
+이번 범위는 내용을 잘라내는 후처리 오류다. 기존 Director의 복합 의도 오분류와 모델 자체의
+부실한 설명, claim 오탐/누락은 별도다. replay는 새 실제 모델 품질 평가를 대신하지 않는다.
+후속 순서: #135 검사 오탐/repair → 정책/모델 재평가 → T3 재개 판단. #133은 삭제하지 않는다.
+
+### T2.4 — claim 검사와 repair 의미 보존 (#135, 미착수)
+
+- [ ] #132/#134의 실패 최소 사례와 정상/위반 대조군을 먼저 고정한다.
+- [ ] 질문·부정·인용·자기 한계와 실제 주장을 구분하는 책임을 설계한다.
+- [ ] 전체 fallback 재검사의 오탐과 repair의 질문 주체/목적 변경을 검증한다.
+- [ ] 기존 기억/능력/활동 차단을 유지하고 같은 입력의 전후 결과를 보고한다.
+
+규칙을 제거하거나 장면별 예외를 쌓지 않는다. 모델 교체/개인 DB/Voice는 범위 밖이다.
 
 ## T3 — 모든 기록을 읽지 않고 기억 찾아오기
 

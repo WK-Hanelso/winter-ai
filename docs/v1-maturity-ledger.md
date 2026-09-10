@@ -15,7 +15,9 @@
 Text-first Epic #127 / T0 #128의 기준 전환과 기록 인계를 완료했다. 새 `text_first_foundation`은 **contract**이며
 기존 20개 기능 maturity는 그대로다. T1 #129/#130 모듈 추출과 T2.1 #131 정책 선택 준비를
 완료했다. #132 실제 비교도 실행 범위는 완료했지만 품질 gate는 실패해 legacy를 유지한다.
-다음 active T3.1 #133은 미착수다. Voice 고도화와 #126 actual-phone
+#134 응답 절단 수정 범위 완료. 다음 active #135 검사 오탐/repair는 미착수이며,
+이어서 정책/모델 재평가를 우선한다.
+T3.1 #133은 open/미착수 보류다. Voice 고도화와 #126 actual-phone
 관찰은 보류하고 #126의 결과는 partial로 남긴다. operational 표시는 기존 검증 범위를 뜻하며
 이번 문서 전환으로 서비스의 오늘 상태를 재확인했다는 뜻이 아니다.
 
@@ -67,6 +69,24 @@ write Worker는 기존 품질·승인 gate를 유지한다.
   작성자에게 독립적으로 숨겨진 benchmark는 아니며 실제 LLM 결과는 아직 없다.
 - 다음/gate: #132 동일 모델 실제 A/B와 사람 검토. 실험 연결만으로 Text-first contract나
   기존 실패 gate를 승격하지 않는다. 평가 계획은 [별도 문서](text-dialogue-evaluation.md)를 따른다.
+
+### T2.3 #134 — Core 응답 보존 범위 완료
+
+- 가능 범위: 모델이 생성한 설명/목록/서식이 임의의 문장 수 때문에 잘리지 않는다.
+  전체 초안/repair/final 안전 검토 후 저장하고 stream callback도 최종 결과를 전달한다.
+- 근거: [실제 원문 전후 비교](evaluations/134-response-preservation.md),
+  [ADR 0036](adr/0036-preserve-reviewed-response.md), `tests/unit/test_response_preservation.py`.
+  실제 #132 원문 2건 × 일반/stream/미지원 대체 경로에서 전체 내용 일치.
+- 검증: 신규 21개 포함 Docker offline **919 passed (65.34초)**, Ruff 전체 통과,
+  mypy **181 source files** 통과. 이후 테스트 줄 길이만 정리하고 21개·Ruff·mypy 재통과.
+  기존 요청 6종 및 Memory/Identity/Worker/공유 인터페이스 회귀도 유지한다.
+- 한계: 신규 모델 호출/사용자 경험/실제 Voice 검증 없음. 기존 토큰 예산과 prompt 유지.
+  모델 자체의 불완전한 출력과 Director/검사 규칙은 그대로다. 더 긴 생성으로 첫 callback은
+  느려질 수 있다. 전체 body fallback을 capability로 재분류하는 기존 오탐도 노출되었다.
+- 사용자 관찰 대기: CLI의 설명 유용성·말투·출력 길이/latency. 이번 작업에 사용자 조작은
+  불필요하며, 중지된 Host 터널/운영 서비스는 복구하지 않았다.
+- gate/다음: Text-first contract와 #132 후보 승격 실패 유지. #135 검사 오탐/repair는
+  미착수이고 #133 bounded 조회는 open/보류다. 개인 DB/schema와 이전 평가 원본 불변.
 
 ### T2.2 #132 — 실제 평가 완료 / 품질 gate 실패
 

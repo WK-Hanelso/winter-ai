@@ -196,16 +196,11 @@ class CompanionCore:
         on_sentence: Callable[[str], None],
         on_status: Callable[[str], None] | None = None,
     ) -> CompanionResponse:
-        """Answer, handing each finished sentence over as it is written.
+        """Collect generation, then deliver only the reviewed final response.
 
-        The voice path cannot start on a sentence that does not exist yet, and
-        waiting for the whole answer costs two and a half to four seconds before
-        anything is said. ``on_sentence`` is called with each completed
-        sentence; the response returned at the end is the same one the
-        non-streaming path returns.
-
-        A model without a streaming path is not an error — it answers all at
-        once and every sentence is handed over then.
+        Token budgets bound generation; sentence counts are style guidance, not
+        a safe place to cut content. Callbacks wait for full-response review and
+        finalization, including when the model has no streaming implementation.
         """
         turn = self._prepare(text)
         if turn.worker_request is not None:
@@ -229,39 +224,35 @@ class CompanionCore:
                 on_sentence(sentence)
             return response
         if turn.dialogue_plan.behavior == "acknowledge_memory":
-            on_sentence(_MEMORY_SAVED_NOTICE)
-            return self._finish(turn, "")
+            response = self._finish(turn, "")
+            for sentence in split_sentences(response.text):
+                on_sentence(sentence)
+            return response
         stream = getattr(self._chat_model, "generate_stream", None)
         if stream is None:
-            answer = self._chat_model.generate(turn.request).text
-            for sentence in split_sentences(answer):
-                on_sentence(sentence)
-            return self._finish(turn, answer)
-        written: list[str] = []
-        iterator = iter(stream(turn.request))
-        try:
-            for piece in iterator:
-                written.append(piece)
-                sentences = split_sentences("".join(written))
-                # One extra sentence proves the planned answer is complete;
-                # stop the server before it writes a paragraph we will discard.
-                if len(sentences) > _sentence_limit(turn):
-                    break
-        finally:
-            close = getattr(iterator, "close", None)
-            if close is not None:
-                close()
-        answer = self._review_and_repair(turn, "".join(written))
-        for sentence in split_sentences(answer)[: _sentence_limit(turn)]:
+            draft = self._chat_model.generate(turn.request).text
+        else:
+            written: list[str] = []
+            iterator = iter(stream(turn.request))
+            try:
+                for piece in iterator:
+                    written.append(piece)
+            finally:
+                close = getattr(iterator, "close", None)
+                if close is not None:
+                    close()
+            draft = "".join(written)
+        answer = self._review_and_repair(turn, draft)
+        response = self._finish(turn, answer)
+        for sentence in split_sentences(response.text):
             on_sentence(sentence)
-        return self._finish(turn, answer)
+        return response
 
     def _respond_with_worker(self, turn: _Turn) -> CompanionResponse:
         if self._read_only_worker is None:
             return self._finish(
                 turn,
                 "지금은 Codex Worker가 연결되어 있지 않아. 로컬 답변으로 한 척하지 않을게.",
-                preserve_full=True,
                 worker_name="codex",
                 worker_error=True,
             )
@@ -274,7 +265,6 @@ class CompanionCore:
             return self._finish(
                 turn,
                 "지금은 Codex Worker를 사용할 수 없어. 로컬 답변으로 한 척하지 않을게.",
-                preserve_full=True,
                 worker_name="codex",
                 worker_error=True,
             )
@@ -284,7 +274,6 @@ class CompanionCore:
         return self._finish(
             turn,
             answer,
-            preserve_full=True,
             worker_result=result,
         )
 
@@ -299,21 +288,18 @@ class CompanionCore:
                 return self._finish(
                     turn,
                     "지금은 이미 확인 중인 일이 있어. 그게 끝나면 다시 맡아볼게.",
-                    preserve_full=True,
                     worker_name="winter-owned-work-background",
                     worker_error=True,
                 )
             return self._finish(
                 turn,
                 "응, 내가 확인해볼게. 끝나면 내가 다시 말해줄게.",
-                preserve_full=True,
                 worker_name="winter-owned-work-background",
             )
         if self._owned_work_executor is None:
             return self._finish(
                 turn,
                 "지금은 코드 확인 경로가 연결되어 있지 않아. 확인한 척하지 않을게.",
-                preserve_full=True,
                 worker_name="winter-owned-work",
                 worker_error=True,
             )
@@ -324,7 +310,6 @@ class CompanionCore:
                 turn,
                 "요청을 안전하게 정리하거나 코드 근거를 확인하지 못했어. "
                 "확인한 척하지 않을게.",
-                preserve_full=True,
                 worker_name="winter-owned-work",
                 worker_error=True,
             )
@@ -334,24 +319,23 @@ class CompanionCore:
         return self._finish(
             turn,
             answer,
-            preserve_full=True,
             worker_result=result,
         )
 
     def _review_and_repair(self, turn: _Turn, draft: str) -> str:
-        bounded = " ".join(split_sentences(draft)[: _sentence_limit(turn)])
+        draft = draft.strip()
         style_repair = self._response_reviewer.repair_instruction(
             turn.dialogue_plan.behavior,
-            bounded,
+            draft,
             focus=turn.dialogue_plan.focus,
             memory_focus=turn.memory_focus,
         )
         claim_evidence = self._claim_evidence(turn)
         claim_violations = self._response_claim_gate.violations(
-            bounded, claim_evidence
+            draft, claim_evidence
         )
         if style_repair is None and not claim_violations:
-            return bounded
+            return draft
         repair = "\n\n".join(
             part
             for part in (
@@ -362,9 +346,9 @@ class CompanionCore:
             )
             if part is not None
         )
-        request = self._context_assembler.repair_request(turn.request, bounded, repair)
+        request = self._context_assembler.repair_request(turn.request, draft, repair)
         repaired = self._chat_model.generate(request).text
-        repaired = " ".join(split_sentences(repaired)[: _sentence_limit(turn)])
+        repaired = repaired.strip()
         remaining_claims = self._response_claim_gate.violations(
             repaired, claim_evidence
         )
@@ -566,17 +550,11 @@ class CompanionCore:
         turn: _Turn,
         answer: str,
         *,
-        preserve_full: bool = False,
         worker_result: ReadOnlyWorkerResult | None = None,
         worker_name: str | None = None,
         worker_error: bool = False,
     ) -> CompanionResponse:
-        bounded = (
-            " ".join(split_sentences(answer))
-            if preserve_full
-            else " ".join(split_sentences(answer)[: _sentence_limit(turn)])
-        )
-        response_text = bounded
+        response_text = answer.strip()
         if turn.candidate_ids:
             response_text = (
                 f"{response_text}\n{_MEMORY_SAVED_NOTICE}"
@@ -654,7 +632,3 @@ class CompanionCore:
             capability_claim_scopes=turn.capability_claim_scopes,
             improvement_statuses=turn.improvement_statuses,
         )
-
-
-def _sentence_limit(turn: _Turn) -> int:
-    return turn.dialogue_plan.sentence_limit or turn.style.max_sentences
