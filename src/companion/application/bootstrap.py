@@ -36,6 +36,7 @@ from companion.day_reflection import (
     DayReflectionRepositoryError,
     SqliteDayReflectionRepository,
 )
+from companion.dialogue.policy import DialoguePolicyError, build_dialogue_policy
 from companion.identity import CompanionIdentity, IdentityRepositoryError, JsonIdentityRepository
 from companion.improvements import (
     ImprovementLedgerError,
@@ -109,6 +110,7 @@ class TextRuntimeConfig:
     dialogue_state_db: Path | None = None
     owned_work_db: Path | None = None
     verbal_style: str = DEFAULT_PROFILE
+    dialogue_policy: str = "legacy"
     context_max_messages: int = 12
     context_max_characters: int = 4000
     codex_worker: bool = False
@@ -316,6 +318,12 @@ def build_text_runtime(
     completion_sink: Callable[[OwnedWorkUpdate], None] | None = None,
 ) -> TextRuntime:
     resources = resources if resources is not None else build_text_resources(config)
+    try:
+        dialogue_policy = build_dialogue_policy(
+            config.dialogue_policy, style_planner=VerbalStylePlanner(resources.style_profile),
+        )
+    except DialoguePolicyError as error:
+        raise TextRuntimeError(f"Dialogue policy unavailable: {error}") from error
     repository = resources.repository
     turn_understanding_repository = resources.turn_understanding_repository
     outcome_repository = resources.outcome_repository
@@ -392,6 +400,7 @@ def build_text_runtime(
         memory_retriever,
         memory_repository,
         verbal_style_planner=VerbalStylePlanner(style_profile),
+        dialogue_policy=dialogue_policy,
         belief_retriever=belief_retriever,
         open_loop_repository=open_loop_repository,
         open_loop_retriever=open_loop_retriever,

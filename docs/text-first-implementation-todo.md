@@ -1,10 +1,10 @@
 # Text-first Winter 구현 TODO
 
 - 작성일: 2026-09-10
-- 상태: T0 #128 / T1 #129/#130 완료, 다음 active T2.1 #131은 코드 미착수. 이후 작업도 미착수다.
+- 상태: T0 #128 / T1 #129/#130 / T2.1 #131 완료, 다음 active T2.2 #132는 미착수다.
 - 설계: [Text-first 모듈 설계](text-first-refactoring-design.md).
 - baseline: `0c4f557`, `feat/126-winter-owned-work-canary`.
-- T번호는 계획상의 ID다. Epic #127, T0 #128, T1.1 #129, T1.2 #130, T2.1 #131을 등록했으며 나머지는 미등록이다.
+- T번호는 계획상의 ID다. Epic #127, T0 #128, T1.1 #129, T1.2 #130, T2.1 #131, T2.2 #132를 등록했다.
 - 기록 보존과 재사용: [기록 인계표](text-first-records-handoff.md).
 - 기존 설계의 T0~T6 순서를 유지하고, 각 단계 안에서 작은 Issue로 나눌 단위를 표시한다.
 
@@ -109,15 +109,27 @@ evidence/버전, 다음 turn 상태 반영, repair 재사용과 오류 전파를
 
 ### T2.1 평가 장면과 정책 선택 경계
 
-- [ ] 기존 Director/VerbalStyle 조합을 `LegacyDialoguePolicy`로 감싼다.
-- [ ] 같은 입력 계약을 받는 `ContextualDialoguePolicy` 후보를 별도 구현한다.
-- [ ] Python config에서 policy를 명시적으로 선택하게 한다. 오류 시 몰래 다른 정책을 쓰지 않는다.
-- [ ] 짧은 multi-turn 개발 장면과 미노출 평가 장면을 먼저 고정한다.
+- [x] 기존 Director/VerbalStyle 조합을 `LegacyDialoguePolicy`로 감싼다.
+- [x] 같은 입력 계약을 받는 `ContextualDialoguePolicy` 후보를 별도 구현한다.
+- [x] Python config에서 policy를 명시적으로 선택하게 한다. 오류 시 몰래 다른 정책을 쓰지 않는다.
+- [x] 짧은 multi-turn 개발 장면과 미노출 평가 장면을 먼저 고정한다.
 
 후보 정책 입력은 현재 문장뿐 아니라 최근 turn, 직접 합의된 대화 선호, 관련 기억이다.
 출력은 모델에 줄 짧은 대화 지침이다. 기본 생성은 한 번이며, 선행 감정 JSON 추론이나
 후행 말투 rewrite를 매번 강제하지 않는다. 광범위한 regex override와 무작위 존댓말 분포를
 후보의 기본 선택 기준에서 빼는 효과를 각각 분리해서 비교한다.
+
+**2026-09-10 #131 완료:** `legacy`, `contextual`, `contextual-moves-only`,
+`stable-register-only` 선택 경계를 만들었다. 기본 legacy는 유지하고 후보 선택은 CLI에서
+실험으로 표시한다. 후보 자체의 모델/저장소 호출은 없으며 감정 판단은 동일 LLM의 문맥
+해석 가설이다. 기존 act/길이/검색·claim safety·Worker opt-in은 유지한다.
+후보 구현 전 10개 장면(development 5/reserved 5)을 고정했다. reserved는 개발 입력에서
+제외했지만 작성자는 보았으므로 독립 blind benchmark가 아니다. 실제 모델 평가는 미착수다.
+새 계약 28개 포함 Docker offline 889 passed (40.35초), Ruff 통과, mypy 180 source files 통과.
+기존 6종 요청 기준선도 일치한다. 일반 생성 1회, 안전 위반 시 기존 repair 추가를 검증했다.
+말투 label별 repair가 후보에 적용되지 않는 변화와 `register=contextual` metadata의 한계는
+[ADR 0034](adr/0034-dialogue-policy-candidate.md)에 기록했다. 다음 #132의 격리된 실제 A/B는
+[평가 계획](text-dialogue-evaluation.md)을 따른다. 모델/개인 DB/서비스는 변경하지 않았다.
 
 ### T2.2 대화 품질 비교와 기본값 결정
 

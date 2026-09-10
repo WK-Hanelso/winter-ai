@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 from companion.cli.__main__ import run
+from companion.dialogue.policy import POLICY_NAMES
 
 # The old launcher always ran this module in the dev container, so its data
 # directory was hard-coded to /workspace.  Text chat now runs on the Host to
@@ -22,6 +23,7 @@ def _enabled(name: str) -> bool:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="겨울이와 대화합니다.")
+    parser.add_argument("--dialogue-policy", choices=POLICY_NAMES, default="legacy")
     parser.add_argument("--backend", choices=("local", "fake"), default="local")
     parser.add_argument(
         "--codex-worker",

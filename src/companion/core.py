@@ -11,6 +11,7 @@ from companion.day_reflection import (
 )
 from companion.dialogue.character_snapshot import CharacterSnapshot
 from companion.dialogue.context_assembler import ContextAssembler
+from companion.dialogue.policy import DialoguePolicy, DialoguePolicyInput, LegacyDialoguePolicy
 from companion.dialogue_act import classify as classify_dialogue_act
 from companion.dialogue_director import DialogueDirector, DialoguePlan
 from companion.grounding import ClaimEvidence, GroundingPolicy, ResponseClaimGate
@@ -127,6 +128,7 @@ class CompanionCore:
         self_model_provider: SelfModelProvider | None = None,
         improvement_snapshot_provider: ImprovementSnapshotProvider | None = None,
         context_assembler: ContextAssembler | None = None,
+        dialogue_policy: DialoguePolicy | None = None,
     ) -> None:
         self._chat_model = chat_model
         self._conversation_repository = conversation_repository
@@ -170,6 +172,10 @@ class CompanionCore:
         self._improvement_snapshot_provider = improvement_snapshot_provider
         self._context_assembler = (
             context_assembler if context_assembler is not None else ContextAssembler()
+        )
+        self._dialogue_policy = (
+            dialogue_policy if dialogue_policy is not None
+            else LegacyDialoguePolicy(self._dialogue_director, self._verbal_style_planner)
         )
 
     def respond_to_text(self, text: str) -> CompanionResponse:
@@ -441,12 +447,6 @@ class CompanionCore:
                 if memory is not None:
                     automatic_memory_ids_list.append(memory.id)
             automatic_memory_ids = tuple(automatic_memory_ids_list)
-        dialogue_plan = self._dialogue_director.plan(
-            text,
-            dialogue_act,
-            planning_loops,
-            has_memory=bool(selected_memories or current_state_history),
-        )
         all_messages = tuple(self._conversation_repository.list_messages())
         recalled_conversation = self._conversation_recall_retriever.retrieve(
             all_messages, text
@@ -506,7 +506,16 @@ class CompanionCore:
             beliefs=selected_beliefs,
             open_loops=selected_open_loops,
         )
-        turn_style = self._verbal_style_planner.plan_turn(dialogue_act)
+        policy_turn = self._dialogue_policy.plan_turn(DialoguePolicyInput(
+            text=text,
+            dialogue_act=dialogue_act,
+            recent_messages=messages,
+            memories=selected_memories,
+            current_state_history=current_state_history,
+            open_loops=planning_loops,
+        ))
+        dialogue_plan = policy_turn.dialogue_plan
+        turn_style = policy_turn.turn_style
         request = self._context_assembler.assemble(
             snapshot=snapshot,
             text=text,

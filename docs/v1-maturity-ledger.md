@@ -13,8 +13,8 @@
 ## 2026-09-10 우선순위 전환
 
 Text-first Epic #127 / T0 #128의 기준 전환과 기록 인계를 완료했다. 새 `text_first_foundation`은 **contract**이며
-기존 20개 기능 maturity는 그대로다. T1 #129/#130 모듈 추출을 완료했고 다음 active T2.1 #131은
-코드 미착수다. Voice 고도화와 #126 actual-phone
+기존 20개 기능 maturity는 그대로다. T1 #129/#130 모듈 추출과 T2.1 #131 정책 선택 준비를
+완료했고 다음 active T2.2 #132는 미착수다. Voice 고도화와 #126 actual-phone
 관찰은 보류하고 #126의 결과는 partial로 남긴다. operational 표시는 기존 검증 범위를 뜻하며
 이번 문서 전환으로 서비스의 오늘 상태를 재확인했다는 뜻이 아니다.
 
@@ -48,6 +48,24 @@ write Worker는 기존 품질·승인 gate를 유지한다.
 - gate: 기존 Memory/Belief/Worker gate와 Text-first contract 유지. 구조 추출이 자연스러운
   대화 품질이나 새로운 관계 기능의 operational 승격을 뜻하지 않는다.
 - 다음: #131에서 기존/후보 대화 정책 경계와 평가 장면 준비, T2.2 동일 모델 실제 비교.
+
+### T2.1 #131 — 정책 선택과 평가 장면 준비 완료
+
+- 가능 범위: `legacy` 기본값과 `contextual` 명시적 후보를 Python config/CLI에서 선택한다.
+  행동 지침만 변경하거나 말높임 추첨만 제거하는 두 비교 모드도 제공한다. 후보 선택은 CLI에
+  실험으로 표시한다. 후보는 prompt 기반 가설이며 감정 탐지 성공이나 관계 학습 결과가 아니다.
+- 근거: `src/companion/dialogue/policy.py`, `configs/dialogue/evaluation.py`,
+  `tests/unit/test_dialogue_policy.py`, [ADR 0034](adr/0034-dialogue-policy-candidate.md).
+  새 계약 28개 포함 Docker offline **889 passed (40.35초)**, Ruff 통과, mypy **180 source files** 통과.
+- 보존: 기존 모델 요청 6종 일치, memory write/evidence와 Worker opt-in 및 claim gate 유지.
+  일반 생성 1회와 safety repair 추가를 구분한다. 기본값과 운영 DB/서비스를 변경하지 않았다.
+- 한계: 문맥 후보에서는 기존 행동 label별 말투 repair가 선택되지 않는다. 안전 claim gate는
+  유지하지만 행동 품질·과잉 차단·repair율은 실제 비교해야 한다. 기존 act/길이 제한과 검색된
+  기억만 사용하는 제약은 남는다. `register=contextual`은 계획이지 출력 말높임 측정치가 아니다.
+- 평가: development 5 / reserved 5장면을 등록했고 reserved는 개발 모델 입력에서 제외했다.
+  작성자에게 독립적으로 숨겨진 benchmark는 아니며 실제 LLM 결과는 아직 없다.
+- 다음/gate: #132 동일 모델 실제 A/B와 사람 검토. 실험 연결만으로 Text-first contract나
+  기존 실패 gate를 승격하지 않는다. 평가 계획은 [별도 문서](text-dialogue-evaluation.md)를 따른다.
 
 ## 개발 통제 상태
 
@@ -126,6 +144,8 @@ live HTTP 413, Tailscale Serve HTTPS health까지 확인해 제한 운영으로 
 
 - #129/#130 text 초기화·문맥 조립 분리 이후 실제 Local LLM CLI 대화: offline 회귀는 완료했지만 이번 변경의
   사용자 체감은 미확인이다. 사용 명령은 유지하며 비차단 관찰로 남긴다.
+- #131 문맥 정책 후보: 자동 계약만 확인했고 실제 Local LLM/천우의 체감은 미확인이다.
+  기본 legacy 사용을 막지 않는다. 실제 비교는 #132에서 격리된 데이터로 먼저 수행한다.
 
 - #114 이후 폰 push-to-talk 한 turn: ingress만 바뀌었고 voice 기능은 변경하지 않아 비차단.
 - #115 실제 오류의 화면 표시와 빠른 복수 요청의 대기감: deterministic 회귀와 운영 배포는

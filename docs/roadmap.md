@@ -17,8 +17,10 @@ Epic [#127](https://github.com/WK-Hanelso/winter-ai/issues/127)의 목표는 지
 공용 text bootstrap 추출을 완료했고 Docker offline 847개·Ruff·mypy를 통과했다.
 [#130](https://github.com/WK-Hanelso/winter-ai/issues/130) CharacterSnapshot/ContextAssembler 추출도
 완료했다. 수정 전 모델 요청 6종 일치, Docker offline 861개·Ruff·mypy 통과를 확인했다.
-다음 active [#131](https://github.com/WK-Hanelso/winter-ai/issues/131)는 대화 정책 선택 경계와
-평가 장면이며 코드 미착수다. Voice 고도화·실기 검증은 보류하고 기존 서비스/데이터를 삭제하지 않는다.
+[#131](https://github.com/WK-Hanelso/winter-ai/issues/131) 대화 정책 선택 경계와 평가 장면도
+완료했다. 기본값 legacy, 후보는 명시적 실험이며 Docker offline 889개·Ruff·mypy를 통과했다.
+다음 active [#132](https://github.com/WK-Hanelso/winter-ai/issues/132)는 동일 Local LLM의 실제
+정책 비교이며 미착수다. Voice 고도화·실기 검증은 보류하고 기존 서비스/데이터를 삭제하지 않는다.
 
 T0 기준 전환 → T1 모듈 추출 → T2 대화 정책 비교 → T3 검색/context → T4 기억 갱신/재시작
 → T5 Codex text 작업 경험 → T6 추가 provider/연속 사용 순서다.

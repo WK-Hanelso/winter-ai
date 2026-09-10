@@ -62,6 +62,7 @@ from companion.day_reflection import (
     SqliteConversationDayReader,
     SqliteDayReflectionRepository,
 )
+from companion.dialogue.policy import POLICY_NAMES
 from companion.lived_continuity import (
     render_lived_continuity,
     summarize_lived_continuity,
@@ -114,6 +115,7 @@ from companion.winter_events import (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dialogue-policy", choices=POLICY_NAMES, default="legacy")
     parser.add_argument("--codex-worker", action="store_true")
     parser.add_argument("--winter-work-canary", action="store_true")
     parser.add_argument("--codex-executable", default="codex")
@@ -500,6 +502,8 @@ def run(
     except TextRuntimeError as error:
         print(str(error), file=stdout)
         return 1
+    if config.dialogue_policy != "legacy":
+        print(f"Experimental dialogue policy: {config.dialogue_policy}", file=stdout)
     core = runtime.core
     try:
         if args.prompt is not None:
