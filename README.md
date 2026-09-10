@@ -29,7 +29,8 @@ Voice 고도화와 phone canary 검증은 보류한다. 기존 코드·개인 DB
 - [T1.1 #129](https://github.com/WK-Hanelso/winter-ai/issues/129): text bootstrap 추출·오프라인 검증 완료
 - [T1.2 #130](https://github.com/WK-Hanelso/winter-ai/issues/130): 정체성 snapshot·문맥 조립 추출·검증 완료
 - [T2.1 #131](https://github.com/WK-Hanelso/winter-ai/issues/131): 명시적 대화 정책 선택·평가 장면 준비 완료
-- [다음 active T2.2 #132](https://github.com/WK-Hanelso/winter-ai/issues/132): 동일 Local LLM 실제 정책 비교, 미착수
+- [T2.2 #132](https://github.com/WK-Hanelso/winter-ai/issues/132): 실제 120턴 비교 완료, 품질 gate 실패·legacy 유지
+- [다음 active T3.1 #133](https://github.com/WK-Hanelso/winter-ai/issues/133): bounded 대화 기록 조회, 미착수
 - [기존 기록 인계표](docs/text-first-records-handoff.md), [설계](docs/text-first-refactoring-design.md),
   [실행 TODO](docs/text-first-implementation-todo.md)
 
@@ -54,9 +55,15 @@ T2.1은 `legacy` 기본값을 유지하고 `contextual` 후보 및 행동/말높
 이 명령은 기존 개인 대화 DB를 사용한다. 자동 A/B는 개인 DB와 격리한다.
 [정책 비교 방법과 한계](docs/text-dialogue-evaluation.md)를 따른다.
 
-최신 검증: Docker offline **889 passed**, Ruff 전체 통과, mypy **180 source files** 통과.
+최신 검증: Docker offline **898 passed**, Ruff 전체 통과, mypy **181 source files** 통과.
 수정 전 Core에서 고정한 합성 모델 요청 6종도 정확히 일치했다.
-실제 모델 재평가·사용자 대화 품질 검증·운영 서비스 재배포는 하지 않았다.
+T2.2에서 실제 A.X-4.0-Light Q4_K_M으로 격리된 합성 대화 120턴을 비교했다. 설명의 일부
+개선은 있었지만 기억 근거/의견/후처리/검사 오류가 남아 **후보 기본값 승격은 보류**했다.
+[실제 결과와 원문](docs/evaluations/132-text-policy/README.md)을 참조한다. 사용자 체감은 미확인이다.
+
+현재 Host 기본 `127.0.0.1:18080` 터널과 Winter 서비스가 중지된 상태를 확인했다. Orin 모델은
+정상이어서 평가 전용 `:18082` 임시 터널로 측정한 뒤 닫았다. 운영 연결을 복구하거나 서비스를
+재배포하지 않았으므로 지금 일반 CLI를 사용하려면 기존 터널 복구를 별도로 결정해야 한다.
 
 ## 1. 겨울이는 무엇인가
 
@@ -663,8 +670,8 @@ docker compose run --rm dev mypy src
 ## 14. 다음 개발 순서
 
 현재 순서는 [Text-first TODO](docs/text-first-implementation-todo.md)의 T0→T6다.
-T0 기록 인계, T1 (#129/#130) 모듈 추출과 T2.1 (#131) 정책 선택 경계를 완료했다. 다음 #132에서 같은 모델의 대화 정책을 실제 CLI로
-비교한다. T3/T4는 기억 검색/갱신, T5/T6는 기존 Agent 연결/확장을 다룬다.
+T0/T1 모듈 추출과 T2 (#131/#132) 정책 선택·실제 비교를 완료했지만 후보 품질 gate는 실패했다.
+다음 #133은 bounded 조회다. T3/T4는 기억 검색/갱신, T5/T6는 기존 Agent 연결/확장을 다룬다.
 
 ### 2026-08 실행 순서 — 역사로 보존
 

@@ -14,7 +14,8 @@
 
 Text-first Epic #127 / T0 #128의 기준 전환과 기록 인계를 완료했다. 새 `text_first_foundation`은 **contract**이며
 기존 20개 기능 maturity는 그대로다. T1 #129/#130 모듈 추출과 T2.1 #131 정책 선택 준비를
-완료했고 다음 active T2.2 #132는 미착수다. Voice 고도화와 #126 actual-phone
+완료했다. #132 실제 비교도 실행 범위는 완료했지만 품질 gate는 실패해 legacy를 유지한다.
+다음 active T3.1 #133은 미착수다. Voice 고도화와 #126 actual-phone
 관찰은 보류하고 #126의 결과는 partial로 남긴다. operational 표시는 기존 검증 범위를 뜻하며
 이번 문서 전환으로 서비스의 오늘 상태를 재확인했다는 뜻이 아니다.
 
@@ -66,6 +67,24 @@ write Worker는 기존 품질·승인 gate를 유지한다.
   작성자에게 독립적으로 숨겨진 benchmark는 아니며 실제 LLM 결과는 아직 없다.
 - 다음/gate: #132 동일 모델 실제 A/B와 사람 검토. 실험 연결만으로 Text-first contract나
   기존 실패 gate를 승격하지 않는다. 평가 계획은 [별도 문서](text-dialogue-evaluation.md)를 따른다.
+
+### T2.2 #132 — 실제 평가 완료 / 품질 gate 실패
+
+- 실행: Orin A.X-4.0-Light Q4_K_M의 같은 서버로 네 정책, development/reserved 각 5장면을
+  fixed/rollout으로 비교했다. 주 분석 120턴/133회 모델 호출, HTTP 실패 0. 겹쳤던 배치의
+  60턴은 원본 보존 후 제외하고 순차 재실행했다. 중간 정책 변경은 없다.
+- 근거: [검토 보고서와 원문](evaluations/132-text-policy/README.md),
+  `experiments/text_policy_eval.py`, `tests/unit/test_text_policy_eval.py`,
+  [ADR 0035](adr/0035-text-policy-evaluation-verdict.md).
+- 판단: 설명 일부 개선과 달리 기억 질문 왜곡/의견 회피/관계 반응·후처리·검사 오류가 남았다.
+  **후보 승격 보류, legacy 유지.** legacy 품질이 충분하다는 판정도 아니다.
+- 구분: 합성 정체성과 빈 초기 기억을 썼으므로 개인 기억 유실 진단이 아니다. Codex의 내용
+  검토와 사용자/독립 사람 평가(pending)를 구분한다. TTFT/Voice는 측정하지 않았다.
+- 검증: Docker offline 898 passed (40.69초), Ruff 통과, mypy 181 source files 통과.
+  운영 DB/서비스/모델/Core 정책은 불변이다. 기존 Host 18080 터널이 없어 평가용 18082만
+  임시 사용 후 종료했다. 일반 CLI 연결 복구는 별도 결정이다.
+- 다음: #133 bounded 조회는 독립적 후속이다. 빈 기억 환각, 길이 후처리와 claim 오탐/누락은
+  이 변경만으로 해결됐다고 하지 않는다. 기존 실패 gate와 Text-first contract를 유지한다.
 
 ## 개발 통제 상태
 
@@ -144,8 +163,8 @@ live HTTP 413, Tailscale Serve HTTPS health까지 확인해 제한 운영으로 
 
 - #129/#130 text 초기화·문맥 조립 분리 이후 실제 Local LLM CLI 대화: offline 회귀는 완료했지만 이번 변경의
   사용자 체감은 미확인이다. 사용 명령은 유지하며 비차단 관찰로 남긴다.
-- #131 문맥 정책 후보: 자동 계약만 확인했고 실제 Local LLM/천우의 체감은 미확인이다.
-  기본 legacy 사용을 막지 않는다. 실제 비교는 #132에서 격리된 데이터로 먼저 수행한다.
+- #131/#132 문맥 정책 후보: 실제 Local LLM 합성 비교는 완료했지만 품질 gate는 실패했다.
+  천우의 체감은 아직 미확인이고 비차단 관찰로 남긴다. 현재 일반 CLI는 기본 터널 복구가 필요하다.
 
 - #114 이후 폰 push-to-talk 한 turn: ingress만 바뀌었고 voice 기능은 변경하지 않아 비차단.
 - #115 실제 오류의 화면 표시와 빠른 복수 요청의 대기감: deterministic 회귀와 운영 배포는

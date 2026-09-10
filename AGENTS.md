@@ -611,8 +611,10 @@ Companion Identity를 Worker에 넘기지 않는다. Worker는 전문 작업 결
 공용 text runtime bootstrap과 CharacterSnapshot/ContextAssembler 추출을 완료했다
 (수정 전 모델 요청 6종 일치). T2.1 #131에서 legacy 기본값을 유지한 명시적 후보 정책 선택과
 평가 장면을 준비했다 (최신 Docker offline 889 passed, Ruff/mypy 통과).
-다음 active scope는 #132의 동일 Local LLM 실제 정책 비교이며 미착수다. 후보의 자연스러움은
-미검증이고 실제 비교/사용자 관찰 없이 기본값을 승격하지 않는다.
+#132의 실제 A.X 120턴 비교도 완료했지만 품질 gate는 실패해 legacy를 유지한다
+(최신 Docker offline 898 passed, Ruff/mypy 통과). 결과는 docs/evaluations/132-text-policy/에
+보존한다. 사용자 체감은 미확인이다. 다음 active scope는 #133 bounded 대화 기록 조회이며
+미착수다. 이 변경만으로 #132의 후처리/검사/빈 기억 환각이 해결된다고 주장하지 않는다.
 Voice 실제 검증과 자기 코드 채택의 전체
 cycle은 텍스트 경험의 선행조건이 아니다. 대화·기억·Identity·Reference 및 기존 코드/평가를
 보존하고 신규 메모리 migration은 T3/T4 별도 Issue에서 원본 보존과 복구를 검증한다.

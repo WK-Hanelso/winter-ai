@@ -1,0 +1,57 @@
+{
+  "accepted_files": [
+    "development-fixed",
+    "development-rollout-sequential",
+    "reserved-fixed-sequential",
+    "reserved-rollout"
+  ],
+  "excluded_files": [
+    "development-rollout",
+    "reserved-fixed"
+  ],
+  "reason_excluded": "batch overlap; superseded by sequential reruns",
+  "human_review": "pending",
+  "first_token_latency": "not measured",
+  "metrics": {
+    "legacy": {
+      "turns": 30,
+      "median_seconds": 0.8948680479079485,
+      "p95_nearest_rank_seconds": 2.7426015194505453,
+      "max_seconds": 4.89972423389554,
+      "model_calls": 33,
+      "repair_turns": 3,
+      "claim_flagged_turns": 1,
+      "server_length_finish": 0
+    },
+    "contextual": {
+      "turns": 30,
+      "median_seconds": 1.497421364299953,
+      "p95_nearest_rank_seconds": 5.2425887025892735,
+      "max_seconds": 7.520277284085751,
+      "model_calls": 35,
+      "repair_turns": 5,
+      "claim_flagged_turns": 5,
+      "server_length_finish": 0
+    },
+    "contextual-moves-only": {
+      "turns": 30,
+      "median_seconds": 1.2574339620769024,
+      "p95_nearest_rank_seconds": 4.18692909553647,
+      "max_seconds": 4.470251116901636,
+      "model_calls": 32,
+      "repair_turns": 2,
+      "claim_flagged_turns": 2,
+      "server_length_finish": 0
+    },
+    "stable-register-only": {
+      "turns": 30,
+      "median_seconds": 1.0230228146538138,
+      "p95_nearest_rank_seconds": 2.3623556550592184,
+      "max_seconds": 3.117374885827303,
+      "model_calls": 33,
+      "repair_turns": 3,
+      "claim_flagged_turns": 3,
+      "server_length_finish": 0
+    }
+  }
+}

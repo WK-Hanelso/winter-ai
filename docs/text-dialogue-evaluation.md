@@ -1,7 +1,8 @@
 # Text dialogue T2 — 비교 준비
 
-2026-09-10 #131은 정책 선택 경계와 평가 장면 준비까지만 완료한다. 실제 Local LLM A/B,
-천우의 대화 체감과 기본값 결정은 다음 T2.2다. 모델 교체나 운영 서비스 재배포는 포함하지 않는다.
+2026-09-10 #131의 준비 뒤 #132 실제 Local LLM 비교를 완료했다. [결과/원문](evaluations/132-text-policy/README.md):
+주 분석 120턴, 후보 품질 gate 실패·legacy 유지. 천우의 체감은 미확인이다. 아래 재현 조건은
+실험 설계로 보존하며 모델 교체나 운영 서비스 재배포는 포함하지 않는다.
 
 ## 실험 선택
 
@@ -16,6 +17,15 @@
 효과를 분리할 수 있다. 다음 실행에서 옵션을 생략하면 다시 legacy다. 이 명령은 일반 사용자
 대화 경로이므로 평소처럼 개인 대화/기억 DB를 사용한다. 자동 A/B에 이 명령을 사용해 합성
 대화를 개인 DB에 쌓으면 안 된다. 지금 천우가 실행해야 하는 필수 검증은 아니다.
+
+#132 확인 시 Host 기본 18080 터널은 없었다. Orin 모델은 살아 있어 임시 18082로만 평가한 뒤
+닫았다. 따라서 일반 CLI의 실사용 시험은 기본 연결 복구를 별도로 결정한 뒤 가능하다.
+
+평가 runner: `python experiments/text_policy_eval.py --url http://127.0.0.1:18082
+--split development --mode fixed --output /results/development-fixed.jsonl`.
+Docker host network와 src/configs/experiments read-only mount, 결과 폴더만 쓰기 허용으로 실행했다.
+split은 development/reserved, mode는 fixed/rollout을 각각 별도 순차 실행한다. output은
+이미 있으면 실패하며, warm-up/manifest/turn/complete를 JSONL로 기록한다. 이 주소는 상시 운영 주소가 아니다.
 
 Python에서는 `TextRuntimeConfig(dialogue_policy="contextual", ...)`로 선택한다.
 모델·Identity·저장소 경로를 새로 암묵 지정하거나 `.env`에 후보 기본값을 기록하지 않는다.

@@ -1,6 +1,6 @@
 schema_version = 1
 current_phase = "text_first_foundation"
-active_issue = 132
+active_issue = 133
 active_work = ["text_first_foundation"]
 
 # These files define mission, current product target, maturity and the audit baseline.
@@ -44,6 +44,11 @@ evidence = [
   "tests/unit/test_dialogue_policy.py",
   "docs/adr/0034-dialogue-policy-candidate.md",
   "docs/text-dialogue-evaluation.md",
+  "experiments/text_policy_eval.py",
+  "tests/unit/test_text_policy_eval.py",
+  "docs/evaluations/132-text-policy/README.md",
+  "docs/evaluations/132-text-policy/metrics.json",
+  "docs/adr/0035-text-policy-evaluation-verdict.md",
 ]
 dependencies = ["shared_core", "persistent_memory"]
 sync_status = true
