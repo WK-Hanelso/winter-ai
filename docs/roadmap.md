@@ -13,8 +13,10 @@
 
 Epic [#127](https://github.com/WK-Hanelso/winter-ai/issues/127)의 목표는 지속되는 정체성/기억,
 관계가 느껴지는 텍스트 대화, 외부 Agent 활용이다. T0 [#128](https://github.com/WK-Hanelso/winter-ai/issues/128)은
-기록과 기준의 인계를 완료했다. 다음 active Issue [#129](https://github.com/WK-Hanelso/winter-ai/issues/129)는
-공용 bootstrap만 추출하며 아직 코드 미착수다. Voice 고도화·실기 검증은 보류하며 기존 서비스/데이터를 삭제하지 않는다.
+기록과 기준의 인계를 완료했다. [#129](https://github.com/WK-Hanelso/winter-ai/issues/129)는
+공용 text bootstrap 추출을 완료했고 Docker offline 847개·Ruff·mypy를 통과했다.
+다음 active [#130](https://github.com/WK-Hanelso/winter-ai/issues/130)는 CharacterSnapshot과
+ContextAssembler 추출이며 코드 미착수다. Voice 고도화·실기 검증은 보류하고 기존 서비스/데이터를 삭제하지 않는다.
 
 T0 기준 전환 → T1 모듈 추출 → T2 대화 정책 비교 → T3 검색/context → T4 기억 갱신/재시작
 → T5 Codex text 작업 경험 → T6 추가 provider/연속 사용 순서다.

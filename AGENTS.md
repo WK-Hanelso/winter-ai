@@ -607,8 +607,10 @@ Companion Identity를 Worker에 넘기지 않는다. Worker는 전문 작업 결
 
 ## 8. Current Work Direction
 
-현재 phase는 `text_first_foundation`이다. T0 #128에서 기준과 기록을 인계했다. 다음 active
-scope는 #129의 공용 text runtime bootstrap 추출이며 아직 코드 구현 전이다. Voice 실제 검증과 자기 코드 채택의 전체
+현재 phase는 `text_first_foundation`이다. T0 #128에서 기준과 기록을 인계하고 T1.1 #129에서
+공용 text runtime bootstrap 추출을 완료했다 (Docker offline 847 passed, Ruff/mypy 통과).
+다음 active scope는 #130의 CharacterSnapshot과 ContextAssembler 추출이며 코드 구현 전이다.
+Voice 실제 검증과 자기 코드 채택의 전체
 cycle은 텍스트 경험의 선행조건이 아니다. 대화·기억·Identity·Reference 및 기존 코드/평가를
 보존하고 신규 메모리 migration은 T3/T4 별도 Issue에서 원본 보존과 복구를 검증한다.
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from dataclasses import fields
 from datetime import timedelta
 import json
 from pathlib import Path
@@ -14,28 +15,31 @@ from companion.adapters.belief_reflection_interpreter import (
     StructuredChatBeliefProposalInterpreter,
     StructuredChatBeliefSafetyReviewer,
 )
-from companion.adapters.codex_gateway_worker import CodexTypedProjectWorker
-from companion.adapters.codex_worker import CodexReadOnlyWorker
 from companion.adapters.day_reflection_interpreter import (
     StructuredChatDayReflectionInterpreter,
 )
 from companion.adapters.fake import (
     AdapterUnavailableError,
-    FakeChatModel,
-    InMemoryConversationRepository,
 )
-from companion.adapters.llama_cpp import LlamaCppHttpChatModel
 from companion.adapters.outcome_interpreter import StructuredChatOutcomeInterpreter
 from companion.adapters.reflection_interpreter import (
     StructuredChatReflectionInterpreter,
 )
 from companion.adapters.sqlite_repository import (
     ConversationRepositoryError,
-    SqliteConversationRepository,
 )
 from companion.adapters.turn_interpreter import StructuredChatTurnInterpreter
-from companion.adapters.work_orchestration import (
-    BoundedProjectInspectionExecutive,
+from companion.application.bootstrap import (
+    TextRuntimeConfig,
+    TextRuntimeError,
+    build_text_resources,
+    build_text_runtime,
+)
+from companion.application.bootstrap import (
+    build_chat_model as create_chat_model,
+)
+from companion.application.bootstrap import (
+    build_conversation_repository as create_conversation_repository,
 )
 from companion.belief_reflection import (
     BeliefEvidenceWindowBuilder,
@@ -46,40 +50,24 @@ from companion.belief_reflection import (
     SqliteBeliefProposalRepository,
 )
 from companion.beliefs import (
-    ActiveBeliefRetriever,
     BeliefRepositoryError,
     SqliteBeliefRepository,
 )
-from companion.capabilities import (
-    CapabilityRegistryError,
-    PersistentSelfModel,
-    SqliteCapabilityRegistry,
-)
-from companion.context import ConversationContextBuilder
 from companion.contracts import ConversationMessage
 from companion.core import CompanionCore
 from companion.day_reflection import (
-    ActiveDayReflectionRetriever,
     DayReflectionError,
     DayReflectionRepositoryError,
     DayReflectionService,
     SqliteConversationDayReader,
     SqliteDayReflectionRepository,
 )
-from companion.identity import IdentityRepositoryError, JsonIdentityRepository
-from companion.improvements import (
-    ImprovementLedgerError,
-    PersistentImprovementSnapshot,
-    SqliteImprovementLedger,
-)
 from companion.lived_continuity import (
     render_lived_continuity,
     summarize_lived_continuity,
 )
-from companion.memory import ActiveMemoryRetriever, MemoryRepositoryError, SqliteMemoryRepository
-from companion.model_priority import ForegroundPriorityChatScheduler
+from companion.memory import MemoryRepositoryError, SqliteMemoryRepository
 from companion.open_loops import (
-    ActiveOpenLoopRetriever,
     OpenLoopRepositoryError,
     SqliteOpenLoopRepository,
 )
@@ -91,13 +79,7 @@ from companion.outcome import (
 )
 from companion.outcome_review import build_audit, print_audit, run_blind_review
 from companion.owned_work import (
-    AsyncOwnedWorkCoordinator,
     OwnedWorkUpdate,
-    WinterOwnedProjectCanary,
-)
-from companion.owned_work_repository import (
-    OwnedWorkRepositoryError,
-    SqliteOwnedWorkRepository,
 )
 from companion.ports import ChatModel, ConversationRepository
 from companion.reflection import (
@@ -121,9 +103,6 @@ from companion.turn_understanding import (
 from companion.verbal_style import (
     ALLOWED_PROFILES,
     DEFAULT_PROFILE,
-    VerbalStyleError,
-    VerbalStylePlanner,
-    load_verbal_style,
 )
 from companion.winter_events import (
     SqliteWinterEventRepository,
@@ -347,17 +326,22 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
+def text_runtime_config(args: argparse.Namespace) -> TextRuntimeConfig:
+    defaults = TextRuntimeConfig()
+    values = {
+        item.name: getattr(args, item.name, getattr(defaults, item.name))
+        for item in fields(TextRuntimeConfig)
+        if item.name != "interactive"
+    }
+    return TextRuntimeConfig(**values, interactive=getattr(args, "prompt", None) is None)
+
+
 def build_chat_model(args: argparse.Namespace) -> ChatModel:
-    if args.backend == "fake":
-        return FakeChatModel()
-    return LlamaCppHttpChatModel(base_url=args.model_url)
+    return create_chat_model(text_runtime_config(args))
 
 
 def build_conversation_repository(args: argparse.Namespace) -> ConversationRepository:
-    database_path = getattr(args, "conversation_db", None)
-    if database_path is None:
-        return InMemoryConversationRepository()
-    return SqliteConversationRepository(database_path)
+    return create_conversation_repository(text_runtime_config(args))
 
 
 def run(
@@ -366,131 +350,21 @@ def run(
     stdin: TextIO = sys.stdin,
     stdout: TextIO = sys.stdout,
 ) -> int:
+    config = text_runtime_config(args)
     try:
-        repository = build_conversation_repository(args)
-    except ConversationRepositoryError as error:
-        print(f"Conversation storage unavailable: {error}", file=stdout)
+        resources = build_text_resources(config)
+    except TextRuntimeError as error:
+        print(str(error), file=stdout)
         return 1
-    try:
-        turn_understanding_path = getattr(args, "turn_understanding_db", None)
-        turn_understanding_repository = (
-            SqliteTurnUnderstandingRepository(turn_understanding_path)
-            if turn_understanding_path
-            else None
-        )
-    except TurnUnderstandingRepositoryError as error:
-        print(f"Turn understanding unavailable: {error}", file=stdout)
-        return 1
-    try:
-        outcome_path = getattr(args, "outcome_db", None)
-        outcome_repository = (
-            SqliteOutcomeRepository(outcome_path) if outcome_path else None
-        )
-    except OutcomeRepositoryError as error:
-        print(f"Outcome storage unavailable: {error}", file=stdout)
-        return 1
-    try:
-        reflection_path = getattr(args, "reflection_db", None)
-        reflection_repository = (
-            SqliteReflectionRepository(reflection_path) if reflection_path else None
-        )
-    except ReflectionRepositoryError as error:
-        print(f"Reflection storage unavailable: {error}", file=stdout)
-        return 1
-    try:
-        identity_path = getattr(args, "identity_path", None)
-        identity = JsonIdentityRepository(identity_path).load() if identity_path else None
-    except IdentityRepositoryError as error:
-        print(f"Companion identity unavailable: {error}", file=stdout)
-        return 1
-    try:
-        memory_path = getattr(args, "memory_db", None)
-        memory_repository = SqliteMemoryRepository(memory_path) if memory_path else None
-        memory_retriever = ActiveMemoryRetriever(memory_repository) if memory_repository else None
-    except MemoryRepositoryError as error:
-        print(f"Memory unavailable: {error}", file=stdout)
-        return 1
-    try:
-        capability_path = getattr(args, "capability_db", None)
-        capability_registry = (
-            SqliteCapabilityRegistry(capability_path) if capability_path else None
-        )
-        self_model_provider = (
-            PersistentSelfModel(
-                identity,
-                capability_registry,
-                runtime_capabilities=("conversation", "memory"),
-            )
-            if identity is not None and capability_registry is not None
-            else None
-        )
-    except CapabilityRegistryError as error:
-        print(f"Capability registry unavailable: {error}", file=stdout)
-        return 1
-    try:
-        improvement_path = getattr(args, "improvement_db", None)
-        improvement_snapshot_provider = (
-            PersistentImprovementSnapshot(SqliteImprovementLedger(improvement_path))
-            if improvement_path
-            else None
-        )
-    except ImprovementLedgerError as error:
-        print(f"Improvement ledger unavailable: {error}", file=stdout)
-        return 1
-    try:
-        belief_path = getattr(args, "belief_db", None)
-        belief_repository = SqliteBeliefRepository(belief_path) if belief_path else None
-        belief_retriever = (
-            ActiveBeliefRetriever(belief_repository) if belief_repository else None
-        )
-    except BeliefRepositoryError as error:
-        print(f"Belief storage unavailable: {error}", file=stdout)
-        return 1
-    try:
-        winter_event_path = getattr(args, "winter_event_db", None)
-        winter_event_repository = (
-            SqliteWinterEventRepository(winter_event_path)
-            if winter_event_path
-            else None
-        )
-    except WinterEventRepositoryError as error:
-        print(f"Winter lived continuity unavailable: {error}", file=stdout)
-        return 1
-    try:
-        day_reflection_path = getattr(args, "day_reflection_db", None)
-        day_reflection_repository = (
-            SqliteDayReflectionRepository(day_reflection_path)
-            if day_reflection_path
-            else None
-        )
-        day_reflection_retriever = (
-            ActiveDayReflectionRetriever(day_reflection_repository)
-            if day_reflection_repository
-            else None
-        )
-    except DayReflectionRepositoryError as error:
-        print(f"Winter day reflection unavailable: {error}", file=stdout)
-        return 1
-    try:
-        dialogue_state_path = getattr(args, "dialogue_state_db", None)
-        open_loop_repository = (
-            SqliteOpenLoopRepository(dialogue_state_path)
-            if dialogue_state_path
-            else None
-        )
-        open_loop_retriever = (
-            ActiveOpenLoopRetriever(open_loop_repository)
-            if open_loop_repository
-            else None
-        )
-    except OpenLoopRepositoryError as error:
-        print(f"Dialogue state unavailable: {error}", file=stdout)
-        return 1
-    try:
-        style_profile = load_verbal_style(getattr(args, "verbal_style", DEFAULT_PROFILE))
-    except VerbalStyleError as error:
-        print(f"Verbal style unavailable: {error}", file=stdout)
-        return 1
+    repository = resources.repository
+    turn_understanding_repository = resources.turn_understanding_repository
+    outcome_repository = resources.outcome_repository
+    reflection_repository = resources.reflection_repository
+    identity = resources.identity
+    memory_repository = resources.memory_repository
+    belief_repository = resources.belief_repository
+    winter_event_repository = resources.winter_event_repository
+    day_reflection_repository = resources.day_reflection_repository
     if getattr(args, "show_identity", False):
         print(
             identity.system_message() if identity else "No identity path selected.",
@@ -615,123 +489,48 @@ def run(
             return 1
         print(render_lived_continuity(summary), file=stdout)
         return 0
-    base_chat_model = build_chat_model(args)
-    priority_scheduler = (
-        ForegroundPriorityChatScheduler(base_chat_model)
-        if getattr(args, "winter_work_canary", False) and args.prompt is None
-        else None
-    )
-    chat_model = (
-        priority_scheduler.foreground()
-        if priority_scheduler is not None
-        else base_chat_model
-    )
-    work_chat_model = (
-        priority_scheduler.background()
-        if priority_scheduler is not None
-        else base_chat_model
-    )
-    owned_work_canary = (
-        WinterOwnedProjectCanary(
-            Path.cwd(),
-            BoundedProjectInspectionExecutive(work_chat_model),
-            CodexTypedProjectWorker(
-                Path.cwd(),
-                executable=getattr(args, "codex_executable", "codex"),
-                model=getattr(args, "codex_model", "gpt-5.4"),
-            ),
+    def notify_owned_work(update: OwnedWorkUpdate) -> None:
+        repository.append(ConversationMessage("assistant", update.text))
+        print(f"\nCompanion> {update.text}", file=stdout, flush=True)
+
+    try:
+        runtime = build_text_runtime(
+            config, resources=resources, completion_sink=notify_owned_work,
         )
-        if getattr(args, "winter_work_canary", False)
-        else None
-    )
-    owned_work_coordinator = None
-    owned_work_executor = owned_work_canary
-    if owned_work_canary is not None and args.prompt is None:
-
-        def notify_owned_work(update: OwnedWorkUpdate) -> None:
-            repository.append(ConversationMessage("assistant", update.text))
-            print(f"\nCompanion> {update.text}", file=stdout, flush=True)
-
-        try:
-            owned_work_path = getattr(args, "owned_work_db", None)
-            owned_work_coordinator = AsyncOwnedWorkCoordinator(
-                owned_work_canary,
-                completion_sink=notify_owned_work,
-                repository=(
-                    SqliteOwnedWorkRepository(owned_work_path)
-                    if owned_work_path is not None
-                    else None
-                ),
-                foreground_activity=(
-                    priority_scheduler.mark_foreground_activity
-                    if priority_scheduler is not None
-                    else None
-                ),
+    except TextRuntimeError as error:
+        print(str(error), file=stdout)
+        return 1
+    core = runtime.core
+    try:
+        if args.prompt is not None:
+            return _run_turn(
+                core,
+                args.prompt,
+                stdout,
+                streaming=getattr(args, "winter_work_canary", False),
             )
-        except OwnedWorkRepositoryError as error:
-            print(f"Winter owned work unavailable: {error}", file=stdout)
-            return 1
-        owned_work_executor = None
-    core = CompanionCore(
-        chat_model,
-        repository,
-        ConversationContextBuilder(
-            max_messages=getattr(args, "context_max_messages", 12),
-            max_characters=getattr(args, "context_max_characters", 4000),
-        ),
-        identity,
-        memory_retriever,
-        memory_repository,
-        verbal_style_planner=VerbalStylePlanner(style_profile),
-        belief_retriever=belief_retriever,
-        open_loop_repository=open_loop_repository,
-        open_loop_retriever=open_loop_retriever,
-        turn_understanding_repository=turn_understanding_repository,
-        outcome_repository=outcome_repository,
-        turn_source="cli",
-        winter_event_repository=winter_event_repository,
-        clock=SystemClock() if winter_event_repository is not None else None,
-        day_reflection_retriever=day_reflection_retriever,
-        self_model_provider=self_model_provider,
-        improvement_snapshot_provider=improvement_snapshot_provider,
-        read_only_worker=(
-            CodexReadOnlyWorker(
-                Path.cwd(),
-                executable=getattr(args, "codex_executable", "codex"),
-                model=getattr(args, "codex_model", "gpt-5.4"),
-            )
-            if getattr(args, "codex_worker", False)
-            else None
-        ),
-        owned_work_executor=owned_work_executor,
-        owned_work_submitter=owned_work_coordinator,
-    )
-    if args.prompt is not None:
-        return _run_turn(
-            core,
-            args.prompt,
-            stdout,
-            streaming=getattr(args, "winter_work_canary", False),
-        )
 
-    print("winter-ai CLI. 종료하려면 /exit 를 입력하세요.", file=stdout)
-    while True:
-        print("You> ", end="", file=stdout, flush=True)
-        text = stdin.readline()
-        if not text:
-            return 0
-        text = text.strip()
-        if text == "/exit":
-            return 0
-        if not text:
-            continue
-        if _run_turn(
-            core,
-            text,
-            stdout,
-            streaming=getattr(args, "winter_work_canary", False),
-        ):
-            return 1
+        print("winter-ai CLI. 종료하려면 /exit 를 입력하세요.", file=stdout)
+        while True:
+            print("You> ", end="", file=stdout, flush=True)
+            text = stdin.readline()
+            if not text:
+                return 0
+            text = text.strip()
+            if text == "/exit":
+                return 0
+            if not text:
+                continue
+            if _run_turn(
+                core,
+                text,
+                stdout,
+                streaming=getattr(args, "winter_work_canary", False),
+            ):
+                return 1
+
+    finally:
+        runtime.close()
 
 
 def _run_turn(

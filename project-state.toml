@@ -1,6 +1,6 @@
 schema_version = 1
 current_phase = "text_first_foundation"
-active_issue = 129
+active_issue = 130
 active_work = ["text_first_foundation"]
 
 # These files define mission, current product target, maturity and the audit baseline.
@@ -31,6 +31,9 @@ evidence = [
   "docs/text-first-implementation-todo.md",
   "docs/text-first-records-handoff.md",
   "docs/adr/0031-text-first-transition-and-history.md",
+  "src/companion/application/bootstrap.py",
+  "tests/unit/test_text_bootstrap.py",
+  "docs/adr/0032-text-runtime-bootstrap.md",
 ]
 dependencies = ["shared_core", "persistent_memory"]
 sync_status = true

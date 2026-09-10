@@ -1,10 +1,10 @@
 # Text-first Winter 구현 TODO
 
 - 작성일: 2026-09-10
-- 상태: T0 #128 완료, 다음 active T1.1 #129는 코드 미착수. 이후 작업도 미착수다.
+- 상태: T0 #128 / T1.1 #129 완료, 다음 active T1.2 #130은 코드 미착수. 이후 작업도 미착수다.
 - 설계: [Text-first 모듈 설계](text-first-refactoring-design.md).
 - baseline: `0c4f557`, `feat/126-winter-owned-work-canary`.
-- T번호는 계획상의 ID다. Epic #127, T0 #128, T1.1 #129를 등록했으며 나머지는 미등록이다.
+- T번호는 계획상의 ID다. Epic #127, T0 #128, T1.1 #129, T1.2 #130을 등록했으며 나머지는 미등록이다.
 - 기록 보존과 재사용: [기록 인계표](text-first-records-handoff.md).
 - 기존 설계의 T0~T6 순서를 유지하고, 각 단계 안에서 작은 Issue로 나눌 단위를 표시한다.
 
@@ -58,10 +58,10 @@ Voice와 자기 코드 변경의 전체 lifecycle은 후순위로 기록한다. 
 
 ### T1.1 공용 초기화 코드 추출
 
-- [ ] `src/companion/application/bootstrap.py`를 추가한다.
-- [ ] CLI `run()`에 모인 model/repository/정책 생성 코드를 text runtime factory로 옮긴다.
-- [ ] 기존 `user_cli` 옵션과 Python config를 같은 factory 입력으로 변환한다.
-- [ ] 모델·DB의 생성 및 종료 책임을 runtime 한 곳에 모은다.
+- [x] `src/companion/application/bootstrap.py`를 추가한다.
+- [x] CLI `run()`에 모인 model/repository/정책 생성 코드를 text runtime factory로 옮긴다.
+- [x] 기존 `user_cli` 옵션과 Python config를 같은 factory 입력으로 변환한다.
+- [x] 모델·DB의 생성 및 종료 책임을 runtime 한 곳에 모은다.
 
 기존 `ChatModel`, repository와 `CompanionCore`를 그대로 조립한다. 첫 입력은 config와
 필요한 Port 구현체이고, 출력은 `core`, 선택적인 task inbox, 종료 함수를 가진 runtime이다.
@@ -69,6 +69,15 @@ Voice와 자기 코드 변경의 전체 lifecycle은 후순위로 기록한다. 
 
 **검사:** text startup에 음성 장비·모델이 불필요, 기존 옵션과 DB 경로 유지, 잘못된 설정은
 명시적 실패. 기존 CLI 테스트와 startup 계약 테스트를 사용한다.
+
+**2026-09-10 #129 완료:** 새 startup 계약 27개를 포함한 Docker offline 847 passed
+(39.96초), `ruff check .` 통과, `mypy` 176 source files 통과. 기존 CLI 23개도 별도 통과했다.
+Identity/기억/evidence 재시작, 저장소별 실패, 명시적 Worker opt-in, 모델 없는 조회와 fake
+fallback 차단을 검증했다. 최초 음성 의존성 테스트는 공유 prosody metadata를 음성 엔진으로
+잘못 분류해 수정했고, 실제 STT/TTS/device import 차단 검사는 유지했다.
+운영 데이터와 schema, Core 정책, Voice/Web/service를 변경하지 않았다.
+종료 함수는 기존 job을 취소하지 않는 bounded drain이다. 실제 모델·사용자 체감은 미검증이다.
+[ADR 0032](adr/0032-text-runtime-bootstrap.md)를 따른다. 다음은 #130이며 코드 미착수다.
 
 ### T1.2 정체성 snapshot과 문맥 조립 추출
 

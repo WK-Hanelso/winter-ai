@@ -26,12 +26,22 @@ Voice 고도화와 phone canary 검증은 보류한다. 기존 코드·개인 DB
 
 - [Epic #127](https://github.com/WK-Hanelso/winter-ai/issues/127)
 - [T0 #128](https://github.com/WK-Hanelso/winter-ai/issues/128): 목표 전환과 기록 인계 완료
-- [다음 active T1.1 #129](https://github.com/WK-Hanelso/winter-ai/issues/129): bootstrap 추출, 코드 미착수
+- [T1.1 #129](https://github.com/WK-Hanelso/winter-ai/issues/129): text bootstrap 추출·오프라인 검증 완료
+- [다음 active T1.2 #130](https://github.com/WK-Hanelso/winter-ai/issues/130): 정체성 snapshot·문맥 조립 추출, 코드 미착수
 - [기존 기록 인계표](docs/text-first-records-handoff.md), [설계](docs/text-first-refactoring-design.md),
   [실행 TODO](docs/text-first-implementation-todo.md)
 
 #126은 open/partial로 보류한다. 새 Text-first는 contract 단계이며 기존 기능의 성숙도와
-실패 gate를 바꾸지 않았다. T0는 문서·상태 전환만 수행하며 서비스·DB를 변경하지 않는다.
+실패 gate를 바꾸지 않았다. T0/T1.1에서 운영 서비스·개인 DB를 변경하지 않았다.
+
+T1.1은 CLI의 초기화 책임을 [`application/bootstrap.py`](src/companion/application/bootstrap.py)로
+분리했다. `./winter chat` 등 사용법과 기존 모델·prompt·저장 형식은 유지한다. Python에서는
+`TextRuntimeConfig`와 `build_text_runtime()`으로 같은 Core를 조립할 수 있다. 기록 조회는
+모델 없이 동작하고, 텍스트 startup은 음성 장비나 weight를 로딩하지 않는다.
+[초기화·종료 계약](docs/adr/0032-text-runtime-bootstrap.md)을 따른다.
+
+검증: Docker offline **847 passed**, Ruff 전체 통과, mypy **176 source files** 통과.
+실제 모델 재평가·사용자 대화 품질 검증·운영 서비스 재배포는 하지 않았다.
 
 ## 1. 겨울이는 무엇인가
 
@@ -638,7 +648,7 @@ docker compose run --rm dev mypy src
 ## 14. 다음 개발 순서
 
 현재 순서는 [Text-first TODO](docs/text-first-implementation-todo.md)의 T0→T6다.
-T0 기록 인계 뒤 #129에서 bootstrap만 추출하고, T2부터 같은 모델의 대화 정책을 실제 CLI로
+T0 기록 인계와 #129 bootstrap 추출 뒤 #130에서 문맥 조립을 분리하고, T2부터 같은 모델의 대화 정책을 실제 CLI로
 비교한다. T3/T4는 기억 검색/갱신, T5/T6는 기존 Agent 연결/확장을 다룬다.
 
 ### 2026-08 실행 순서 — 역사로 보존
