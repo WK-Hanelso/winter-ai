@@ -1,10 +1,10 @@
 # Text-first Winter 구현 TODO
 
 - 작성일: 2026-09-10
-- 상태: T0 #128 / T1.1 #129 완료, 다음 active T1.2 #130은 코드 미착수. 이후 작업도 미착수다.
+- 상태: T0 #128 / T1 #129/#130 완료, 다음 active T2.1 #131은 코드 미착수. 이후 작업도 미착수다.
 - 설계: [Text-first 모듈 설계](text-first-refactoring-design.md).
 - baseline: `0c4f557`, `feat/126-winter-owned-work-canary`.
-- T번호는 계획상의 ID다. Epic #127, T0 #128, T1.1 #129, T1.2 #130을 등록했으며 나머지는 미등록이다.
+- T번호는 계획상의 ID다. Epic #127, T0 #128, T1.1 #129, T1.2 #130, T2.1 #131을 등록했으며 나머지는 미등록이다.
 - 기록 보존과 재사용: [기록 인계표](text-first-records-handoff.md).
 - 기존 설계의 T0~T6 순서를 유지하고, 각 단계 안에서 작은 Issue로 나눌 단위를 표시한다.
 
@@ -81,10 +81,10 @@ fallback 차단을 검증했다. 최초 음성 의존성 테스트는 공유 pro
 
 ### T1.2 정체성 snapshot과 문맥 조립 추출
 
-- [ ] 기존 Identity/Belief/Capability/Open Loop를 읽는 `CharacterSnapshot`을 정의한다.
-- [ ] `src/companion/dialogue/context_assembler.py`로 prompt 조립을 추출한다.
-- [ ] Core가 `snapshot + 현재 입력 + 최근 대화 + 검색 근거`를 assembler에 전달하게 한다.
-- [ ] 기존 system message 우선순위와 실패 경로를 유지한다.
+- [x] 기존 Identity/Belief/Capability/Open Loop를 읽는 `CharacterSnapshot`을 정의한다.
+- [x] `src/companion/dialogue/context_assembler.py`로 prompt 조립을 추출한다.
+- [x] Core가 `snapshot + 현재 입력 + 최근 대화 + 검색 근거`를 assembler에 전달하게 한다.
+- [x] 기존 system message 우선순위와 실패 경로를 유지한다.
 
 새 관계 DB를 만드는 작업이 아니다. snapshot은 기존 상태의 read-only view다. 이전 public
 import 경로를 유지하고 `memory.py → memory/` 같은 이름 변경은 하지 않는다.
@@ -94,6 +94,16 @@ import 경로를 유지하고 `memory.py → memory/` 같은 이름 변경은 �
 
 **T1 완료 경험:** 지금처럼 CLI 대화를 할 수 있으며, 문맥 구성만 독립적으로 고칠 수 있다.
 이 단계의 DB migration은 없다. 이전 코드로 바로 되돌릴 수 있다.
+
+**2026-09-10 #130 완료:** 수정 전 `393bc4c`의 synthetic ChatRequest 6종을 먼저 고정한 뒤
+분리 후 같은 지문임을 확인했다. 새 계약 14개를 포함해 Docker offline 861 passed (38.82초),
+`ruff check .` 통과, `mypy` 179 source files 통과. 11개 system block 순서, 스냅샷 불변성,
+evidence/버전, 다음 turn 상태 반영, repair 재사용과 오류 전파를 검증했다. 기존 bootstrap의
+임시 SQLite 재시작 검사와 Shared Core 회귀도 통과했다.
+초기 테스트의 timeline ID assertion은 기존 renderer가 ID를 출력하지 않는 사실에 맞춰
+내용 assertion으로 정정했고, optional grounding 지침 타입 누락도 보완했다. 요청 기준선은
+재생성하지 않았다. 운영 데이터/서비스·모델·policy는 변경하지 않았고 실제 대화 체감은 미검증이다.
+[ADR 0033](adr/0033-character-snapshot-context-assembler.md)를 따른다. 다음 #131은 코드 미착수다.
 
 ## T2 — 같은 모델에서 자연스러운 대화 비교
 

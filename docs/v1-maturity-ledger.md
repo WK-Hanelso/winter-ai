@@ -13,7 +13,7 @@
 ## 2026-09-10 우선순위 전환
 
 Text-first Epic #127 / T0 #128의 기준 전환과 기록 인계를 완료했다. 새 `text_first_foundation`은 **contract**이며
-기존 20개 기능 maturity는 그대로다. T1.1 #129 bootstrap 추출을 완료했고 다음 active T1.2 #130은
+기존 20개 기능 maturity는 그대로다. T1 #129/#130 모듈 추출을 완료했고 다음 active T2.1 #131은
 코드 미착수다. Voice 고도화와 #126 actual-phone
 관찰은 보류하고 #126의 결과는 partial로 남긴다. operational 표시는 기존 검증 범위를 뜻하며
 이번 문서 전환으로 서비스의 오늘 상태를 재확인했다는 뜻이 아니다.
@@ -34,6 +34,20 @@ write Worker는 기존 품질·승인 gate를 유지한다.
 - gate: 자연스러운 말투·기억의 연속성·Agent 활용이라는 Text-first 전체 목표는 아직 contract다.
   이번 리팩터링만으로 운영 품질이나 기존 실패 gate를 승격하지 않는다.
 - 다음: #130 정체성 snapshot과 문맥 조립 추출, 이후 T2 실제 텍스트 정책 비교.
+
+### T1.2 #130 — 읽기 전용 상태와 문맥 조립 추출 완료
+
+- 가능 범위: Core가 기존 검색 결과와 `CharacterSnapshot`을 `ContextAssembler`에 전달해
+  모델 입력을 조립한다. snapshot은 version/evidence를 보존한 값이고 새 DB나 관계 추론은 없다.
+- 근거: `src/companion/dialogue/`, `tests/unit/test_context_assembly_baseline.py`,
+  `tests/fixtures/text-context-393bc4c.json`, [ADR 0033](adr/0033-character-snapshot-context-assembler.md).
+  수정 전 ChatRequest 6종 지문 일치, Docker offline **861 passed (38.82초)**,
+  Ruff 전체 통과, mypy **179 source files** 통과.
+- 한계: 모델·prompt 정책·최근 문맥 budget·전체 history 조회는 기존 그대로다. snapshot은
+  DB 간 atomic transaction이 아니다. 실제 Local LLM/사용자 체감/운영 재배포는 미검증이다.
+- gate: 기존 Memory/Belief/Worker gate와 Text-first contract 유지. 구조 추출이 자연스러운
+  대화 품질이나 새로운 관계 기능의 operational 승격을 뜻하지 않는다.
+- 다음: #131에서 기존/후보 대화 정책 경계와 평가 장면 준비, T2.2 동일 모델 실제 비교.
 
 ## 개발 통제 상태
 
@@ -110,7 +124,7 @@ live HTTP 413, Tailscale Serve HTTPS health까지 확인해 제한 운영으로 
 사용을 막지 않으며, 천우가 평소 사용 중 확인했을 때만 관찰 완료로 바꾼다. Codex는 상태를
 보고할 때 미확인 항목을 계속 알린다.
 
-- #129 text bootstrap 이후 실제 Local LLM CLI 대화: offline 회귀는 완료했지만 이번 변경의
+- #129/#130 text 초기화·문맥 조립 분리 이후 실제 Local LLM CLI 대화: offline 회귀는 완료했지만 이번 변경의
   사용자 체감은 미확인이다. 사용 명령은 유지하며 비차단 관찰로 남긴다.
 
 - #114 이후 폰 push-to-talk 한 turn: ingress만 바뀌었고 voice 기능은 변경하지 않아 비차단.

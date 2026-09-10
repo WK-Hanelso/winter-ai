@@ -2,15 +2,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import uuid4
 
-from companion.beliefs import belief_context
 from companion.capabilities import SelfModelProvider
 from companion.context import ConversationContextBuilder
 from companion.contracts import ChatRequest, ConversationMessage
-from companion.conversation_recall import ConversationRecallRetriever, recall_context
+from companion.conversation_recall import ConversationRecallRetriever
 from companion.day_reflection import (
     ActiveDayReflectionRetriever,
-    day_reflection_context,
 )
+from companion.dialogue.character_snapshot import CharacterSnapshot
+from companion.dialogue.context_assembler import ContextAssembler
 from companion.dialogue_act import classify as classify_dialogue_act
 from companion.dialogue_director import DialogueDirector, DialoguePlan
 from companion.grounding import ClaimEvidence, GroundingPolicy, ResponseClaimGate
@@ -23,16 +23,13 @@ from companion.maintenance import (
 from companion.memory import (
     ActiveMemoryRetriever,
     classify_explicit_memory_kind,
-    current_state_history_context,
     extract_direct_memory_statements,
     extract_explicit_memory_content,
-    memory_context,
 )
 from companion.open_loops import (
     ActiveOpenLoopRetriever,
     SqliteOpenLoopRepository,
     detect_open_loop,
-    open_loop_context,
 )
 from companion.outcome import OutcomeMemoryClaim
 from companion.owned_work import ReadOnlyProjectCanaryPolicy
@@ -129,6 +126,7 @@ class CompanionCore:
         response_claim_gate: ResponseClaimGate | None = None,
         self_model_provider: SelfModelProvider | None = None,
         improvement_snapshot_provider: ImprovementSnapshotProvider | None = None,
+        context_assembler: ContextAssembler | None = None,
     ) -> None:
         self._chat_model = chat_model
         self._conversation_repository = conversation_repository
@@ -170,6 +168,9 @@ class CompanionCore:
         self._response_claim_gate = response_claim_gate or ResponseClaimGate()
         self._self_model_provider = self_model_provider
         self._improvement_snapshot_provider = improvement_snapshot_provider
+        self._context_assembler = (
+            context_assembler if context_assembler is not None else ContextAssembler()
+        )
 
     def respond_to_text(self, text: str) -> CompanionResponse:
         turn = self._prepare(text)
@@ -355,15 +356,7 @@ class CompanionCore:
             )
             if part is not None
         )
-        request = ChatRequest(
-            prompt=turn.request.prompt,
-            messages=turn.request.messages
-            + (
-                ConversationMessage("assistant", bounded),
-                ConversationMessage("system", repair),
-            ),
-            max_tokens=turn.request.max_tokens,
-        )
+        request = self._context_assembler.repair_request(turn.request, bounded, repair)
         repaired = self._chat_model.generate(request).text
         repaired = " ".join(split_sentences(repaired)[: _sentence_limit(turn)])
         remaining_claims = self._response_claim_gate.violations(
@@ -483,85 +476,49 @@ class CompanionCore:
                         for memory in selected_memories
                     ),
                 )
-        # Built in one place and in a deliberate order. Repeated prepends put the
-        # last-added block first, which pushed identity behind style and memory.
-        # Identity leads because it frames everything else; style sits closest to
-        # the turn being generated, where a register instruction is least likely
-        # to be dropped.
-        system_messages: list[ConversationMessage] = []
-        if self._identity is not None:
-            system_messages.append(
-                ConversationMessage("system", self._identity.system_message())
-            )
         self_model_snapshot = (
             self._self_model_provider.snapshot()
             if self._self_model_provider is not None
             else None
         )
-        if self_model_snapshot is not None:
-            system_messages.append(
-                ConversationMessage("system", self_model_snapshot.system_message())
-            )
         improvement_snapshot = (
             self._improvement_snapshot_provider.snapshot()
             if self._improvement_snapshot_provider is not None
             else None
         )
-        if improvement_snapshot is not None:
-            system_messages.append(
-                ConversationMessage("system", improvement_snapshot.system_message())
-            )
-        if self._day_reflection_retriever is not None and self._clock is not None:
-            prior_days = self._day_reflection_retriever.retrieve(
+        prior_days = (
+            self._day_reflection_retriever.retrieve(
                 before_date=self._clock.now().date().isoformat()
             )
-            if prior_days:
-                system_messages.append(
-                    ConversationMessage(
-                        "system",
-                        day_reflection_context(prior_days),
-                    )
-                )
-        if selected_memories:
-            system_messages.append(
-                ConversationMessage("system", memory_context(selected_memories))
-            )
-        if current_state_history:
-            system_messages.append(
-                ConversationMessage(
-                    "system",
-                    current_state_history_context(current_state_history),
-                )
-            )
-        if self._belief_retriever is not None:
-            selected_beliefs = self._belief_retriever.retrieve(text)
-            if selected_beliefs:
-                system_messages.append(
-                    ConversationMessage("system", belief_context(selected_beliefs))
-                )
-        if recalled_conversation:
-            system_messages.append(
-                ConversationMessage("system", recall_context(recalled_conversation))
-            )
-        if selected_open_loops:
-            system_messages.append(
-                ConversationMessage("system", open_loop_context(selected_open_loops))
-            )
+            if self._day_reflection_retriever is not None and self._clock is not None
+            else ()
+        )
+        selected_beliefs = (
+            self._belief_retriever.retrieve(text)
+            if self._belief_retriever is not None
+            else ()
+        )
+        snapshot = CharacterSnapshot(
+            identity=self._identity,
+            self_model=self_model_snapshot,
+            improvements=improvement_snapshot,
+            prior_days=prior_days,
+            beliefs=selected_beliefs,
+            open_loops=selected_open_loops,
+        )
         turn_style = self._verbal_style_planner.plan_turn(dialogue_act)
-        if turn_style.instruction is not None:
-            system_messages.append(ConversationMessage("system", turn_style.instruction))
-        # Grounding and the selected response move share the final block. Small
-        # models visibly weakened whichever of the two appeared earlier.
-        grounding_instruction = self._grounding_policy.instruction()
-        final_instruction = "\n\n".join(
-            part
-            for part in (grounding_instruction, dialogue_plan.instruction)
-            if part
+        request = self._context_assembler.assemble(
+            snapshot=snapshot,
+            text=text,
+            recent_messages=messages,
+            memories=selected_memories,
+            current_state_history=current_state_history,
+            recalled_conversation=recalled_conversation,
+            style_instruction=turn_style.instruction,
+            grounding_instruction=self._grounding_policy.instruction(),
+            dialogue_instruction=dialogue_plan.instruction,
+            max_tokens=224 if dialogue_act == "explain" else 120,
         )
-        system_messages.append(
-            ConversationMessage("system", final_instruction)
-        )
-        messages = tuple(system_messages) + messages
         explicit_worker_request = self._worker_routing_policy.route(text)
         owned_work_request = (
             self._owned_work_routing_policy.route(text)
@@ -573,11 +530,7 @@ class CompanionCore:
             else None
         )
         return _Turn(
-            request=ChatRequest(
-                prompt=text,
-                messages=messages,
-                max_tokens=224 if dialogue_act == "explain" else 120,
-            ),
+            request=request,
             dialogue_act=dialogue_act,
             candidate_ids=candidate_ids,
             automatic_memory_ids=automatic_memory_ids,
@@ -590,16 +543,8 @@ class CompanionCore:
                 memory.content
                 for memory in selected_memories + current_state_history
             ),
-            capability_claim_scopes=(
-                self_model_snapshot.authorized_claim_scopes
-                if self_model_snapshot is not None
-                else ()
-            ),
-            improvement_statuses=(
-                tuple(item.status for item in improvement_snapshot.items)
-                if improvement_snapshot is not None
-                else ()
-            ),
+            capability_claim_scopes=snapshot.capability_claim_scopes,
+            improvement_statuses=snapshot.improvement_statuses,
             shadow_turn_id=shadow_turn_id,
             maintenance_route=maintenance_route,
             experience_id=str(uuid4()),
