@@ -8,7 +8,18 @@
 기준으로 한다. 아래 자유 서술과 상태 파일이 충돌하면 `./winter project-check`가 실패하며,
 새 기능 확장 전에 상태와 근거를 먼저 바로잡는다.
 
-<!-- winter-project-state: capability_registry=operational, development_control_gate=operational, improvement_ledger=operational, self_model=operational, work_orchestration=shadow -->
+<!-- winter-project-state: capability_registry=operational, development_control_gate=operational, improvement_ledger=operational, self_model=operational, text_first_foundation=contract, work_orchestration=shadow -->
+
+## 2026-09-10 우선순위 전환
+
+Text-first Epic #127 / T0 #128의 기준 전환과 기록 인계를 완료했다. 새 `text_first_foundation`은 **contract**이며
+기존 20개 기능 maturity는 그대로다. 다음 active T1.1 #129는 코드 미착수다. Voice 고도화와 #126 actual-phone
+관찰은 보류하고 #126의 결과는 partial로 남긴다. operational 표시는 기존 검증 범위를 뜻하며
+이번 문서 전환으로 서비스의 오늘 상태를 재확인했다는 뜻이 아니다.
+
+아래 실패·관찰 대기 기록을 지우지 않는다. [기록 인계표](text-first-records-handoff.md)가
+이전 근거와 T1~T6의 재사용/재검증 지점을 연결한다. 특히 Shadow Memory/Belief 활성화와
+write Worker는 기존 품질·승인 gate를 유지한다. 새 기능 구현 없이 상태 전환만 검증한다.
 
 ## 개발 통제 상태
 

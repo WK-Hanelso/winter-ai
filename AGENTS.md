@@ -2,6 +2,19 @@
 
 ## 1. Project Mission
 
+### 2026-09-10 우선순위 변경 — Text-first
+
+사용자의 최신 결정에 따라 현재 제품 목표는 텍스트에서 (1) 일관된 겨울이와 기억의 연속성,
+(2) 승인된 외부 Agent 활용, (3) 관계가 느껴지는 자연스러운 대화다. Voice 고도화와 실제
+음성 검증은 후순위로 보류한다. 아래 기존 Voice-first 및 Level 3 선행 순서보다 이 결정이
+우선한다. 기존 음성 코드·Reference 원본/정렬과 검증 기록은 보존한다.
+
+Epic #127, T0 #128, 첫 코드 작업 T1.1 #129를 따른다. 기존 기록은 버리지 않고
+[`docs/text-first-records-handoff.md`](docs/text-first-records-handoff.md)의 출처→후속 작업
+연결을 유지한다. 코드와 기존 개인 DB를 다시 bootstrap하거나 초기화하지 않는다.
+설계는 [`docs/text-first-refactoring-design.md`](docs/text-first-refactoring-design.md), 작업
+순서는 [`docs/text-first-implementation-todo.md`](docs/text-first-implementation-todo.md)를 따른다.
+
 이 저장소의 목표는 단순한 챗봇이 아니라, 한 명의 사용자와 장기간 관계를 유지하는 **로컬 중심 Personal Companion**을 만드는 것이다.
 
 이 Companion은 다음 특성을 가져야 한다.
@@ -42,7 +55,8 @@ capability 채택 승인은 분리하며, 테스트·audit·version·rollback �
 
 ### 2.1 Interfaces
 
-초기 버전부터 인터페이스는 반드시 두 개다.
+최종 인터페이스는 아래 두 개를 유지한다. 현재 Text-first 단계는 CLI가 수락 기준이며 Voice는
+후속이다. 기존 공유 Core와 데이터 호환성은 보존한다.
 
 1. **CLI**
    - 일반 텍스트 대화
@@ -111,7 +125,8 @@ CLI에서 저장된 기억은 Voice에서 사용되어야 하며, Voice에서 �
 
 ### 2.3 Voice
 
-Voice는 후순위 부가기능이 아니다. 초기 수직 단면에 반드시 포함한다.
+Voice는 겨울이의 장기 정체성 일부로 보존한다. 2026-09-10 사용자 결정에 따라 현재
+고도화·실기 검증은 보류하며 텍스트 작업의 완료를 Voice 준비 여부에 걸지 않는다.
 
 목소리는 다음 세 요소를 분리해서 다룬다.
 
@@ -332,7 +347,8 @@ class CompanionResponse:
 
 첫 목표는 완성형 Agent가 아니다.
 
-다음 수직 단면을 가장 먼저 완성한다.
+아래는 최초 Voice 수직 단면의 역사다. 현재는 Text-first TODO의 CLI 경로를 우선하며,
+기존 모델·DB·실패 근거를 이어받아 기능별로 리팩터링한다.
 
 ```text
 마이크 입력
@@ -590,6 +606,17 @@ Companion Identity를 Worker에 넘기지 않는다. Worker는 전문 작업 결
 ---
 
 ## 8. Current Work Direction
+
+현재 phase는 `text_first_foundation`이다. T0 #128에서 기준과 기록을 인계했다. 다음 active
+scope는 #129의 공용 text runtime bootstrap 추출이며 아직 코드 구현 전이다. Voice 실제 검증과 자기 코드 채택의 전체
+cycle은 텍스트 경험의 선행조건이 아니다. 대화·기억·Identity·Reference 및 기존 코드/평가를
+보존하고 신규 메모리 migration은 T3/T4 별도 Issue에서 원본 보존과 복구를 검증한다.
+
+#126은 open/partial 보류다. background job/inbox, scheduler, typed read-only gateway는
+T5의 재사용 근거로 남긴다. 아래 2026-08 기록의 "현재/다음"은 당시 상태이며 새 우선순위를
+뜻하지 않는다. 실패한 품질 gate, 개인정보 경계, 승인 없는 write 금지는 계속 유효하다.
+
+### 2026-08 Foundation Recovery 기록 — 보존, 실행 순서는 대체됨
 
 Task 001과 초기 Milestone 기반은 완료되었다. 기존 저장소를 다시 bootstrap하지 않는다.
 `Winter Day Reflection V0`의 구현 기반은 완료되었고 실제 3일 관찰 gate는 계속 유지한다.
@@ -971,9 +998,10 @@ Codex는 다음 방식으로 보고한다.
 
 ---
 
-## 15. First Codex Prompt
+## 15. Historical First Codex Prompt — 재실행 금지
 
-저장소를 연 뒤 Codex에게 아래 지시를 전달한다.
+아래 최초 bootstrap prompt는 이력으로 보존한다. 새 세션은 §8과 project-state의 active
+Issue를 읽으며 Task 001을 다시 실행하지 않는다.
 
 ```text
 Read AGENTS.md completely before changing any file.

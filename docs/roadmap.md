@@ -7,9 +7,24 @@
 파일의 phase·active Issue·maturity·dependency 판정을 우선한다. 상태 변경 전후에는
 `./winter project-check`를 통과해야 한다.
 
-<!-- winter-project-state: capability_registry=operational, development_control_gate=operational, improvement_ledger=operational, self_model=operational, work_orchestration=shadow -->
+<!-- winter-project-state: capability_registry=operational, development_control_gate=operational, improvement_ledger=operational, self_model=operational, text_first_foundation=contract, work_orchestration=shadow -->
 
-## Foundation Recovery — 현재 최우선
+## Text-first — 현재 최우선 (2026-09-10)
+
+Epic [#127](https://github.com/WK-Hanelso/winter-ai/issues/127)의 목표는 지속되는 정체성/기억,
+관계가 느껴지는 텍스트 대화, 외부 Agent 활용이다. T0 [#128](https://github.com/WK-Hanelso/winter-ai/issues/128)은
+기록과 기준의 인계를 완료했다. 다음 active Issue [#129](https://github.com/WK-Hanelso/winter-ai/issues/129)는
+공용 bootstrap만 추출하며 아직 코드 미착수다. Voice 고도화·실기 검증은 보류하며 기존 서비스/데이터를 삭제하지 않는다.
+
+T0 기준 전환 → T1 모듈 추출 → T2 대화 정책 비교 → T3 검색/context → T4 기억 갱신/재시작
+→ T5 Codex text 작업 경험 → T6 추가 provider/연속 사용 순서다.
+상세 [TODO](text-first-implementation-todo.md)와 [기록 인계표](text-first-records-handoff.md)를 따른다.
+
+#126은 open/partial 보류이며 job/inbox·scheduler·gateway를 T5로 이어받는다. 자동 판단과
+추론형 기억의 실패 gate는 유지한다. 아래 2026-08의 현재 상태/순서는 과거 관찰이며 오늘의
+서비스 상태나 완료 판정이 아니다. 새 Text-first는 contract 단계다.
+
+## Foundation Recovery — 2026-08 기록, 실행 순서 대체
 
 2026-08-19 전체 감사 결과에 따라 새 모델 탐색과 Worker 확장을 일시 중지했다. Issue #112
 `Development Control Gate V0`, Issue #113 `pre-audit baseline 보존`, Issue #114 `Web ingress와

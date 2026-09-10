@@ -5,6 +5,23 @@
 - 사용자: 천우
 - 기준: 이 문서는 Winter V1의 전체 제품 목표와 완료 조건을 정의한다.
 
+## 2026-09-10 제품 우선순위 개정
+
+사용자가 승인한 현재 제품 목표는 텍스트에서 다음 세 가지를 확보하는 것이다.
+
+1. 늘 같은 겨울이로 느껴지는 정체성과 기억의 연속성. 원본은 보존하고 필요한 기억을
+   선택적으로 찾아 사용하며, 요약 손실·검색 누락·정정 오류를 구분해 개선한다.
+2. 승인된 외부 Agent를 활용하고 대화를 이어가며 결과를 받는 기능.
+3. 농담·정정·관계와 상황에 맞는 자연스러운 대화.
+
+Voice 고도화와 실제 음성 평가는 후순위로 보류한다. Level 3 자기 코드 개선은 장기 확장
+목표로 유지하되 첫 텍스트 제품과 기본 read-only Agent 활용의 선행조건으로 삼지 않는다.
+기존 §14의 전체 V1 수락 기준은 장기 목표이며 현재 Text-first 완료 기준은
+[설계](text-first-refactoring-design.md)와 [TODO](text-first-implementation-todo.md)를 따른다.
+
+이전 결정·실패 결과·데이터를 초기화하지 않는다. [ADR-0031](adr/0031-text-first-transition-and-history.md)과
+[기록 인계표](text-first-records-handoff.md)가 대체한 순서와 계속 유효한 경계를 명시한다.
+
 ## 1. Product Statement
 
 Winter V1은 질문에 반응하는 챗봇이 아니라, 한 명의 사용자 천우와 장기간 관계를
@@ -364,7 +381,9 @@ Voice Identity, Prosody와 Verbal Style은 데이터 계약에서 분리하지�
 - 테스트 없이 prompt나 코드를 바로 운영에 적용
 - 처음부터 full-duplex Voice나 복잡한 multi-agent framework 도입
 
-## 16. Implementation Order
+## 16. Historical Implementation Order — 2026-08
+
+아래 순서는 당시 계획으로 보존한다. 현재 순서는 Text-first T0→T6이며 중복 구현하지 않는다.
 
 1. 현재 혼합 worktree를 보존하고 기능별 기준 revision을 만든다.
 2. `TurnUnderstanding` schema, Port, deterministic fake와 Shadow event log를 구현한다.
@@ -381,7 +400,12 @@ Voice Identity, Prosody와 Verbal Style은 데이터 계약에서 분리하지�
 
 ## 17. Immediate Next Action
 
-첫 구현은 `TurnUnderstanding Shadow Mode`다.
+T0 #128의 기준/기록 인계는 완료했다. 현재 active scope는 T1.1 #129 공용 bootstrap 추출이며 코드 미착수다.
+관련 [TODO](text-first-implementation-todo.md)를 따른다.
+
+### 이전 최초 지시 — 완료 기반과 실패 gate의 역사
+
+당시 첫 구현은 `TurnUnderstanding Shadow Mode`였다.
 
 응답이나 Memory 동작을 바로 바꾸지 않고, 원문 turn 옆에 observations, intent hypotheses,
 affect, conversational need, temporal scope, memory/improvement proposals, uncertainty와

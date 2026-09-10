@@ -16,7 +16,22 @@ Memory와 시간축을 공유한다.
 새 기능을 시작하거나 상태를 바꾸기 전후에 `./winter project-check`를 실행한다. 이 검사가
 실패하면 새 기능을 확장하지 않고 Issue·근거·문서 상태부터 바로잡는다.
 
-<!-- winter-project-state: capability_registry=operational, development_control_gate=operational, improvement_ledger=operational, self_model=operational, work_orchestration=shadow -->
+<!-- winter-project-state: capability_registry=operational, development_control_gate=operational, improvement_ledger=operational, self_model=operational, text_first_foundation=contract, work_orchestration=shadow -->
+
+## 현재 개발 목표 — Text-first (2026-09-10)
+
+텍스트에서 일관된 겨울이·기억의 연속성, 관계가 느껴지는 대화, 외부 Agent 활용을 우선한다.
+Voice 고도화와 phone canary 검증은 보류한다. 기존 코드·개인 DB·Reference·실험 기록은
+보존하며 아래 운영 수치들은 마지막 기록된 근거이지 오늘 runtime 재검증 결과가 아니다.
+
+- [Epic #127](https://github.com/WK-Hanelso/winter-ai/issues/127)
+- [T0 #128](https://github.com/WK-Hanelso/winter-ai/issues/128): 목표 전환과 기록 인계 완료
+- [다음 active T1.1 #129](https://github.com/WK-Hanelso/winter-ai/issues/129): bootstrap 추출, 코드 미착수
+- [기존 기록 인계표](docs/text-first-records-handoff.md), [설계](docs/text-first-refactoring-design.md),
+  [실행 TODO](docs/text-first-implementation-todo.md)
+
+#126은 open/partial로 보류한다. 새 Text-first는 contract 단계이며 기존 기능의 성숙도와
+실패 gate를 바꾸지 않았다. T0는 문서·상태 전환만 수행하며 서비스·DB를 변경하지 않는다.
 
 ## 1. 겨울이는 무엇인가
 
@@ -622,6 +637,14 @@ docker compose run --rm dev mypy src
 
 ## 14. 다음 개발 순서
 
+현재 순서는 [Text-first TODO](docs/text-first-implementation-todo.md)의 T0→T6다.
+T0 기록 인계 뒤 #129에서 bootstrap만 추출하고, T2부터 같은 모델의 대화 정책을 실제 CLI로
+비교한다. T3/T4는 기억 검색/갱신, T5/T6는 기존 Agent 연결/확장을 다룬다.
+
+### 2026-08 실행 순서 — 역사로 보존
+
+다음 목록은 당시 순서다. phone 관찰과 전체 자기 코드 채택 cycle은 현재 우선순위에서 보류다.
+
 현재 최우선은 관계와 기억을 유지하면서 겨울이가 실제 전문 작업의 목적과 최종 판단까지
 소유하게 만드는 것이다.
 
@@ -671,6 +694,9 @@ docker compose run --rm dev mypy src
 ## 16. 새 사람이나 Agent의 인수인계 순서
 
 처음 저장소를 열었다면 다음 순서로 이해한다.
+
+먼저 [기록 인계표](docs/text-first-records-handoff.md)에서 현재 결정과 과거 근거를 연결한다.
+문서 전체를 매번 재독하지 않고 해당 작업의 원문 근거를 따라 읽는다.
 
 1. 이 README의 1~7절을 읽어 제품과 실제 사용자 흐름을 이해한다.
 2. [AGENTS.md](AGENTS.md)를 끝까지 읽어 고정 요구사항과 금지 사항을 확인한다.

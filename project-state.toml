@@ -1,7 +1,7 @@
 schema_version = 1
-current_phase = "foundation_recovery"
-active_issue = 126
-active_work = ["work_orchestration"]
+current_phase = "text_first_foundation"
+active_issue = 129
+active_work = ["text_first_foundation"]
 
 # These files define mission, current product target, maturity and the audit baseline.
 canonical_documents = [
@@ -11,6 +11,8 @@ canonical_documents = [
   "docs/v1-maturity-ledger.md",
   "docs/roadmap.md",
   "docs/project-audit-2026-08-19.md",
+  "docs/text-first-records-handoff.md",
+  "docs/text-first-implementation-todo.md",
 ]
 
 # The synchronized HTML comment in these documents is intentionally machine checked.
@@ -20,6 +22,18 @@ status_documents = [
   "docs/roadmap.md",
   "docs/v1-maturity-ledger.md",
 ]
+
+[[features]]
+id = "text_first_foundation"
+maturity = "contract"
+evidence = [
+  "docs/text-first-refactoring-design.md",
+  "docs/text-first-implementation-todo.md",
+  "docs/text-first-records-handoff.md",
+  "docs/adr/0031-text-first-transition-and-history.md",
+]
+dependencies = ["shared_core", "persistent_memory"]
+sync_status = true
 
 [[features]]
 id = "development_control_gate"
