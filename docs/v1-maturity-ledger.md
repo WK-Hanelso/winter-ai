@@ -12,12 +12,17 @@
 
 ## 2026-09-10 우선순위 전환
 
+2026-09-11 [ADR 0039](adr/0039-dialogue-capability-first.md)로 T2 후반의 모델/예시 확보와
+형체 없는 표현 경계를 합의했다. 한숨·웃음은 선택적 전달 metadata 설계이며 아직 새 필드나
+Voice 합성 기능은 없다. 모델 후보 조사/비교/CLI 경험은 후속이고 성숙도를 올리지 않는다.
+
 Text-first Epic #127 / T0 #128의 기준 전환과 기록 인계를 완료했다. 새 `text_first_foundation`은 **contract**이며
 기존 20개 기능 maturity는 그대로다. T1 #129/#130 모듈 추출과 T2.1 #131 정책 선택 준비를
 완료했다. #132 실제 비교도 실행 범위는 완료했지만 품질 gate는 실패해 legacy를 유지한다.
 #134 응답 절단 및 #135 제한된 검사 수정/잔여 실패 평가 범위 완료.
 #136 실제 재평가 실행 범위도 완료했지만 repair/기억/검사 품질은 실패했다.
-다음 active #137 최소 지침/전체 문맥 대조는 미착수다.
+#137 최소/전체 문맥 대조의 로컬 실행도 완료했다. 다음 T2.7 모델/예시 조사는 미등록이며
+GitHub #137 OPEN/동기화 보류로 active #137을 유지한다. 새 모델이나 정책은 채택하지 않았다.
 T3.1 #133은 open/미착수 보류다. Voice 고도화와 #126 actual-phone
 관찰은 보류하고 #126의 결과는 partial로 남긴다. operational 표시는 기존 검증 범위를 뜻하며
 이번 문서 전환으로 서비스의 오늘 상태를 재확인했다는 뜻이 아니다.
@@ -25,6 +30,22 @@ T3.1 #133은 open/미착수 보류다. Voice 고도화와 #126 actual-phone
 아래 실패·관찰 대기 기록을 지우지 않는다. [기록 인계표](text-first-records-handoff.md)가
 이전 근거와 T1~T6의 재사용/재검증 지점을 연결한다. 특히 Shadow Memory/Belief 활성화와
 write Worker는 기존 품질·승인 gate를 유지한다.
+
+### T2.6 #137 — 로컬 진단 완료 / 운영 activation 없음
+
+- 범위: 고정된 합성 대화/기억/예산에서 같은 A.X의 최소/legacy 전체 문맥을 3 seed로 42회 비교.
+  별도 warm-up 2회, HTTP 실패 0, repair 미실행. [사전 계약/요약](evaluations/137-context-ablation/README.md).
+- 결과: 최소 지침에서도 없는 과거/취향과 의견 회피가 남았다. 전체 지침은 일부 장면의 직접성에
+  도움이 됐으며 정상 주제 제안/조언의 claim 오탐과 style 간섭도 확인했다. 어떤 prompt에서도
+  모델이 불가능하다는 증거가 아니며 전체 규칙 제거/확대를 승인하지 않는다.
+- 검증: 새 10개 포함 Docker offline **969 passed (18.13초)**, Ruff 전체/mypy **183 files** 통과.
+  첫 회귀 1건은 read-only data DB 생성 실패로, 빈 tmpfs data를 제공해 통과했다. Voice 코드 불변.
+- 시간: 최소/전체 중앙값 1.400/0.599초, 최대 8.435/1.998초. 출력 길이/캐시 영향, TTFT 아님.
+- 원출력: Git 제외 로컬 data/evaluations/137-context-ablation/, 공유 요약에 digest/재현 계약 보존.
+- 한계/관찰 대기: 개발 7장면·고정 prefix·3 seed. 사용자 실제 대화/장기 기억/Voice 미검증.
+  개인 DB/운영 모델/정책/서비스 불변, 임시 터널 종료. Text-first contract 유지.
+- 다음: T2.7 공개 모델/예시 조사. [ADR 0040](adr/0040-context-ablation-verdict.md).
+  GitHub #137 OPEN/동기화 보류, 후속 Issue 미등록. 이번 댓글/push/close는 하지 않았다.
 
 ### T1.1 #129 — 초기화 경계 추출 완료
 

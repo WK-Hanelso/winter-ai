@@ -20,6 +20,13 @@ Memory와 시간축을 공유한다.
 
 ## 현재 개발 목표 — Text-first (2026-09-10)
 
+2026-09-11 [승인 전략](docs/adr/0039-dialogue-capability-first.md): 규칙 보완만이 아니라
+관계형 한국어 대화 모델·예시 확보를 T2의 핵심 후속 작업으로 올린다. #137 원인 분리 뒤
+소수 후보 조사/비교 → 기존 CLI 대화 경험 → T3/T4 기억 연속성 → T5/T6 Agent 순서다.
+겨울이는 형체 없는 대화 프로그램이다. 몸/공간 지문을 강제하지 않고 한숨·웃음은 선택적
+전달 정보로 구분한다. 공통 문장은 유지하고 이후 Voice adapter가 소리로 실현한다.
+현재는 설계 합의이며 전달 metadata 구현, 모델 교체/학습, Voice 재개를 완료한 것이 아니다.
+
 텍스트에서 일관된 겨울이·기억의 연속성, 관계가 느껴지는 대화, 외부 Agent 활용을 우선한다.
 Voice 고도화와 phone canary 검증은 보류한다. 기존 코드·개인 DB·Reference·실험 기록은
 보존하며 아래 운영 수치들은 마지막 기록된 근거이지 오늘 runtime 재검증 결과가 아니다.
@@ -33,7 +40,7 @@ Voice 고도화와 phone canary 검증은 보류한다. 기존 코드·개인 DB
 - [완료 T2.3 #134](https://github.com/WK-Hanelso/winter-ai/issues/134): Core 응답 절단 수정
 - [완료 T2.4 #135](https://github.com/WK-Hanelso/winter-ai/issues/135): 제한된 검사 수정·repair 잔여 실패 평가
 - [완료 T2.5 #136](https://github.com/WK-Hanelso/winter-ai/issues/136): 실제 28턴 재평가, 품질 gate 실패
-- [다음 T2.6 #137](https://github.com/WK-Hanelso/winter-ai/issues/137): 최소 지침/전체 문맥 대조, 미착수
+- [T2.6 #137](https://github.com/WK-Hanelso/winter-ai/issues/137): 로컬 42회 진단 완료, GitHub OPEN/동기화 보류
 - [보류 T3.1 #133](https://github.com/WK-Hanelso/winter-ai/issues/133): bounded 대화 기록 조회, 미착수
 - [기존 기록 인계표](docs/text-first-records-handoff.md), [설계](docs/text-first-refactoring-design.md),
   [실행 TODO](docs/text-first-implementation-todo.md)
@@ -83,7 +90,13 @@ T2.5에서 같은 A.X로 **실제 28턴/31회 모델 호출**을 재평가했다
 정책에서 성공했지만, 모르는 기억은 환각 또는 질문 주체 변경으로 실패했다. 정상 설명을
 improvement_state로 오탐한 실패도 확인했다. legacy 유지, 후보 승격 보류다.
 [실제 대화와 판정](docs/evaluations/136-text-reevaluation/README.md)을 참조한다.
-다음 #137은 모델 교체나 새 규칙 구현 전에 최소 지침/전체 문맥의 차이를 분리하는 진단이다.
+#137에서 같은 최근 대화/기억/생성 예산으로 최소 지침과 legacy 전체 문맥을 **42회** 비교했다.
+최소에서도 없는 기억과 의견 회피가 남았고, 전체 지침은 일부 직접성에 도움이 됐다.
+검사 오탐은 별도 관찰했다. [공유 결과 요약](docs/evaluations/137-context-ablation/README.md),
+[ADR 0040](docs/adr/0040-context-ablation-verdict.md)를 따른다. 원 응답/개별 검토는 Git 제외
+로컬 `data/evaluations/137-context-ablation/`에만 있다. Docker offline **969 passed**,
+Ruff/mypy 통과. 사용자 실제 대화 품질/Voice는 미확인, 운영 policy/gate는 그대로다.
+다음 T2.7 공개 모델/예시 조사는 계획됐지만 Issue 미등록이다. 이번 GitHub 댓글/push/close는 하지 않았다.
 
 #136에서 Host 기본 `127.0.0.1:18080`은 연결 거부였고 Orin 모델은 정상이었다. 평가 전용
 `:18082` 임시 터널로 측정한 뒤 닫았다. 운영 서비스 전체의 상태는 이번에 재조회하지 않았다.
@@ -695,8 +708,12 @@ docker compose run --rm dev mypy src
 
 현재 순서는 [Text-first TODO](docs/text-first-implementation-todo.md)의 T0→T6다.
 T0/T1 모듈 추출과 T2 (#131/#132) 정책 선택·실제 비교를 완료했지만 후보 품질 gate는 실패했다.
-사용자 승인으로 #134/#135 보완과 #136 실제 재평가를 완료했다. 품질은 실패해 #137 최소 문맥 대조를 먼저 진행한다.
+사용자 승인으로 #134/#135 보완과 #136 실제 재평가, #137 최소 문맥 대조의 로컬 실행 범위를 완료했다.
+품질 activation은 없으며 다음은 T2.7 모델/예시 조사다. 원격 동기화 전 active #137을 유지한다.
 #133은 보류다. T3/T4는 기억 검색/갱신, T5/T6는 기존 Agent 연결/확장을 다룬다.
+
+T2 후반에 공개 모델/예시 조사(T2.7), 소수 후보 비교(T2.8), 기존 CLI 경험(T2.9)을 추가했다.
+기억·정체성·평가 원본은 보존하며 완벽한 대화 모델을 기다려 기억 개선을 무기한 미루지 않는다.
 
 ### 2026-08 실행 순서 — 역사로 보존
 

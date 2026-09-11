@@ -607,6 +607,16 @@ Companion Identity를 Worker에 넘기지 않는다. Worker는 전문 작업 결
 
 ## 8. Current Work Direction
 
+### 2026-09-11 대화 능력 중심 전략 보완
+
+[ADR 0039](docs/adr/0039-dialogue-capability-first.md)의 사용자 승인 전략을 따른다.
+#137의 짧은 원인 분리 뒤 T2.7 공개 모델/예시 조사 → T2.8 소수 후보 비교 → T2.9 기존 CLI
+대화 경험을 확인하고 T3/T4 기억 연속성, T5/T6 Worker 통합으로 이어간다. 규칙 보완만으로
+대화 능력을 대신하지 않는다. 모델 교체/다운로드/학습은 해당 후속 Issue에서 별도 결정한다.
+겨울이는 형체 없는 대화 프로그램이다. 몸/공간 지문은 기본 대화에 강제하지 않으며 없는
+신체 활동을 주장하지 않는다. 한숨·웃음·pause는 선택적 전달 정보로 설계하고 lexical response와
+구분한다. 특정 TTS 토큰이나 행동 태그를 필수화하지 않는다. Voice 구현은 계속 보류다.
+
 현재 phase는 `text_first_foundation`이다. T0 #128에서 기준과 기록을 인계하고 T1 #129/#130에서
 공용 text runtime bootstrap과 CharacterSnapshot/ContextAssembler 추출을 완료했다
 (수정 전 모델 요청 6종 일치). T2.1 #131에서 legacy 기본값을 유지한 명시적 후보 정책 선택과
@@ -617,8 +627,11 @@ Companion Identity를 Worker에 넘기지 않는다. Worker는 전문 작업 결
 (실제 원문 2건 replay, Docker offline 919 passed, Ruff/mypy 통과). #135의 제한된 검사 수정과
 repair 잔여 실패 평가도 완료했다 (Docker offline 957 passed, Ruff/mypy 통과).
 의미 보존 성공을 뜻하지 않는다. #136 실제 28턴 재평가도 완료했지만 모르는 기억/repair/검사
-품질은 실패했다 (Docker offline 959 passed, Ruff/mypy 통과). 다음 active #137은 동일 모델의
-최소 지침과 전체 Core 문맥 대조이며 미착수다. #133 bounded
+품질은 실패했다 (Docker offline 959 passed, Ruff/mypy 통과). #137 최소/전체 문맥 대조도
+로컬 실행 범위 완료다 (42회, Docker offline 969 passed, Ruff/mypy 통과). 최소 지침에서도
+기억/의견 실패가 남고 전체 지침의 유익과 검사 오탐을 함께 확인했다. 다음은 T2.7 모델/예시
+조사이며 아직 Issue 미등록이다. GitHub #137 OPEN/동기화 보류로 active #137을 유지한다.
+#133 bounded
 대화 기록 조회는 open/미착수 보류다. 기존 실패를 한 번에 해결했다고 주장하지 않는다.
 Voice 실제 검증과 자기 코드 채택의 전체
 cycle은 텍스트 경험의 선행조건이 아니다. 대화·기억·Identity·Reference 및 기존 코드/평가를
@@ -918,6 +931,11 @@ pytest -m "not model and not voice and not slow"
 ---
 
 ## 11. Security and Privacy
+
+2026-09-11 재확인: Git/외부 서비스에는 공유 가능한 코드·일반 문서만 올린다. 개인 대화·DB·
+인증정보·Reference 원본과 파생 자료는 로컬 전용이다. #137부터 평가 원출력은 합성 여부와
+별개로 `data/evaluations/`에 보관하고 Git에는 공유용 요약/재현 코드만 남긴다. 로컬 기록과
+GitHub 게시·push를 구분하며 비공개 payload를 Issue 댓글로 우회 전송하지 않는다.
 
 - 원본 영상·음성·자막, 대화 DB, Human Reference corpus, speaker reference, model checkpoint는 기본적으로 Git에서 제외한다.
 - Human Reference 원본과 파생 데이터는 사용자가 지정한 로컬 외장 저장소에 보관한다.

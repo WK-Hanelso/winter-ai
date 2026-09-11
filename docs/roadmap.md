@@ -26,10 +26,15 @@ Epic [#127](https://github.com/WK-Hanelso/winter-ai/issues/127)의 목표는 지
 #135 제한된 검사 수정과 repair 잔여 실패 평가도 완료했다 (Docker offline 957개·Ruff·mypy).
 repair 의미 보존 성공 판정은 아니다. #136 실제 28턴 재평가도 실행은 완료했지만 품질 gate는
 실패했다. [결과](evaluations/136-text-reevaluation/README.md)에 모델 초안/repair/검사 실패를
-구분했다. 다음 active #137 최소 지침/전체 문맥 대조는 미착수다. #133 bounded 조회는 open/미착수
+구분했다. #137 최소/전체 문맥 대조의 로컬 실행도 완료했다 (42회, offline 969 passed).
+[판정](evaluations/137-context-ablation/README.md)에 최소 지침의 한계·전체 지침의 유익·검사 오탐을
+구분했다. 다음은 T2.7 모델/예시 조사지만 Issue 미등록이며 GitHub #137 OPEN/동기화 보류다.
+원격에 댓글/push/close하지 않았고 active #137을 유지한다. #133 bounded 조회는 open/미착수
 보류다. Voice는 보류하고 기존 데이터와 #132 실패 원본을 보존한다.
 
-T0 기준 전환 → T1 모듈 추출 → T2 대화 정책 비교 → T3 검색/context → T4 기억 갱신/재시작
+2026-09-11 [승인 전략 ADR 0039](adr/0039-dialogue-capability-first.md)을 반영했다.
+T0 기준 전환 → T1 모듈 추출 → T2 정책/원인 분리·모델/예시 조사·소수 비교·CLI 경험
+→ T3 검색/context → T4 기억 갱신/재시작
 → T5 Codex text 작업 경험 → T6 추가 provider/연속 사용 순서다.
 상세 [TODO](text-first-implementation-todo.md)와 [기록 인계표](text-first-records-handoff.md)를 따른다.
 

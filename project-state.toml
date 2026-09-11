@@ -1,6 +1,8 @@
 schema_version = 1
 current_phase = "text_first_foundation"
 active_issue = 137
+# #137 local diagnostic complete; GitHub remains OPEN. T2.7 issue not registered yet.
+# Keep this scope until the next issue/remote synchronization is explicitly settled.
 active_work = ["text_first_foundation"]
 
 # These files define mission, current product target, maturity and the audit baseline.
@@ -27,6 +29,12 @@ status_documents = [
 id = "text_first_foundation"
 maturity = "contract"
 evidence = [
+  "docs/adr/0039-dialogue-capability-first.md",
+  "experiments/text_context_ablation.py",
+  "tests/unit/test_text_context_ablation.py",
+  "docs/evaluations/137-context-ablation/plan.md",
+  "docs/evaluations/137-context-ablation/README.md",
+  "docs/adr/0040-context-ablation-verdict.md",
   "docs/text-first-refactoring-design.md",
   "docs/text-first-implementation-todo.md",
   "docs/text-first-records-handoff.md",
