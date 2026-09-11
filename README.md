@@ -31,7 +31,8 @@ Voice 고도화와 phone canary 검증은 보류한다. 기존 코드·개인 DB
 - [T2.1 #131](https://github.com/WK-Hanelso/winter-ai/issues/131): 명시적 대화 정책 선택·평가 장면 준비 완료
 - [T2.2 #132](https://github.com/WK-Hanelso/winter-ai/issues/132): 실제 120턴 비교 완료, 품질 gate 실패·legacy 유지
 - [완료 T2.3 #134](https://github.com/WK-Hanelso/winter-ai/issues/134): Core 응답 절단 수정
-- [다음 T2.4 #135](https://github.com/WK-Hanelso/winter-ai/issues/135): 검사 오탐/repair, 미착수
+- [완료 T2.4 #135](https://github.com/WK-Hanelso/winter-ai/issues/135): 제한된 검사 수정·repair 잔여 실패 평가
+- [다음 T2.5 #136](https://github.com/WK-Hanelso/winter-ai/issues/136): 실제 텍스트 재평가, 미착수
 - [보류 T3.1 #133](https://github.com/WK-Hanelso/winter-ai/issues/133): bounded 대화 기록 조회, 미착수
 - [기존 기록 인계표](docs/text-first-records-handoff.md), [설계](docs/text-first-refactoring-design.md),
   [실행 TODO](docs/text-first-implementation-todo.md)
@@ -57,7 +58,7 @@ T2.1은 `legacy` 기본값을 유지하고 `contextual` 후보 및 행동/말높
 이 명령은 기존 개인 대화 DB를 사용한다. 자동 A/B는 개인 DB와 격리한다.
 [정책 비교 방법과 한계](docs/text-dialogue-evaluation.md)를 따른다.
 
-최신 검증: Docker offline **919 passed** (65.34초), Ruff 전체 통과, mypy **181 source files** 통과.
+최신 검증: Docker offline **957 passed** (49.00초), Ruff 전체 통과, mypy **182 source files** 통과.
 수정 전 Core에서 고정한 합성 모델 요청 6종도 정확히 일치했다.
 T2.2에서 실제 A.X-4.0-Light Q4_K_M으로 격리된 합성 대화 120턴을 비교했다. 설명의 일부
 개선은 있었지만 기억 근거/의견/후처리/검사 오류가 남아 **후보 기본값 승격은 보류**했다.
@@ -67,8 +68,15 @@ T2.3은 Core의 문장 수 절단과 stream 조기 중단을 제거했다. 기�
 검사는 유지하고, 전체 검토 뒤 최종 내용을 저장·전달한다. 실제 과거 출력 2건을 세 경로로
 재생해 목록 끝과 설명 본문/서식 보존을 확인했다. [수정 전후](docs/evaluations/134-response-preservation.md),
 [계약/한계](docs/adr/0036-preserve-reviewed-response.md)를 참조한다. 신규 모델 호출은 없으며
-일반 대화 품질 향상을 보장하지 않는다. 전체 안전 안내문 재검사의 오탐은 #135에 남겼다.
+일반 대화 품질 향상을 보장하지 않는다. 전체 안전 안내문 재검사의 오탐은 후속 #135에서 수정했다.
 stream callback은 전체 검토 뒤 나오므로 첫 출력이 느려질 수 있다. Voice 고도화는 보류다.
+
+T2.4는 정상 정보 질문/자기 생각의 오탐과 일부 과거 기억 주장 누락을 보완했다. 전체 fallback
+검사를 유지하며 기존 #132 원문에서 불필요한 repair 제거·없는 기억 차단을 확인했다.
+그러나 질문 주체를 바꾼 답은 사실 검사만으로 여전히 통과할 수 있다. 안전 repair 지침의
+대상/목적 보존은 아직 실제 모델로 검증하지 않았다. [전후와 한계](docs/evaluations/135-claim-review.md),
+[설계](docs/adr/0037-claim-language-and-repair-boundary.md)를 따른다. 일반 의미 검증기가 아니며
+새 모델 호출/개인 DB/서비스 변경은 없다. 다음 #136에서 실제 텍스트와 새 repair를 평가한다.
 
 현재 Host 기본 `127.0.0.1:18080` 터널과 Winter 서비스가 중지된 상태를 확인했다. Orin 모델은
 정상이어서 평가 전용 `:18082` 임시 터널로 측정한 뒤 닫았다. 운영 연결을 복구하거나 서비스를
@@ -680,7 +688,7 @@ docker compose run --rm dev mypy src
 
 현재 순서는 [Text-first TODO](docs/text-first-implementation-todo.md)의 T0→T6다.
 T0/T1 모듈 추출과 T2 (#131/#132) 정책 선택·실제 비교를 완료했지만 후보 품질 gate는 실패했다.
-사용자 승인으로 #134 응답 절단을 완료했고, #135 검사 오탐/repair → 정책/모델 재평가를 먼저 진행한다.
+사용자 승인으로 #134 응답 절단과 #135 제한된 검사 수정을 완료했고, #136 실제 텍스트 재평가를 먼저 진행한다.
 #133은 보류다. T3/T4는 기억 검색/갱신, T5/T6는 기존 Agent 연결/확장을 다룬다.
 
 ### 2026-08 실행 순서 — 역사로 보존

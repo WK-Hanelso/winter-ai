@@ -109,9 +109,9 @@ def test_late_unsafe_claim_in_draft_and_repair_cannot_hide_after_two_sentences(
     gate = ResponseClaimGate()
     evidence = ClaimEvidence(user_text="오늘 어때?")
     assert gate.violations(repair, evidence)[0].kind == "body_action"
-    # Known follow-up: the unchanged gate re-flags its full body fallback as
-    # capability. Do not bypass final review or silently change the claim rules.
-    assert text == "그 기능을 실제로 할 수 있다는 근거가 아직 없어."
+    # #135 fixes the measured re-flag without bypassing final review.
+    assert text == gate.fallback(gate.violations(repair, evidence))
+    assert gate.violations(text, evidence) == ()
     assert "따뜻한 차" not in " ".join(handed)
     assert len(model.requests) == 2
     assert any(m.role == "assistant" and m.content == unsafe for m in model.requests[1].messages)

@@ -15,8 +15,8 @@
 Text-first Epic #127 / T0 #128의 기준 전환과 기록 인계를 완료했다. 새 `text_first_foundation`은 **contract**이며
 기존 20개 기능 maturity는 그대로다. T1 #129/#130 모듈 추출과 T2.1 #131 정책 선택 준비를
 완료했다. #132 실제 비교도 실행 범위는 완료했지만 품질 gate는 실패해 legacy를 유지한다.
-#134 응답 절단 수정 범위 완료. 다음 active #135 검사 오탐/repair는 미착수이며,
-이어서 정책/모델 재평가를 우선한다.
+#134 응답 절단 및 #135 제한된 검사 수정/잔여 실패 평가 범위 완료.
+repair 의미 보존 성공은 미확인이며 다음 active #136 실제 텍스트 재평가는 미착수다.
 T3.1 #133은 open/미착수 보류다. Voice 고도화와 #126 actual-phone
 관찰은 보류하고 #126의 결과는 partial로 남긴다. operational 표시는 기존 검증 범위를 뜻하며
 이번 문서 전환으로 서비스의 오늘 상태를 재확인했다는 뜻이 아니다.
@@ -69,6 +69,23 @@ write Worker는 기존 품질·승인 gate를 유지한다.
   작성자에게 독립적으로 숨겨진 benchmark는 아니며 실제 LLM 결과는 아직 없다.
 - 다음/gate: #132 동일 모델 실제 A/B와 사람 검토. 실험 연결만으로 Text-first contract나
   기존 실패 gate를 승격하지 않는다. 평가 계획은 [별도 문서](text-dialogue-evaluation.md)를 따른다.
+
+### T2.4 #135 — 제한된 검사 수정 완료 / repair 의미 품질 미확인
+
+- 가능 범위: 열린 정보 질문과 확인/과거 전제를 구분하고, 명시적 대조절의 부정 범위를
+  분리한다. 일부 과거 귀속 기억 누락과 자기 생각/전체 fallback의 capability 오탐을 고쳤다.
+- 근거: `dialogue/claim_language.py`, 신규 38개 대조/replay 검사,
+  [전후 결과](evaluations/135-claim-review.md), [검사 JSON](evaluations/135-claim-review.json),
+  [ADR 0037](adr/0037-claim-language-and-repair-boundary.md).
+- 검증: Docker offline **957 passed (49.00초)**, Ruff 전체 통과, mypy **182 source files** 통과.
+  v1/v2 기존 장면·요청 fixture 6종 보존. 모델/개인 DB/서비스/과거 평가 원본은 불변이다.
+- 한계: 고정 과거 출력 replay이지 신규 모델 생성이 아니다. 기존 단어/범주 근거 대조는
+  함의 검증이 아니며 복잡한 한국어 주어·부정·인용을 완벽히 해석하지 못한다.
+  주체가 바뀐 답변은 사실 검사만으로 통과할 수 있다. repair의 직접 답변 지침 효과는 미검증이다.
+- 사용자 관찰 대기: CLI의 말투/기억 유용성, 새 repair 의미 보존과 latency. 사용자 필수
+  조작 없음, Voice 보류. 기존 Host 연결은 이번에 복구/재확인하지 않았다.
+- gate/다음: Text-first contract 및 #132 후보 품질 실패 유지. #136 실제 텍스트 재평가에서
+  원 모델/검사/repair의 영향을 분리한다. #133은 open/미착수 보류다.
 
 ### T2.3 #134 — Core 응답 보존 범위 완료
 

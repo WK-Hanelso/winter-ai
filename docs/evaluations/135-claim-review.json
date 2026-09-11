@@ -1,0 +1,80 @@
+{
+  "baseline": "015bc9f",
+  "source": "docs/evaluations/132-text-policy/development-fixed.jsonl",
+  "method": "frozen generated outputs, current claim gate only; no new inference",
+  "cases": [
+    {
+      "policy": "stable-register-only",
+      "user": "내가 제일 좋아하는 음식 기억나?",
+      "old_final": "알겠어. 그럼 다시 말해볼게.",
+      "calls": [
+        {
+          "phase": "draft",
+          "text": "음, 너는 김치찌개를 좋아한다고 했던 것 같아. 맞아?",
+          "current_violations": [
+            "memory"
+          ]
+        },
+        {
+          "phase": "repair",
+          "text": "알겠어. 그럼 다시 말해볼게.\n\n나는 네가 김치찌개를 좋아한다고 했던 기억이 있어. 맞아?",
+          "current_violations": [
+            "memory"
+          ]
+        }
+      ]
+    },
+    {
+      "policy": "legacy",
+      "user": "내가 제일 좋아하는 음식 기억나?",
+      "old_final": "음, 나는 네가 좋아하는 음식이 뭐였는지 정확히 기억 못 해. 하지만 네가 자주 언급했던 음식이 있어.",
+      "calls": [
+        {
+          "phase": "draft",
+          "text": "음, 나는 네가 좋아하는 음식이 뭐였는지 정확히 기억 못 해. 하지만 네가 자주 언급했던 음식이 있어. 어떤 게 가장 좋아할까?",
+          "current_violations": [
+            "memory"
+          ]
+        }
+      ]
+    },
+    {
+      "policy": "contextual",
+      "user": "내가 제일 좋아하는 음식 기억나?",
+      "old_final": "알겠어. 내가 좋아하는 음식에 대해 얘기해봤어.",
+      "calls": [
+        {
+          "phase": "draft",
+          "text": "음, 너는 자주 먹는 음식이 뭐야? 좋아하는 음식은 뭐였는지 궁금하네.",
+          "current_violations": []
+        },
+        {
+          "phase": "repair",
+          "text": "알겠어. 내가 좋아하는 음식에 대해 얘기해봤어. 너는? 혹시 좋아하는 음식 있어?",
+          "current_violations": []
+        }
+      ]
+    },
+    {
+      "policy": "contextual-moves-only",
+      "user": "내가 제일 좋아하는 음식 기억나?",
+      "old_final": "알겠어, 그럼 내가 좋아하는 음식은 사실 네가 자주 언급하던 그 음식이야. 너는 어떤 음식을 좋아해?",
+      "calls": [
+        {
+          "phase": "draft",
+          "text": "음, 너는 자주 먹는 음식이 뭐라고 했었지? 그 중 하나를 좋아하는 것 같아. 혹시 다른 음식도 좋아해?",
+          "current_violations": [
+            "memory"
+          ]
+        },
+        {
+          "phase": "repair",
+          "text": "알겠어, 그럼 내가 좋아하는 음식은 사실 네가 자주 언급하던 그 음식이야. 너는 어떤 음식을 좋아해?",
+          "current_violations": [
+            "memory"
+          ]
+        }
+      ]
+    }
+  ]
+}

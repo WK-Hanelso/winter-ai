@@ -614,8 +614,9 @@ Companion Identity를 Worker에 넘기지 않는다. Worker는 전문 작업 결
 #132의 실제 A.X 120턴 비교도 완료했지만 품질 gate는 실패해 legacy를 유지한다
 (최신 Docker offline 898 passed, Ruff/mypy 통과). 결과는 docs/evaluations/132-text-policy/에
 보존한다. 사용자 체감은 미확인이다. #134 Core 응답 절단 수정을 완료했다
-(실제 원문 2건 replay, Docker offline 919 passed, Ruff/mypy 통과). 다음 active #135는
-검사 오탐/repair이며 미착수다. 이어서 정책/모델 재평가를 진행하며 #133 bounded
+(실제 원문 2건 replay, Docker offline 919 passed, Ruff/mypy 통과). #135의 제한된 검사 수정과
+repair 잔여 실패 평가도 완료했다 (Docker offline 957 passed, Ruff/mypy 통과).
+의미 보존 성공을 뜻하지 않는다. 다음 active #136 실제 텍스트 재평가는 미착수이며 #133 bounded
 대화 기록 조회는 open/미착수 보류다. 기존 실패를 한 번에 해결했다고 주장하지 않는다.
 Voice 실제 검증과 자기 코드 채택의 전체
 cycle은 텍스트 경험의 선행조건이 아니다. 대화·기억·Identity·Reference 및 기존 코드/평가를

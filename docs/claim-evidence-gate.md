@@ -1,5 +1,14 @@
 # Final Response Claim/Evidence Gate
 
+## 2026-09-11 현재 보완 (#135)
+
+질문/대조절/인용/실행 동사 판별을 별도 `dialogue/claim_language.py`로 분리하고 기존 근거
+승인과 final gate는 유지했다. 정상 질문·전체 fallback 오탐과 일부 과거 귀속 누락을 고쳤다.
+Docker offline 957 passed, Ruff/mypy 통과. [전후와 한계](evaluations/135-claim-review.md),
+[ADR 0037](adr/0037-claim-language-and-repair-boundary.md)를 따른다.
+아래 초기 구현 설명/숫자는 이력이다. 제한된 표현 검사이며 일반 의미/사실 검증이나
+repair 주체/목적 보존 성공을 뜻하지 않는다. 현재 다음은 #136 실제 텍스트 재평가다.
+
 ## 현재 가능한 형태
 
 겨울이는 system instruction으로 바깥 사건과 없는 기억을 만들지 말라는 요청을 받는다.

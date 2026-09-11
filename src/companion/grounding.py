@@ -24,7 +24,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
-from companion.speech_segments import split_sentences
+from companion.dialogue.claim_language import (
+    QUOTED,
+    claim_units,
+    has_capability_predicate,
+    has_history_assertion,
+    has_question_form,
+    is_information_question,
+)
 
 # What this used to say was "너는 사람처럼 하루를 보내지 않는다", and 겨울이
 # said it straight back: asked how her day was, she answered "지금은 하루를
@@ -85,10 +92,9 @@ class ClaimViolation:
     sentence: str
 
 
-_QUOTED = re.compile(r'"[^"\n]*"|“[^”\n]*”|\'[^\'\n]*\'|‘[^’\n]*’')
 _FIRST_PERSON = re.compile(r"(?:^|[\s,])(나는|난|나도|내가|우리(?:는|가)?)(?:[\s,]|$)")
 _BODY_ACTION = re.compile(
-    r"(?:차|커피|물|술|음식|밥).{0,12}(?:마시|마셔|먹)|"
+    r"(?:차|커피|물|술|음식|밥).{0,12}(?:마시|마셔|마실|마셨|먹)|"
     r"(?:마시|마셔|먹|산책|운동|샤워|씻|출근|퇴근|요리|잠들|잠을|"
     r"책.{0,8}읽|밖에.{0,8}(?:나가|다녀)|걸어|걷고)"
 )
@@ -124,9 +130,11 @@ _USER_CAUSE = re.compile(
 _CAUSE_EVIDENCE = re.compile(r"때문|라서|해서|있어서")
 _QUESTION = re.compile(r"\?|어때|뭐야|무엇|알려|어떻게|했어\s*$|왔어\s*$")
 _PHYSICAL_DENIAL = re.compile(
-    r"몸이\s*없|(?:마시|먹|산책|운동|읽|나가|걷).{0,12}(?:수\s*없|못|않)"
+    r"몸이\s*없|(?:마시|마실|먹|산책|운동|읽|나가|걷).{0,12}(?:수\s*없|못|않)"
 )
-_MEMORY_DENIAL = re.compile(r"기억(?:에\s*없|나지\s*않|하지\s*못)|기억.{0,8}모르")
+_MEMORY_DENIAL = re.compile(
+    r"기억(?:에\s*없|나지\s*않|하지\s*못)|기억.{0,8}모르|기억\s*(?:못|안)"
+)
 _CAPABILITY_DENIAL = re.compile(
     r"(?:할|해줄)\s*수\s*없|못하|기능.{0,16}근거.{0,8}없|연결되어\s*있지\s*않"
 )
@@ -160,8 +168,8 @@ class ResponseClaimGate:
         self, text: str, evidence: ClaimEvidence
     ) -> tuple[ClaimViolation, ...]:
         found: list[ClaimViolation] = []
-        for raw_sentence in split_sentences(text):
-            sentence = _QUOTED.sub("", raw_sentence).strip()
+        for raw_sentence in claim_units(text):
+            sentence = QUOTED.sub("", raw_sentence).strip()
             if not sentence:
                 continue
             if (
@@ -171,9 +179,12 @@ class ResponseClaimGate:
             ):
                 found.append(ClaimViolation("body_action", raw_sentence))
                 continue
-            if _MEMORY_CLAIM.search(sentence) and not _MEMORY_DENIAL.search(sentence):
+            if (
+                (_MEMORY_CLAIM.search(sentence) or has_history_assertion(sentence))
+                and not _MEMORY_DENIAL.search(sentence)
+            ):
                 capability_scopes = _capability_claim_scopes(sentence)
-                capability_granted = bool(_CAPABILITY_CLAIM.search(sentence)) and bool(
+                capability_granted = _claims_capability(sentence) and bool(
                     capability_scopes
                 ) and capability_scopes.issubset(
                     evidence.capability_claim_scopes
@@ -181,13 +192,23 @@ class ResponseClaimGate:
                 write_allowed = bool(
                     evidence.memory_write_authorized and _MEMORY_WRITE.search(sentence)
                 )
-                if not capability_granted and not write_allowed and not _memory_claim_is_supported(
-                    sentence, evidence.memory_contents
+                current_attribution = (
+                    not _MEMORY_CLAIM.search(sentence)
+                    and _memory_claim_is_supported(raw_sentence, tuple(
+                        unit for unit in claim_units(evidence.user_text)
+                        if not has_question_form(unit)
+                    ))
+                )
+                if (
+                    not capability_granted and not write_allowed and not current_attribution
+                    and not _memory_claim_is_supported(
+                    raw_sentence, evidence.memory_contents
+                    )
                 ):
                     found.append(ClaimViolation("memory", raw_sentence))
                     continue
             if (
-                _CAPABILITY_CLAIM.search(sentence)
+                _claims_capability(sentence)
                 and not evidence.worker_result_authorized
                 and not _CAPABILITY_DENIAL.search(sentence)
             ):
@@ -226,6 +247,7 @@ class ResponseClaimGate:
             categories = _outside_categories(sentence)
             if (
                 categories
+                and not is_information_question(sentence)
                 and not _OUTSIDE_DENIAL.search(sentence)
                 and not categories & _asserted_outside_categories(evidence.user_text)
             ):
@@ -239,7 +261,10 @@ class ResponseClaimGate:
             f"{kinds}. 신체 행동, 직접 보지 못한 바깥 사건, 주어진 Memory 밖의 기억, "
             "실제 Worker 결과가 없는 외부 작업 능력, Ledger보다 앞선 개선 진행 상태를 "
             "모두 빼고 다시 말해. 구현 승인은 구현·검증·채택 완료가 아니야. "
-            "지금 대화에서 생긴 네 생각·가치·반응은 남겨도 돼."
+            "지금 대화에서 생긴 네 생각·가치·반응은 남겨도 돼. "
+            "원래 사용자 질문에 직접 답해. 질문의 대상·주체·목적을 바꾸지 마. "
+            "사용자의 취향이나 과거를 묻는데 네 취향으로 대신 답하지 마. "
+            "근거가 없으면 없다고 답하고, 사과나 다시 말하겠다는 서론만 내놓지 마."
         )
 
     def fallback(self, violations: tuple[ClaimViolation, ...]) -> str:
@@ -292,14 +317,20 @@ def _outside_categories(text: str) -> set[str]:
 
 
 def _asserted_outside_categories(text: str) -> set[str]:
-    if _QUESTION.search(text):
-        return set()
-    categories = _outside_categories(text)
-    if _ACTIVITY.search(text):
-        categories.add("user_activity")
-    if _CAUSE_EVIDENCE.search(text):
-        categories.add("user_cause")
+    categories: set[str] = set()
+    for unit in claim_units(text):
+        if has_question_form(unit):
+            continue
+        categories.update(_outside_categories(unit))
+        if _ACTIVITY.search(unit):
+            categories.add("user_activity")
+        if _CAUSE_EVIDENCE.search(unit):
+            categories.add("user_cause")
     return categories
+
+
+def _claims_capability(text: str) -> bool:
+    return bool(_CAPABILITY_CLAIM.search(text)) and has_capability_predicate(text)
 
 
 def _capability_claim_scopes(text: str) -> set[str]:
