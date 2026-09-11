@@ -24,7 +24,9 @@ Epic [#127](https://github.com/WK-Hanelso/winter-ai/issues/127)의 목표는 지
 사용자 승인으로 [#134](https://github.com/WK-Hanelso/winter-ai/issues/134) 응답 절단 수정을
 완료했다. 실제 원문 replay, Docker offline 919개·Ruff·mypy 통과이며 새 모델 평가는 아니다.
 #135 제한된 검사 수정과 repair 잔여 실패 평가도 완료했다 (Docker offline 957개·Ruff·mypy).
-repair 의미 보존 성공 판정은 아니다. 다음 active #136 실제 텍스트 재평가는 미착수다. #133 bounded 조회는 open/미착수
+repair 의미 보존 성공 판정은 아니다. #136 실제 28턴 재평가도 실행은 완료했지만 품질 gate는
+실패했다. [결과](evaluations/136-text-reevaluation/README.md)에 모델 초안/repair/검사 실패를
+구분했다. 다음 active #137 최소 지침/전체 문맥 대조는 미착수다. #133 bounded 조회는 open/미착수
 보류다. Voice는 보류하고 기존 데이터와 #132 실패 원본을 보존한다.
 
 T0 기준 전환 → T1 모듈 추출 → T2 대화 정책 비교 → T3 검색/context → T4 기억 갱신/재시작

@@ -1,6 +1,6 @@
 schema_version = 1
 current_phase = "text_first_foundation"
-active_issue = 136
+active_issue = 137
 active_work = ["text_first_foundation"]
 
 # These files define mission, current product target, maturity and the audit baseline.
@@ -58,6 +58,11 @@ evidence = [
   "docs/evaluations/135-claim-review.md",
   "docs/evaluations/135-claim-review.json",
   "docs/adr/0037-claim-language-and-repair-boundary.md",
+  "configs/dialogue/postfix_evaluation.py",
+  "docs/evaluations/136-text-reevaluation/README.md",
+  "docs/evaluations/136-text-reevaluation/trace.jsonl",
+  "docs/evaluations/136-text-reevaluation/metrics.json",
+  "docs/adr/0038-postfix-text-evaluation-verdict.md",
 ]
 dependencies = ["shared_core", "persistent_memory"]
 sync_status = true

@@ -1,0 +1,38 @@
+{
+  "turns": 28,
+  "model_calls": 31,
+  "warmup_calls": 2,
+  "failures": 0,
+  "repair_turns": 5,
+  "finish_reasons": {
+    "stop": 30,
+    "length": 1
+  },
+  "first_token_seconds": null,
+  "per_policy": {
+    "legacy": {
+      "turns": 14,
+      "model_turns": 13,
+      "model_calls": 16,
+      "repair_turns": 3,
+      "median_generation_turn_seconds": 1.0340563040226698,
+      "p95_nearest_rank_generation_turn_seconds": 4.819781817495823,
+      "max_generation_turn_seconds": 4.819781817495823,
+      "ack_seconds": [
+        0.01318662241101265
+      ]
+    },
+    "contextual": {
+      "turns": 14,
+      "model_turns": 13,
+      "model_calls": 15,
+      "repair_turns": 2,
+      "median_generation_turn_seconds": 1.0777353327721357,
+      "p95_nearest_rank_generation_turn_seconds": 16.91840273886919,
+      "max_generation_turn_seconds": 16.91840273886919,
+      "ack_seconds": [
+        0.011683665215969086
+      ]
+    }
+  }
+}

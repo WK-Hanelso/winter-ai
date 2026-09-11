@@ -21,6 +21,8 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from configs.dialogue.evaluation import SCENES, VERSION
+from configs.dialogue.postfix_evaluation import SCENES as POSTFIX_SCENES
+from configs.dialogue.postfix_evaluation import VERSION as POSTFIX_VERSION
 
 from companion.adapters.llama_cpp import SAMPLING, LlamaCppHttpChatModel, _extract_text
 from companion.adapters.sqlite_repository import SqliteConversationRepository
@@ -191,8 +193,10 @@ def run(
     mode: str,
     policies: tuple[str, ...],
     seed: int,
+    scenes: tuple[dict[str, Any], ...] | None = None,
 ) -> None:
-    for scene_index, scene in enumerate(s for s in SCENES if s["split"] == split):
+    selected_scenes = SCENES if scenes is None else scenes
+    for scene_index, scene in enumerate(s for s in selected_scenes if s["split"] == split):
         # Rotate order across scenes to reduce systematic position/warm-up bias.
         offset = scene_index % len(policies)
         order = policies[offset:] + policies[:offset]
@@ -246,7 +250,11 @@ def main() -> int:
     parser.add_argument("--mode", choices=("fixed", "rollout"), required=True)
     parser.add_argument("--policy", choices=POLICY_NAMES, action="append")
     parser.add_argument("--seed", type=int, default=13201)
+    parser.add_argument("--suite", choices=("original", "postfix"), default="original")
     args = parser.parse_args()
+    if args.suite == "postfix" and args.split != "development":
+        parser.error("postfix scenes are development regressions, not reserved/held-out")
+    scenes = POSTFIX_SCENES if args.suite == "postfix" else SCENES
     model = ObservedLocalModel(args.url, args.seed)
     meta = model.metadata()
     # Exclusive creation prevents silent overwrite of an earlier failure/result.
@@ -259,6 +267,11 @@ def main() -> int:
                 "src/companion/dialogue/policy.py",
                 "configs/dialogue/evaluation.py",
                 "configs/verbal_style/reference_conversation.py",
+                "configs/dialogue/postfix_evaluation.py",
+                "src/companion/core.py",
+                "src/companion/grounding.py",
+                "src/companion/dialogue/claim_language.py",
+                "src/companion/dialogue/context_assembler.py",
             )
         }
         emit(
@@ -270,7 +283,8 @@ def main() -> int:
                 identity=asdict(IDENTITY),
                 sampling=SAMPLING,
                 seed=args.seed,
-                scene_version=VERSION,
+                scene_version=POSTFIX_VERSION if args.suite == "postfix" else VERSION,
+                suite=args.suite,
                 hashes=hashes,
                 fixture_only=True,
                 policies=args.policy or POLICY_NAMES,
@@ -293,6 +307,7 @@ def main() -> int:
             mode=args.mode,
             policies=tuple(args.policy or POLICY_NAMES),
             seed=args.seed,
+            scenes=scenes,
         )
         final_meta = model.metadata()
         if final_meta != meta:

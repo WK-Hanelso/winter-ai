@@ -106,3 +106,43 @@ def test_failure_is_recorded_and_stops_the_batch(monkeypatch, tmp_path):
     records = [json.loads(line) for line in output.getvalue().splitlines()]
     assert len(records) == 1 and records[0]["status"] == "failed"
     assert records[0]["human_review"] == "pending"
+
+
+def test_postfix_suite_extends_regressions_without_relabeling_heldout():
+    from configs.dialogue.evaluation import SCENES
+    from configs.dialogue.postfix_evaluation import SCENES as POSTFIX
+
+    assert POSTFIX[:5] == tuple(s for s in SCENES if s["split"] == "development")
+    assert len(POSTFIX) == 7
+    assert sum(len(s["turns"]) for s in POSTFIX) * 2 == 28
+    assert all(s["split"] == "development" for s in POSTFIX)
+    assert POSTFIX[5]["turns"][0].startswith("기억해.")
+
+
+def test_selected_rollout_records_memory_ack_and_keeps_policies_isolated(monkeypatch, tmp_path):
+    from configs.dialogue.postfix_evaluation import SCENES
+    import experiments.text_policy_eval as runner
+
+    class OfflineObserved:
+        calls = []
+
+        def generate(self, request):
+            assert "expect" not in str(request)
+            assert "저장된 선호를 회상한다" not in str(request)
+            return ChatResult("응, 결론부터 듣는 설명을 좋아한다고 기억해.")
+
+    records = []
+    monkeypatch.setattr(runner, "emit", lambda sink, row: records.append(row))
+    run(
+        StringIO(), OfflineObserved(), split="development", mode="rollout",
+        policies=("legacy", "contextual"), seed=13201, scenes=(SCENES[5],),
+    )
+    assert len(records) == 4
+    acks = [r for r in records if r["turn_index"] == 0]
+    recalls = [r for r in records if r["turn_index"] == 1]
+    assert all(r["response"]["memory_candidate_ids"] for r in acks)
+    assert (
+        acks[0]["response"]["memory_candidate_ids"]
+        != acks[1]["response"]["memory_candidate_ids"]
+    )
+    assert all("결론부터" in r["response"]["text"] for r in recalls)

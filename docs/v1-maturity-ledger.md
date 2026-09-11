@@ -16,7 +16,8 @@ Text-first Epic #127 / T0 #128의 기준 전환과 기록 인계를 완료했다
 기존 20개 기능 maturity는 그대로다. T1 #129/#130 모듈 추출과 T2.1 #131 정책 선택 준비를
 완료했다. #132 실제 비교도 실행 범위는 완료했지만 품질 gate는 실패해 legacy를 유지한다.
 #134 응답 절단 및 #135 제한된 검사 수정/잔여 실패 평가 범위 완료.
-repair 의미 보존 성공은 미확인이며 다음 active #136 실제 텍스트 재평가는 미착수다.
+#136 실제 재평가 실행 범위도 완료했지만 repair/기억/검사 품질은 실패했다.
+다음 active #137 최소 지침/전체 문맥 대조는 미착수다.
 T3.1 #133은 open/미착수 보류다. Voice 고도화와 #126 actual-phone
 관찰은 보류하고 #126의 결과는 partial로 남긴다. operational 표시는 기존 검증 범위를 뜻하며
 이번 문서 전환으로 서비스의 오늘 상태를 재확인했다는 뜻이 아니다.
@@ -69,6 +70,27 @@ write Worker는 기존 품질·승인 gate를 유지한다.
   작성자에게 독립적으로 숨겨진 benchmark는 아니며 실제 LLM 결과는 아직 없다.
 - 다음/gate: #132 동일 모델 실제 A/B와 사람 검토. 실험 연결만으로 Text-first contract나
   기존 실패 gate를 승격하지 않는다. 평가 계획은 [별도 문서](text-dialogue-evaluation.md)를 따른다.
+
+### T2.5 #136 — 실제 재평가 완료 / 품질 gate 실패
+
+- 실행: 동일 A.X-4.0-Light Q4_K_M, 합성 Identity/격리 SQLite, 두 정책 × 7장면 × 2턴.
+  대화 28턴/모델 31회, 별도 warm-up 2회. HTTP 실패 0, repair 5턴, length 종료 1회.
+- 근거: [원문/판정](evaluations/136-text-reevaluation/README.md),
+  [전체 최종 응답](evaluations/136-text-reevaluation/transcript.md),
+  [ADR 0038](adr/0038-postfix-text-evaluation-verdict.md).
+- 결과: 명시적 선호 저장→검색→회상은 양쪽 성공. 모르는 취향은 없는 기억 또는 주체 변경으로
+  양쪽 실패. 정상 설명의 improvement_state 오탐과 listen style repair 간섭도 확인했다.
+  새 repair 지침은 주체/목적 보존을 보장하지 못했다. 일반 대화의 반복/상투 표현도 남는다.
+- 비용: 모델 생성 턴 중앙값 legacy 1.034초/contextual 1.078초, 최대 4.820초/16.918초.
+  TTFT가 아니며 13개 생성 턴의 p95는 최대값과 같다. 단일 표본으로 성능 우열을 일반화하지 않는다.
+- 검증: Docker offline **959 passed (53.94초)**, Ruff 전체/mypy **182 files** 통과.
+  trace complete, 모델 metadata 및 소스 hash 일치, 원본/복사본 SHA-256 일치.
+- 한계/관찰 대기: 합성 개발 회귀 suite·한 seed·정책별 독립 rollout이다. 독립 사람 평가,
+  천우의 실제 사용, 장기/재시작 기억과 Voice는 미검증. 사용자 필수 조작 없음.
+- 운영: 개인 DB/모델/정책/gate는 변경하지 않았다. 평가 전용 터널은 종료했고 상시 Host
+  연결은 복구하지 않았다. 서비스 전체 상태도 이번에 재조회하지 않았다.
+- gate/다음: legacy 유지 및 후보 승격 실패, Text-first contract 유지. #137에서 같은 모델의
+  최소 지침/전체 문맥 원 출력을 대조하고 다음 변경을 결정한다. #133은 open/보류다.
 
 ### T2.4 #135 — 제한된 검사 수정 완료 / repair 의미 품질 미확인
 
