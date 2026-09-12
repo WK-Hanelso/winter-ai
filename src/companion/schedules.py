@@ -14,12 +14,18 @@ from typing import Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from companion.conversation_recall import _terms
 from companion.ports import Clock
 
 KST = ZoneInfo("Asia/Seoul")
 Operation = Literal["create", "update", "cancel", "query"]
 ReceiptStatus = Literal["applied", "needs_clarification", "rejected", "failed"]
 Fields = Mapping[str, str | None]
+CALENDAR_DATE = re.compile(r'(?:(\d{4})년\s*)?(\d{1,2})월\s*(\d{1,2})일')
+DATE_EXPRESSIONS = re.compile(
+    r'\d{4}-\d{2}-\d{2}|(?:이번 주 |다음 주 )?[월화수목금토일]요일|이번 주말|오늘|내일|모레|'
+    r'(?:\d{4}년\s*)?\d{1,2}월\s*\d{1,2}일'
+)
 
 SCHEDULES_DDL = """
 CREATE TABLE IF NOT EXISTS schedules (
@@ -122,6 +128,9 @@ def resolve_date_range(expression: str, received_at: datetime) -> tuple[date, da
         elif expression == "이번 주말":
             saturday = today + timedelta(days=5 - today.weekday())
             return saturday, saturday + timedelta(days=1)
+        elif match := CALENDAR_DATE.fullmatch(expression):
+            year, month, day_text = match.groups()
+            day = date(int(year) if year else today.year, int(month), int(day_text))
         else:
             match = re.fullmatch(r"(?:(이번 주|다음 주) )?([월화수목금토일])요일", expression)
             if match is None:
@@ -324,6 +333,57 @@ class ScheduleService:
     def __init__(self, repository: ScheduleRepository, clock: Clock) -> None:
         self.repository, self.clock = repository, clock
 
+    def match_target(
+        self, target: Mapping[str, str], received_at: datetime,
+        *, connection: sqlite3.Connection | None = None,
+    ) -> tuple[Schedule, ...]:
+        """One resolver for revision lookup and the transactional write check.
+
+        Explicit IDs can address cancelled rows; discovery only uses active rows
+        within the inclusive KST today +/-60-day window. Never rank/pick a tie.
+        """
+        if connection is None:
+            with self.repository._connection() as reader:
+                return self.match_target(target, received_at, connection=reader)
+        today = _aware(received_at).date()
+        rows = self.repository._query(
+            connection, date_from=(today - timedelta(days=60)).isoformat(),
+            date_to=(today + timedelta(days=60)).isoformat(),
+            schedule_id=target.get('schedule_id'), active_only='schedule_id' not in target,
+        )
+        if 'schedule_id' in target:
+            return rows
+        hint = target.get('title_hint', '').strip().casefold()
+        if not hint:
+            return ()
+        exact = tuple(row for row in rows if row.title.casefold() == hint)
+        if exact:
+            return exact
+        substring = tuple(row for row in rows if hint in row.title.casefold())
+        if substring:
+            return substring
+        # Extract date spans before tokenization so "9월 20일"/"다음 주 금요일"
+        # remain one calendar constraint. Bare weekdays match any such day in range.
+        dates = tuple(match.group() for match in DATE_EXPRESSIONS.finditer(hint))
+        terms = _terms(DATE_EXPRESSIONS.sub(' ', hint), canonical=True)
+        # A date suffix (금요일로) is left after span extraction and has length <2.
+        if not terms and not dates:
+            return ()
+
+        def matches(row: Schedule) -> bool:
+            day = date.fromisoformat(row.date)
+            for expression in dates:
+                if expression in {f'{v}요일' for v in '월화수목금토일'}:
+                    if day.weekday() != '월화수목금토일'.index(expression[0]):
+                        return False
+                elif resolve_date(expression, received_at) != day:
+                    return False
+            values = _terms(' '.join((row.title, row.participants_text or '', row.place or '')),
+                            canonical=True)
+            return all(any(term in value for value in values) for term in terms)
+
+        return tuple(row for row in rows if matches(row))
+
     def execute(
         self, command: ScheduleCommand, *, source_text: str, active_only: bool = False,
         allow_cue_fallback: bool = False,
@@ -365,7 +425,8 @@ class ScheduleService:
                     if replay is not None:
                         return replay
                     now = _aware(command.received_at or self.clock.now())
-                    result = self._change(connection, command, request, now, receipt)
+                    result = self._change(connection, command, request, now, receipt,
+                                          source_text if allow_cue_fallback else None)
                 return result  # Only return applied after the transaction commits.
             except sqlite3.Error:
                 # Closing/rolling back the write connection precedes this independent read.
@@ -475,7 +536,9 @@ class ScheduleService:
         return bounds[0], bounds[1]
 
     @classmethod
-    def _normalize(cls, command: ScheduleCommand, now: datetime) -> dict[str, str | None]:
+    def _normalize(
+        cls, command: ScheduleCommand, now: datetime, source_text: str | None = None,
+    ) -> dict[str, str | None]:
         values = dict(command.fields)
         if command.operation == "create":
             for name in ("title", "date"):
@@ -488,7 +551,19 @@ class ScheduleService:
                 raise _Invalid(f"invalid_{name}")
             if name == "date":
                 assert value is not None
-                values[name] = cls._day(value, now, writing=True)
+                normalized_day = cls._day(value, now, writing=True)
+                values[name] = normalized_day
+                # P1 callers supply trusted commands. Model-originated Core commands
+                # additionally compare ISO calculations with the CURRENT user turn.
+                if source_text is not None and value.strip() == normalized_day:
+                    mentions = tuple(DATE_EXPRESSIONS.finditer(source_text))
+                    if not mentions:
+                        raise _Invalid('ungrounded_date', 'needs_clarification',
+                                       '정확히 어느 날짜로 할까?')
+                    days = {resolve_date(m.group(), now) for m in mentions}
+                    if days != {date.fromisoformat(normalized_day)}:
+                        raise _Invalid('date_mismatch', 'needs_clarification',
+                                       '날짜 계산이 원문과 맞지 않아. 정확히 어느 날짜로 할까?')
             elif name == "time" and value is not None:
                 normalized = resolve_time(value)
                 if normalized is None:
@@ -505,13 +580,11 @@ class ScheduleService:
     def _change(
         self, connection: sqlite3.Connection, command: ScheduleCommand,
         request: dict[str, object], now: datetime, receipt: ChangeReceipt,
+        source_text: str | None = None,
     ) -> ChangeReceipt:
         before = None
         if command.operation != "create":
-            candidates = self.repository._query(
-                connection, title_hint=command.target.get("title_hint"),
-                schedule_id=command.target.get("schedule_id"),
-            )
+            candidates = self.match_target(command.target, now, connection=connection)
             if not candidates:
                 return replace(receipt, reason_code="target_not_found")
             if len(candidates) > 1:
@@ -524,7 +597,11 @@ class ScheduleService:
                 return replace(receipt, reason_code="revision_conflict")
             if before.status == "cancelled":
                 return replace(receipt, reason_code="already_cancelled")
-        normalized = self._normalize(command, now)
+        try:
+            normalized = self._normalize(command, now, source_text)
+        except _Invalid as error:
+            return replace(receipt, status=error.status, reason_code=error.reason,
+                           clarification=error.clarification)
         stamp = now.astimezone(UTC).isoformat()
         if before is None:
             after = Schedule(

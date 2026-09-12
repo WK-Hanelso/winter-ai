@@ -153,15 +153,21 @@ def _turns(
     return tuple(turns)
 
 
-def _terms(text: str) -> set[str]:
+def _terms(text: str, *, canonical: bool = False) -> set[str]:
+    """Canonical mode keeps stop words and only particle-stripped forms for ALL matching."""
     terms: set[str] = set()
     for match in _TOKENS.finditer(text.lower()):
         token = match.group(0)
-        if token in _STOP or len(token) < 2:
+        if (not canonical and token in _STOP) or len(token) < 2:
             continue
-        terms.add(token)
-        for suffix in _KOREAN_SUFFIXES:
+        if not canonical:
+            terms.add(token)
+        suffixes = (
+            ("이랑", "하고", "랑", *_KOREAN_SUFFIXES, "로") if canonical else _KOREAN_SUFFIXES
+        )
+        for suffix in suffixes:
             if token.endswith(suffix) and len(token) - len(suffix) >= 2:
-                terms.add(token[: -len(suffix)])
+                token = token[: -len(suffix)]
                 break
+        terms.add(token)
     return terms

@@ -7,12 +7,9 @@ Missing facts are allowed. Query and clarification retain their separate display
 from datetime import datetime
 import re
 
-from companion.schedules import ChangeReceipt, resolve_date, resolve_time
+from companion.schedules import DATE_EXPRESSIONS, ChangeReceipt, resolve_date, resolve_time
 
-_DATE = re.compile(
-    r'\d{4}-\d{2}-\d{2}|(?:이번 주 |다음 주 )?[월화수목금토일]요일|오늘|내일|모레|'
-    r'(?:\d{4}년\s*)?\d{1,2}월\s*\d{1,2}일'
-)
+_DATE = DATE_EXPRESSIONS
 _TIME = re.compile(r'\d{1,2}:\d{2}|(?:(?:오전|오후)\s*)?\d{1,2}시(?:\s*\d{1,2}분)?')
 # Extract only explicit place/participant mentions; don't demand their presence.
 _PLACE = re.compile(

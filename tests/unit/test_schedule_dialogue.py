@@ -50,6 +50,9 @@ class Model:
                        if m.content.startswith('확인된 일정'))
         receipt = json.loads(message.content.split('\n', 1)[1])['receipt']
         if receipt['status'] == 'needs_clarification':
+            if receipt['reason_code'] in {'date_mismatch', 'ungrounded_date', 'ambiguous_date',
+                                         'past_date', 'missing_date'}:
+                return ChatResult(output(receipt['clarification']))
             names = ' / '.join(f"{s['date']} {s['participants_text']} {s['title']}"
                                for s in receipt['schedules'])
             return ChatResult(output(f'{names} 중 어느 모임을 바꿀까?'))
@@ -460,7 +463,7 @@ def test_supervised_json_error_keeps_session_open(h, monkeypatch):
 def test_context_date_window_includes_both_boundaries(h):
     h.clock.value = datetime(2026, 8, 1, 9, tzinfo=KST)
     for day in ('2026-08-30', '2026-08-31', '2026-09-28', '2026-09-29'):
-        h.turn('전시 저장해줘', 'create', {'title': day, 'date': day})
+        h.turn(f'{day} 전시 저장해줘', 'create', {'title': day, 'date': day})
     h.clock.value = datetime(2026, 9, 14, 9, tzinfo=KST)
     assert {s.date for s in h.dialogue.begin(99).context.schedules} == {
         '2026-08-31', '2026-09-28',
@@ -573,8 +576,73 @@ def test_explicit_contradictory_applied_drafts_replaced(h, draft):
     assert record['receipt']['status'] == 'applied' and record['calls'] == 1
 
 
-@pytest.mark.parametrize('draft', ['오후 3시에 보자.', '강변 갤러리에서 볼 전시네.', '민수랑 가는구나.'])
+@pytest.mark.parametrize(
+    'draft', ['오후 3시에 보자.', '강변 갤러리에서 볼 전시네.', '민수랑 가는구나.'])
 def test_unknown_fields_cannot_be_invented_in_draft(h, draft):
     final, record = h.turn('내일 전시 저장해줘', 'create', {'title': '전시', 'date': '내일'},
                            draft=draft)
     assert final != draft and record['discard_reason'] == 'contradictory_applied_draft'
+
+
+@pytest.mark.parametrize('source,iso,status,reason', [
+    ('내일 독서 모임 저장해줘', '2026-09-15', 'applied', None),
+    ('금요일 독서 모임 저장해줘', '2026-09-18', 'applied', None),
+    ('9월 20일 독서 모임 저장해줘', '2026-09-20', 'applied', None),
+    ('2026-09-20 독서 모임 저장해줘', '2026-09-20', 'applied', None),
+    ('금요일 독서 모임 저장해줘', '2026-09-16', 'needs_clarification', 'date_mismatch'),
+    ('독서 모임 저장해줘', '2026-09-15', 'needs_clarification', 'ungrounded_date'),
+    ('내일이나 모레 독서 모임 저장해줘', '2026-09-15', 'needs_clarification', 'date_mismatch'),
+    ('이번 주말 독서 모임 저장해줘', '2026-09-19', 'needs_clarification', 'date_mismatch'),
+])
+@pytest.mark.parametrize('exact_cue', [True, False])
+def test_model_iso_compared_to_current_source(h, source, iso, status, reason, exact_cue):
+    final, record = h.turn(source, 'create', {'title': '독서 모임', 'date': iso},
+                           cue=source if exact_cue else '이전 발화', draft='저장했어.')
+    assert (record['receipt']['status'], record['receipt']['reason_code']) == (status, reason)
+    assert record['calls'] == (1 if status == 'applied' else 2)
+    assert h.count_history() == (1 if status == 'applied' else 0)
+    if status == 'applied':
+        assert h.repo.query()[0].date == iso
+    else:
+        assert '어느 날짜' in final and '저장했어' not in final
+        assert '날짜만 질문해' in h.model.requests[-1].messages[-1].content
+
+
+@pytest.mark.parametrize('expression,iso', [('내일', '2026-09-15'), ('금요일', '2026-09-18'),
+                                            ('9월 20일', '2026-09-20')])
+def test_date_expression_is_preserved_until_python_normalization(h, expression, iso):
+    _, record = h.turn(f'{expression} 독서 모임 저장해줘', 'create',
+                       {'title': '독서 모임', 'date': expression})
+    assert record['proposal']['fields']['date'] == expression
+    assert record['receipt']['status'] == 'applied' and h.repo.query()[0].date == iso
+    history = json.loads(h.repo.history(h.repo.query()[0].id)[0]['change_json'])
+    assert history['command']['request']['fields']['date'] == expression
+    assert history['command']['normalized_fields']['date'] == iso
+
+
+def test_partial_title_revision_lookup_and_date_correction_followup(h):
+    h.turn('내일 민수랑 도서관 독서 모임 저장해줘', 'create',
+           {'title': '민수랑 도서관 독서 모임', 'date': '내일'})
+    # A second revision proves lookup uses candidate matching, not the old substring path.
+    h.turn('독서 모임 장소를 시청 도서관으로 바꿔줘', 'update', {'place': '시청 도서관'},
+           {'title_hint': '민수랑 독서 모임'})
+    original = h.repo.query()[0]
+    assert original.revision == 2
+    _, record = h.turn('독서 모임 날짜를 금요일로 바꿔줘', 'update', {'date': '2026-09-16'},
+                       {'title_hint': '민수랑 독서 모임'}, draft='바꿔놨어.')
+    assert record['receipt']['reason_code'] == 'date_mismatch'
+    assert record['receipt']['schedule_id'] == original.id and h.repo.query()[0] == original
+    final, record = h.turn('금요일이야', 'update', {'date': '금요일'},
+                           {'schedule_id': original.id}, draft='금요일로 바꿔놨어.')
+    assert record['receipt']['status'] == 'applied' and h.count_history() == 3
+    assert h.repo.query()[0].date == '2026-09-18' and final == '금요일로 바꿔놨어.'
+
+
+def test_date_schema_and_system_require_user_expression():
+    from companion.dialogue.schedule_dialogue import INSTRUCTION, OUTPUT_SCHEMA
+
+    fields = OUTPUT_SCHEMA['properties']['schedule_proposal']['anyOf'][1]['properties']['fields']
+    description = fields['properties']['date']['description']
+    for text in (INSTRUCTION, description):
+        assert '사용자가 말한 표현을 그대로 적어라' in text
+        assert all(example in text for example in ('내일', '금요일', '9월 20일'))

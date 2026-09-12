@@ -40,7 +40,9 @@ INSTRUCTION = (
     'query fields는 date_from/date_to 쌍만 허용하며 제목 또는 날짜 범위가 필요해. '
     'create는 제목·날짜가 필요하고 시간 미정은 null로 저장할 수 있어. '
     'update는 변경 항목만 보내고 생략한 값은 보존해. null은 시간·장소·참여자만 지워. '
-    '상대 날짜는 계산하지 말고 사용자 표현 그대로 보내. status/revision/command_id는 만들지 마. '
+    'date는 계산하지 말고 사용자가 말한 표현을 그대로 적어라 '
+    '(예: "내일", "금요일", "9월 20일"). ISO 날짜로 직접 계산하지 마. '
+    'status/revision/command_id는 만들지 마. '
     '대기 제안을 확정하는 답이면 제시된 후보의 schedule_id와 원래 operation/fields를 이어받아. '
     '사용자가 다른 화제로 넘어가면 대기 제안을 실행하지 말고 null로 반응해. '
     '초안은 아직 실행 결과가 아니야. 로컬 일정만 다루며 업체 예약·외부 캘린더는 바꾸지 않아. '
@@ -75,7 +77,10 @@ OUTPUT_SCHEMA: dict[str, object] = {
                      'schedule_id': {'type': 'string'}, 'title_hint': {'type': 'string'},
                  }},
                  'fields': {'type': 'object', 'additionalProperties': False, 'properties': {
-                     'title': {'type': 'string'}, 'date': {'type': 'string'},
+                     'title': {'type': 'string'},
+                     'date': {'type': 'string', 'description':
+                              '사용자가 말한 표현을 그대로 적어라 (예: 내일, 금요일, 9월 20일). '
+                              'ISO 날짜로 직접 계산하지 마. 날짜 계산은 Python이 담당한다.'},
                      'time': {'type': ['string', 'null']},
                      'place': {'type': ['string', 'null']},
                      'participants': {'anyOf': [
@@ -323,9 +328,10 @@ class ScheduleDialogue:
         received_at = turn.received_at
         revision = 0 if operation != 'query' else None
         pending = self.pending
-        if pending and operation == pending[0].operation and target.get('schedule_id') in {
+        if (pending and pending[1].reason_code == 'ambiguous_target'
+                and operation == pending[0].operation and target.get('schedule_id') in {
             s.id for s in pending[1].schedules
-        }:
+        }):
             previous, candidates = pending
             if any(key in values and values[key] != value
                    for key, value in previous.fields.items()):
@@ -338,9 +344,7 @@ class ScheduleDialogue:
                             if s.id == target['schedule_id'])
         elif operation in {'update', 'cancel'}:
             try:
-                rows = ((self.service.repository.get(target['schedule_id']),)
-                        if 'schedule_id' in target else self.service.repository.query(
-                            title_hint=target.get('title_hint')))
+                rows = self.service.match_target(target, received_at)
                 if len(rows) == 1 and rows[0] is not None:
                     revision = rows[0].revision
             except sqlite3.Error:
@@ -364,9 +368,14 @@ class ScheduleDialogue:
         instruction = ('초안은 폐기했어. 아래 receipt만 사실 근거로 삼아 새 reply_draft를 써. '
                        'schedule_proposal은 반드시 null이며 재실행은 없어. ')
         if receipt.status == 'needs_clarification':
-            instruction += (
-                '쓰기 0건이야. 후보의 날짜·참여자를 구분해서 질문 하나만 자연스럽게 해. '
-                            '사용자에게 장소 등 이미 준 변경 내용을 다시 요구하지 마.')
+            if receipt.reason_code in {'date_mismatch', 'ungrounded_date', 'ambiguous_date',
+                                       'past_date', 'missing_date'}:
+                instruction += ('쓰기 0건이야. receipt의 clarification에 따라 날짜만 질문해. '
+                                '대상 선택이나 이미 준 장소·참여자를 다시 묻지 마.')
+            else:
+                instruction += (
+                    '쓰기 0건이야. 후보의 날짜·참여자를 구분해서 질문 하나만 자연스럽게 해. '
+                    '사용자에게 장소 등 이미 준 변경 내용을 다시 요구하지 마.')
         else:
             instruction += ('조회 결과의 날짜·시간·장소·참여자와 취소 상태를 정확히 답해. '
                             'null은 미정이고 외부 예약 상태는 몰라.')

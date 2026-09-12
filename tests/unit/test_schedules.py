@@ -255,12 +255,15 @@ def test_ambiguous_target_lists_candidates_without_picking_one(service, operatio
     {"schedule_id": "missing"}, {"title_hint": "없는 제목"},
     {"schedule_id": "actual", "title_hint": "다른 제목"},
 ])
-def test_zero_or_inconsistent_target_is_rejected(service, target):
+def test_id_priority_and_missing_target(service, target):
     created = execute(service, create_command())
     if target.get("schedule_id") == "actual":
         target = {**target, "schedule_id": created.schedule_id}
     before = db_snapshot(service)
     result = execute(service, replace(edit_command(created, place="남쪽"), target=target))
+    if target.get('schedule_id') == created.schedule_id:
+        assert result.status == 'applied' and result.schedule_id == created.schedule_id
+        return  # P2.2 explicit ID takes priority over a repeated/inexact title hint.
     assert (result.status, result.reason) == ("rejected", "target_not_found")
     assert db_snapshot(service) == before
 
@@ -303,7 +306,7 @@ def test_noop_and_cancelled_mutations_do_not_create_revisions(service):
     ("오늘", date(2026, 9, 14)), ("내일", date(2026, 9, 15)), ("모레", date(2026, 9, 16)),
     ("금요일", date(2026, 9, 18)), ("이번 주 금요일", date(2026, 9, 18)),
     ("다음 주 금요일", date(2026, 9, 25)), ("이번 주말", None), ("주말쯤", None),
-    ("9월 18일", None), ("2028-02-29", date(2028, 2, 29)),
+    ("9월 18일", date(2026, 9, 18)), ("2028-02-29", date(2028, 2, 29)),
 ])
 def test_pure_relative_date_resolution(expression, expected):
     assert resolve_date(expression, NOW) == expected
@@ -323,7 +326,7 @@ def test_weekend_range_and_kst_utc_boundary():
         resolve_date("내일", datetime(2026, 9, 14))
 
 
-@pytest.mark.parametrize("expression", ["이번 주말", "주말쯤", "9월 18일"])
+@pytest.mark.parametrize("expression", ["이번 주말", "주말쯤", "9월쯤"])
 def test_ambiguous_date_needs_clarification_without_writes(service, expression):
     result = execute(service, create_command(date=expression))
     assert result.status == "needs_clarification" and result.reason == "ambiguous_date"
@@ -463,3 +466,88 @@ def test_concurrent_writers_serialize_revision_and_idempotency(service, same_com
         assert next(r for r in results if r.status == "rejected").reason == "revision_conflict"
     assert service.repository.get(created.schedule_id).revision == 2
     assert len(service.repository.history(created.schedule_id)) == 2
+
+
+@pytest.mark.parametrize('hint', [
+    '민수랑 독서 모임', '민수와 독서 모임을', '도서관 민수 독서', '금요일 독서 모임',
+    '9월 18일 독서 모임', '2026-09-18 독서 모임', '이번 주 금요일 독서 모임',
+])
+def test_target_all_tokens_match_title_participant_place_and_calendar(service, hint):
+    created = execute(service, create_command(title='도서관 독서 모임', date='금요일',
+                                              participants='민수', place='시청 도서관'))
+    command = replace(edit_command(created, place='북쪽'), target={'title_hint': hint})
+    result = execute(service, command)
+    assert result.status == 'applied' and result.schedule_id == created.schedule_id
+    assert result.revision == 2 and result.schedules[0].place == '북쪽'
+
+
+@pytest.mark.parametrize('operation', ['update', 'cancel'])
+def test_token_tie_lists_all_candidates_and_never_writes(service, operation):
+    first = execute(service, create_command(title='민수랑 도서관 독서 모임', date='금요일'))
+    second = execute(service, create_command('second', title='민수랑 카페 독서 모임',
+                                             date='다음 주 금요일'))
+    before = db_snapshot(service)
+    fields = {'place': '새 장소'} if operation == 'update' else {}
+    command = replace(edit_command(first, operation, **fields),
+                      target={'title_hint': '금요일 민수랑 독서 모임'})
+    result = execute(service, command)
+    assert (result.status, result.reason) == ('needs_clarification', 'ambiguous_target')
+    assert {s.id for s in result.schedules} == {first.schedule_id, second.schedule_id}
+    assert result.schedule_id is None and db_snapshot(service) == before
+
+
+@pytest.mark.parametrize('hint', ['민수랑 독서 모임', '독서 모임', '금요일 독서 모임'])
+def test_target_discovery_excludes_cancelled_even_if_title_matches(service, hint):
+    first = execute(service, create_command(title='민수랑 독서 모임', date='금요일'))
+    cancelled = execute(service, edit_command(first, 'cancel', 'cancel-first'))
+    second = execute(service, create_command('second', title='민수랑 도서관 독서 모임',
+                                             date='금요일'))
+    assert service.match_target({'title_hint': hint}, NOW) == second.schedules
+    # An explicit ID can inspect cancellation, but cannot revive/write it.
+    assert service.match_target({'schedule_id': first.schedule_id}, NOW) == cancelled.schedules
+    before = db_snapshot(service)
+    assert execute(service, edit_command(cancelled, place='북쪽')).reason == 'already_cancelled'
+    assert db_snapshot(service) == before
+
+
+@pytest.mark.parametrize('hint', ['민수랑 영화 모임', '수요일 독서 모임', '2026-09-19 독서 모임',
+                                  '내일 독서 모임', '주말쯤 독서 모임', '모임 없는단어', ''])
+def test_target_zero_matches_does_not_ignore_unmatched_tokens(service, hint):
+    created = execute(service, create_command(title='민수랑 도서관 독서 모임', date='금요일'))
+    before = db_snapshot(service)
+    assert service.match_target({'title_hint': hint}, NOW) == ()
+    if hint:
+        result = execute(service, replace(edit_command(created, place='북쪽'),
+                                          target={'title_hint': hint}))
+        assert (result.status, result.reason) == ('rejected', 'target_not_found')
+    assert db_snapshot(service) == before
+
+
+def test_title_exact_precedes_substring_and_token_fallback(service):
+    exact = execute(service, create_command(title='독서 모임'))
+    execute(service, create_command('long', title='민수 독서 모임'))
+    assert service.match_target({'title_hint': '독서 모임'}, NOW) == exact.schedules
+    assert service.match_target({'title_hint': '민수 독서'}, NOW)[0].title == '민수 독서 모임'
+    assert service.match_target({'schedule_id': 'missing', 'title_hint': '독서 모임'}, NOW) == ()
+
+
+def test_target_window_is_inclusive_kst_today_plus_minus_sixty_days(service):
+    from datetime import timedelta
+
+    service.clock.value = datetime(2026, 1, 1, tzinfo=KST)
+    saved = {}
+    for offset in (-61, -60, 60, 61):
+        day = (NOW.date() + timedelta(days=offset)).isoformat()
+        saved[offset] = execute(service, create_command(str(offset), date=day))
+    utc_boundary = datetime(2026, 9, 13, 15, tzinfo=UTC)  # September 14 in KST.
+    rows = service.match_target({'title_hint': '합성 일정'}, utc_boundary)
+    assert {s.id for s in rows} == {saved[n].schedule_id for n in (-60, 60)}
+    assert service.match_target({'schedule_id': saved[61].schedule_id}, utc_boundary) == ()
+
+
+@pytest.mark.parametrize('expression,expected', [
+    ('9월 20일', date(2026, 9, 20)), ('2028년 2월 29일', date(2028, 2, 29)),
+    ('2026년 2월 29일', None), ('13월 1일', None),
+])
+def test_korean_calendar_dates_use_p1_resolver(expression, expected):
+    assert resolve_date(expression, NOW) == expected
