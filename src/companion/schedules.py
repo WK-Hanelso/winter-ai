@@ -23,8 +23,9 @@ ReceiptStatus = Literal["applied", "needs_clarification", "rejected", "failed"]
 Fields = Mapping[str, str | None]
 CALENDAR_DATE = re.compile(r'(?:(\d{4})년\s*)?(\d{1,2})월\s*(\d{1,2})일')
 DATE_EXPRESSIONS = re.compile(
-    r'\d{4}-\d{2}-\d{2}|(?:이번 주 |다음 주 )?[월화수목금토일]요일|이번 주말|오늘|내일|모레|'
-    r'(?:\d{4}년\s*)?\d{1,2}월\s*\d{1,2}일|이번 주|다음 주'
+    r'(?:\d{4}-\d{2}-\d{2}|(?:이번 주 |다음 주 )?[월화수목금토일]요일|'
+    r'이번 주말|주말|오늘|내일|모레|'
+    r'(?:\d{4}년\s*)?\d{1,2}월\s*\d{1,2}일|이번 주|다음 주)(?:쯤|경)?'
 )
 
 SCHEDULES_DDL = """
@@ -378,7 +379,7 @@ class ScheduleService:
 
     def match_target(
         self, target: Mapping[str, str], received_at: datetime,
-        *, connection: sqlite3.Connection | None = None,
+        *, connection: sqlite3.Connection | None = None, source_grounded: bool = False,
     ) -> tuple[Schedule, ...]:
         """One resolver for revision lookup and the transactional write check.
 
@@ -387,35 +388,79 @@ class ScheduleService:
         """
         if connection is None:
             with self.repository._connection() as reader:
-                return self.match_target(target, received_at, connection=reader)
+                return self.match_target(target, received_at, connection=reader,
+                                         source_grounded=source_grounded)
         today = _aware(received_at).date()
         rows = self.repository._query(
             connection, date_from=(today - timedelta(days=60)).isoformat(),
             date_to=(today + timedelta(days=60)).isoformat(),
-            schedule_id=target.get('schedule_id'), active_only='schedule_id' not in target,
+            schedule_id=(None if source_grounded and 'title_hint' in target
+                         else target.get('schedule_id')),
+            active_only='schedule_id' not in target,
         )
-        if 'schedule_id' in target:
+        if not source_grounded and 'schedule_id' in target:
             return rows
-        return self.match_rows(rows, target.get('title_hint', ''), received_at)
+        if 'title_hint' in target:
+            rows = self.match_rows(rows, target['title_hint'], received_at,
+                                   source_grounded=source_grounded)
+            if len(rows) == 1 and target.get('schedule_id', rows[0].id) != rows[0].id:
+                return ()
+            return rows
+        return rows if 'schedule_id' in target else ()
+
+    def source_target_hint(
+        self, source_text: str, fields: Fields, received_at: datetime,
+    ) -> str:
+        """Extract candidate vocabulary from current words, never a generated target.
+
+        Patch values identify the destination, not the existing row. Generic particles
+        and request verbs need not appear in titles. Participants and weekdays narrow
+        candidates; no ranking or model ID can break a tie.
+        """
+        today = _aware(received_at).date()
+        rows = self.repository.query(date_from=(today - timedelta(days=60)).isoformat(),
+                                     date_to=(today + timedelta(days=60)).isoformat())
+        text = source_text
+        for value in fields.values():
+            if value:
+                text = text.replace(value, ' ')
+        dates = [] if 'date' in fields else [m.group() for m in DATE_EXPRESSIONS.finditer(text)]
+        text = DATE_EXPRESSIONS.sub(' ', text)
+        vocabulary = _terms(' '.join(' '.join((r.title, r.place or '', r.participants_text or ''))
+                                    for r in rows), canonical=True)
+        terms = _terms(text, canonical=True)
+        selected = {t for t in terms if any(t in v for v in vocabulary)}
+        # An explicitly named but unknown participant must not collapse to a generic title.
+        selected.update(m.group(1) for m in re.finditer(
+            r'([가-힣A-Za-z0-9]+?)(?:이랑|랑)(?=\s|$)', text))
+        if not selected and '일정' in terms:
+            selected.add('일정')
+        return ' '.join([*dates, *sorted(selected)])
 
     @staticmethod
     def match_rows(
         rows: tuple[Schedule, ...], title_hint: str, received_at: datetime,
+        *, source_grounded: bool = False,
     ) -> tuple[Schedule, ...]:
         """Match already-bounded candidates without changing the query's date window."""
         hint = title_hint.strip().casefold()
         if not hint:
             return ()
-        exact = tuple(row for row in rows if row.title.casefold() == hint)
-        if exact:
-            return exact
-        substring = tuple(row for row in rows if hint in row.title.casefold())
-        if substring:
-            return substring
+        if not source_grounded:
+            exact = tuple(row for row in rows if row.title.casefold() == hint)
+            if exact:
+                return exact
+            substring = tuple(row for row in rows if hint in row.title.casefold())
+            if substring:
+                return substring
         # Extract date spans before tokenization so "9월 20일"/"다음 주 금요일"
         # remain one calendar constraint. Bare weekdays match any such day in range.
         dates = tuple(match.group() for match in DATE_EXPRESSIONS.finditer(hint))
         terms = _terms(DATE_EXPRESSIONS.sub(' ', hint), canonical=True)
+        if source_grounded and terms == {'일정'}:
+            terms = set()
+            if not dates:
+                return rows
         # A date suffix (금요일로) is left after span extraction and has length <2.
         if not terms and not dates:
             return ()
@@ -608,19 +653,22 @@ class ScheduleService:
                 raise _Invalid(f"invalid_{name}")
             if name == "date":
                 assert value is not None
-                normalized_day = cls._day(value, now, writing=True)
-                values[name] = normalized_day
-                # P1 callers supply trusted commands. Model-originated Core commands
-                # additionally compare ISO calculations with the CURRENT user turn.
-                if source_text is not None and value.strip() == normalized_day:
+                # Current words are authoritative even when the model supplies a wrong ISO.
+                # Keep P1 trusted commands unchanged; Core uses current-source grounding.
+                if source_text is not None:
                     mentions = tuple(DATE_EXPRESSIONS.finditer(source_text))
                     if not mentions:
-                        raise _Invalid('ungrounded_date', 'needs_clarification',
-                                       '정확히 어느 날짜로 할까?')
+                        if value in source_text:
+                            cls._day(value, now, writing=True)  # e.g. 주말쯤: ambiguous
+                        raise _Invalid('ungrounded_date')
                     days = {resolve_date(m.group(), now) for m in mentions}
-                    if days != {date.fromisoformat(normalized_day)}:
+                    if None in days or len(days) != 1:
                         raise _Invalid('date_mismatch', 'needs_clarification',
-                                       '날짜 계산이 원문과 맞지 않아. 정확히 어느 날짜로 할까?')
+                                       '정확히 어느 날짜로 할까?')
+                    day = next(iter(days))
+                    assert day is not None
+                    value = day.isoformat()
+                values[name] = cls._day(value, now, writing=True)
             elif name == "time" and value is not None:
                 normalized = source_time(value, source_text) if source_text else resolve_time(value)
                 if normalized is None:
@@ -641,7 +689,8 @@ class ScheduleService:
     ) -> ChangeReceipt:
         before = None
         if command.operation != "create":
-            candidates = self.match_target(command.target, now, connection=connection)
+            candidates = self.match_target(command.target, now, connection=connection,
+                                           source_grounded=source_text is not None)
             if not candidates:
                 return replace(receipt, reason_code="target_not_found")
             if len(candidates) > 1:

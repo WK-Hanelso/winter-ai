@@ -7,8 +7,10 @@ Missing facts are allowed. Query and clarification retain their separate display
 from datetime import datetime
 import re
 
+from companion.conversation_recall import _terms
 from companion.schedules import (
     DATE_EXPRESSIONS,
+    KST,
     ChangeReceipt,
     Schedule,
     resolve_date,
@@ -126,8 +128,37 @@ def query_draft_matches(
             continue
         if item.status == 'cancelled' and '취소' not in draft:
             continue
-        if any(value and value in draft for value in (
-            item.title, item.place, item.participants_text, item.date, item.time,
-        )):
+        if identifies_schedule(draft, item) or any(
+                value and value in draft for value in (item.date, item.time)):
             return True
     return False
+
+
+def identifies_schedule(draft: str, item: Schedule) -> bool:
+    """A partial title noun is sufficient; generic schedule words alone aren't."""
+    terms = _terms(item.title, canonical=True) - {'일정', '예약', '약속', '모임'}
+    return bool(terms & _terms(draft, canonical=True)) or any(
+        value and value in draft for value in (item.title, item.place, item.participants_text)
+    )
+
+
+def correct_context_relative_date(
+    draft: str, rows: tuple[Schedule, ...], received_at: datetime,
+) -> str:
+    """Correct one relative reference only when all remaining facts identify one row."""
+    words = list(_DATE.finditer(draft))
+    if len(words) != 1 or words[0].group() not in {'오늘', '내일', '모레'}:
+        return draft
+    without_date = _DATE.sub('', draft)
+    candidates = [item for item in rows if identifies_schedule(without_date, item)
+                  and not draft_conflicts(without_date, ChangeReceipt(
+                      'applied', 'query', 'context', 1, schedules=(item,)), received_at)]
+    if len(candidates) != 1:
+        return draft
+    delta = (datetime.fromisoformat(candidates[0].date).date()
+             - received_at.astimezone(KST).date()).days
+    replacement = {0: '오늘', 1: '내일', 2: '모레'}.get(delta)
+    if replacement is None:
+        return draft
+    match = words[0]
+    return draft[:match.start()] + replacement + draft[match.end():]

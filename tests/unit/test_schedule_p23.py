@@ -98,8 +98,10 @@ def test_stale_cue_uses_field_grounding_and_target_matching(h, operation):
                            draft=draft, cue='지난번 일정 바꿔줘')
     assert 'stale_cue_ignored' in record['warnings']
     if operation == 'cancel':
-        assert record['receipt']['status'] == 'applied'
-        assert h.repo.query()[0].status == 'cancelled' and h.count_history() == 2
+        assert record['receipt']['reason_code'] == 'target_not_found'
+        assert h.repo.query() == before and h.count_history() == 1
+        assert record['calls'] == 2
+        return
     else:
         assert record['receipt'] is None and 'ungrounded_fields' in record['warnings']
         assert h.repo.query() == before and h.count_history() == 1

@@ -10,10 +10,16 @@ from typing import cast
 
 from companion.contracts import ChatRequest, ConversationMessage
 from companion.dialogue.claim_language import has_question_form
-from companion.dialogue.schedule_draft import draft_conflicts, query_draft_matches
+from companion.dialogue.schedule_draft import (
+    correct_context_relative_date,
+    draft_conflicts,
+    identifies_schedule,
+    query_draft_matches,
+)
 from companion.errors import AdapterUnavailableError
 from companion.ports import ChatModel
 from companion.schedules import (
+    DATE_EXPRESSIONS,
     KST,
     ChangeReceipt,
     Operation,
@@ -66,6 +72,36 @@ _COMPLETION = re.compile(
 
 def claims_completion(text: str) -> bool:
     return _COMPLETION.search(text) is not None
+
+
+def claims_new_completion(text: str, rows: tuple[Schedule, ...], now: datetime) -> bool:
+    for clause in re.split(r'[.!?\n]', text):
+        if not claims_completion(clause):
+            continue
+        # A present state or explicitly historical action can be supported by context.
+        # A first-person/new action still needs this turn's execution receipt.
+        historical = bool(re.search(r'이미|아까|지난번|전에', clause))
+        passive = all(re.search(r'(?:됐|되었)', match.group())
+                      for match in _COMPLETION.finditer(clause))
+        if re.search(r'방금|지금|이번에|새로|다시', clause) or not (historical or passive):
+            return True
+        supported = False
+        for row in rows:
+            if not identifies_schedule(clause, row):
+                continue
+            if '취소' in clause:
+                status_matches = row.status == 'cancelled'
+            elif re.search(r'변경|수정|바꿔|옮겨', clause):
+                status_matches = row.status == 'changed'
+            else:
+                status_matches = row.status in {'planned', 'changed', 'cancelled'}
+            if status_matches and not draft_conflicts(clause, ChangeReceipt(
+                    'applied', 'query', 'context', 1, schedules=(row,)), now):
+                supported = True
+                break
+        if not supported:
+            return True
+    return False
 
 
 # Keep the grammar structural; operation semantics remain with ScheduleService.
@@ -264,6 +300,7 @@ class ScheduleTurn:
     warnings: list[str] = field(default_factory=list)
     validation_errors: list[str] = field(default_factory=list)
     cue_mode: str | None = None
+    source_text: str = ""
 
 
 class ScheduleDialogue:
@@ -273,6 +310,7 @@ class ScheduleDialogue:
         self.service = service
         self.observation_path = observation_path
         self.pending: tuple[ScheduleCommand, ChangeReceipt] | None = None
+        self.pending_source = ""
 
     def begin(self, source_message_id: int) -> ScheduleTurn:
         now = self.service.clock.now()
@@ -352,6 +390,7 @@ class ScheduleDialogue:
         raise ScheduleOutputError('답변을 완성하지 못했어')
 
     def execute(self, turn: ScheduleTurn, source_text: str) -> ChangeReceipt | None:
+        turn.source_text = source_text
         proposal = turn.proposal
         if proposal is None:
             self.pending = None
@@ -383,41 +422,73 @@ class ScheduleDialogue:
                          else 'field_grounding' if operation == 'create' else 'service_target')
         if turn.cue_mode != 'exact_cue':
             turn.warnings.append('cue_fallback')
-            if operation != 'query' and ungrounded_create_fields(values, source_text):
-                turn.warnings.append('ungrounded_fields')
-                self.pending = None
-                return None
         original_id = None
         received_at = turn.received_at
         revision = 0 if operation != 'query' else None
         pending = self.pending
-        if (pending and pending[1].reason_code == 'ambiguous_target'
-                and operation == pending[0].operation and target.get('schedule_id') in {
-            s.id for s in pending[1].schedules
-        }):
-            previous, candidates = pending
-            if any(key in values and values[key] != value
-                   for key, value in previous.fields.items()):
-                turn.receipt = replace(base, reason_code='pending_fields_conflict')
-                return turn.receipt
-            values = {**previous.fields, **values}
-            original_id = previous.original_source_message_id or previous.source_message_id
-            received_at = previous.received_at or received_at
-            revision = next(s.revision for s in candidates.schedules
-                            if s.id == target['schedule_id'])
-        elif operation in {'update', 'cancel'}:
+        continuing = bool(pending and pending[1].reason_code == 'ambiguous_target'
+                          and operation == pending[0].operation)
+        grounded_values = dict(values)
+        if continuing:
+            assert pending is not None
+            # Inherited values were grounded in the pending turn. A model may also
+            # echo the selected row's OLD value; that cannot replace the pending patch.
+            grounded_values = {k: v for k, v in values.items() if k not in pending[0].fields}
+        if operation != 'query':
+            reason = None
+            if (turn.cue_mode != 'exact_cue'
+                    and ungrounded_create_fields(grounded_values, source_text)):
+                reason = 'ungrounded_fields'
+            proposed_date = grounded_values.get('date')
+            if (reason is None and proposed_date and not DATE_EXPRESSIONS.search(source_text)
+                    and proposed_date not in source_text):
+                reason = 'ungrounded_date'
+            if reason:
+                turn.warnings.append(reason)
+                self.pending = None
+                return None
+        execution_source = source_text
+        if operation in {'update', 'cancel'}:
             try:
-                rows = self.service.match_target(target, received_at)
-                if len(rows) == 1 and rows[0] is not None:
-                    revision = rows[0].revision
-                elif not values and turn.cue_mode != 'exact_cue':
-                    turn.receipt = replace(base, status='needs_clarification',
-                                           schedules=rows,
-                                           reason_code=('ambiguous_target' if rows
-                                                        else 'target_not_found'),
-                                           clarification='어느 일정을 바꿀까?')
-                    self.pending = None
+                hint = self.service.source_target_hint(source_text, grounded_values, received_at)
+                # Include cancelled rows only when the model addressed one explicitly.
+                lookup = {'title_hint': hint}
+                if target.get('schedule_id'):
+                    lookup['schedule_id'] = target['schedule_id']
+                rows = self.service.match_target(lookup, received_at, source_grounded=True)
+                if len(rows) != 1:
+                    turn.receipt = replace(base, status='needs_clarification', schedules=rows,
+                        reason_code='ambiguous_target' if rows else 'target_not_found',
+                        clarification='어느 일정을 바꿀까?')
+                    command = ScheduleCommand(operation, base.command_id, turn.source_message_id,
+                        cast(str, cue), values, {'title_hint': hint}, 0, received_at)
+                    self.pending = (command, turn.receipt) if rows else None
+                    self.pending_source = source_text
                     return turn.receipt
+                selected = rows[0]
+                target = {'title_hint': hint, 'schedule_id': selected.id}
+                revision = selected.revision
+                if continuing:
+                    assert pending is not None
+                    previous, candidates = pending
+                    candidate = next((r for r in candidates.schedules if r.id == selected.id), None)
+                    if candidate is None:
+                        turn.receipt = replace(base, reason_code='pending_target_conflict')
+                        return turn.receipt
+                    for key, value in previous.fields.items():
+                        if key in values and values[key] != value:
+                            old = getattr(candidate, 'participants_text' if key == 'participants'
+                                          else key)
+                            if values[key] != old or not ungrounded_create_fields(
+                                    {key: values[key]}, source_text):
+                                turn.receipt = replace(base, reason_code='pending_fields_conflict')
+                                return turn.receipt
+                            turn.warnings.append('pending_old_value_ignored')
+                    values = {**values, **previous.fields}
+                    original_id = previous.original_source_message_id or previous.source_message_id
+                    received_at = previous.received_at or received_at
+                    revision = candidate.revision
+                    execution_source = self.pending_source
             except sqlite3.Error:
                 turn.receipt = replace(base, status='failed', reason_code='database_error')
                 return turn.receipt
@@ -426,8 +497,14 @@ class ScheduleDialogue:
             revision, received_at, original_id,
         )
         turn.receipt = self.service.execute(
-            command, source_text=source_text, allow_cue_fallback=True,
+            command, source_text=execution_source, allow_cue_fallback=True,
         )
+        if turn.receipt.reason_code in {'ungrounded_date', 'ungrounded_fields'}:
+            turn.warnings.append(turn.receipt.reason_code)
+            turn.receipt = None
+            self.pending = None
+            return None
+        self.pending_source = execution_source
         self.pending = ((command, turn.receipt)
                         if turn.receipt.status == 'needs_clarification' else None)
         return turn.receipt
@@ -456,6 +533,9 @@ class ScheduleDialogue:
                                        'past_date', 'missing_date'}:
                 instruction += ('쓰기 0건이야. receipt의 clarification에 따라 날짜만 질문해. '
                                 '대상 선택이나 이미 준 장소·참여자를 다시 묻지 마.')
+            elif receipt.reason_code == 'ambiguous_time':
+                instruction += ('쓰기 0건이야. 이미 말한 시각의 오전/오후만 자연스럽게 확인해. '
+                                '날짜·대상·장소·참여자를 다시 묻지 마.')
             else:
                 instruction += (
                     '쓰기 0건이야. 후보의 날짜·참여자를 구분해서 질문 하나만 자연스럽게 해. '
@@ -466,6 +546,11 @@ class ScheduleDialogue:
         else:
             instruction += ('조회 결과의 날짜·시간·장소·참여자와 취소 상태를 정확히 답해. '
                             'null은 미정이고 외부 예약 상태는 몰라.')
+        if receipt.status == 'applied' and receipt.schedules:
+            weekdays = ', '.join(
+                f"{row.date} {'월화수목금토일'[datetime.fromisoformat(row.date).weekday()]}요일"
+                for row in receipt.schedules)
+            instruction += 'Python으로 확인한 요일: ' + weekdays + '. '
         messages = tuple(m for m in request.messages if not (
             m.role == 'system' and m.content.startswith((
                 '확인된 일정', '아직 실행하지 않은 대기 일정 제안:',
@@ -488,7 +573,13 @@ class ScheduleDialogue:
     def display(self, turn: ScheduleTurn, draft: str) -> str:
         receipt = turn.receipt
         if receipt is None:
-            if claims_completion(draft):
+            if has_question_form(turn.source_text):
+                corrected = correct_context_relative_date(
+                    draft, turn.context.schedules, turn.received_at)
+                if corrected != draft and 'context_relative_date_corrected' not in turn.warnings:
+                    turn.warnings.append('context_relative_date_corrected')
+                draft = corrected
+            if claims_new_completion(draft, turn.context.schedules, turn.received_at):
                 turn.discard_reason = 'completion_without_receipt'
                 return '이번 대화에서는 일정을 저장하거나 바꾸지 않았어.'
             return draft
@@ -507,7 +598,8 @@ class ScheduleDialogue:
             return fallback
         if receipt.status == 'applied' and receipt.operation == 'query':
             rows = receipt.schedules or turn.context.schedules
-            if not claims_completion(draft) and query_draft_matches(draft, rows, turn.received_at):
+            if (not claims_new_completion(draft, rows, turn.received_at)
+                    and query_draft_matches(draft, rows, turn.received_at)):
                 if not receipt.schedules:
                     if 'query_draft_preserved_from_context' not in turn.warnings:
                         turn.warnings.append('query_draft_preserved_from_context')
@@ -521,12 +613,32 @@ class ScheduleDialogue:
             turn.discard_reason = 'completion_or_conflict_on_followup'
             return fallback
         if receipt.status == 'needs_clarification':
-            if draft.count('?') == 1 and all(
-                s.title in draft and s.date in draft
-                and (s.participants_text is None or s.participants_text in draft)
-                for s in receipt.schedules
-            ):
-                return draft
+            if draft.count('?') == 1:
+                if receipt.reason_code != 'ambiguous_target':
+                    return draft
+                # Natural candidate distinctions are enough; don't demand a full ISO recital.
+                rows = receipt.schedules
+                distinguished = []
+                for row in rows:
+                    unique_values = [v for v in (row.title, row.participants_text, row.place)
+                                     if v and sum(v in (r.title, r.participants_text, r.place)
+                                                  for r in rows) == 1]
+                    date_words = [m.group() for m in DATE_EXPRESSIONS.finditer(draft)]
+                    unique_day = any(
+                        len(self.service.match_rows(rows, word, turn.received_at)) == 1
+                        and row in self.service.match_rows(rows, word, turn.received_at)
+                        for word in date_words)
+                    for clause in re.split(r'[,/]| 또는 | 아니면 | 중 ', draft):
+                        if (any(v in clause for v in unique_values)
+                                and not any(r != row and r.participants_text
+                                            and r.participants_text in clause for r in rows)
+                                and draft_conflicts(clause, replace(receipt, schedules=(row,)),
+                                                    turn.received_at)):
+                            turn.discard_reason = 'contradictory_clarification_draft'
+                            return fallback
+                    distinguished.append(any(v in draft for v in unique_values) or unique_day)
+                if rows and all(distinguished):
+                    return draft
         elif not receipt.schedules:
             if draft == fallback:
                 return draft

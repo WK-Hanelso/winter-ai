@@ -334,7 +334,7 @@ def test_applied_grounded_draft_is_preserved_verbatim(h):
 
 def test_ambiguous_second_answer_cannot_leak_success(h):
     for date in ('내일', '금요일'):
-        h.turn('모임 저장해줘', 'create', {'title': '모임', 'date': date})
+        h.turn(f'{date} 모임 저장해줘', 'create', {'title': '모임', 'date': date})
     h.model.queue.extend([
         output('바꿔놨어', 'update', {'place': '카페'}, {'title_hint': '모임'}, '장소'),
         output('2026-09-15와 2026-09-18 둘 다 바꿔놨어. 괜찮지?'),
@@ -348,13 +348,13 @@ def test_pending_target_revision_is_not_silently_refreshed(h):
     from companion.schedules import ScheduleCommand
 
     for date in ('내일', '금요일'):
-        h.turn('모임 저장해줘', 'create', {'title': '모임', 'date': date})
+        h.turn(f'{date} 모임 저장해줘', 'create', {'title': '모임', 'date': date})
     h.turn('모임 장소 바꿔줘', 'update', {'place': '카페'}, {'title_hint': '모임'})
     target = h.repo.query()[0]
     h.dialogue.service.execute(ScheduleCommand(
         'update', 'concurrent-writer', 1, '변경', {'time': '15:00'},
         {'schedule_id': target.id}, 1), source_text='변경')
-    _, record = h.turn('그 모임 말이야', 'update', {'place': '카페'}, {'schedule_id': target.id})
+    _, record = h.turn('내일 모임 말이야', 'update', {'place': '카페'}, {'schedule_id': target.id})
     assert record['receipt']['reason_code'] == 'revision_conflict'
     assert h.repo.get(target.id).place is None and h.count_history() == 3
 
@@ -599,8 +599,8 @@ def test_unknown_fields_cannot_be_invented_in_draft(h, draft):
     ('금요일 독서 모임 저장해줘', '2026-09-18', 'applied', None),
     ('9월 20일 독서 모임 저장해줘', '2026-09-20', 'applied', None),
     ('2026-09-20 독서 모임 저장해줘', '2026-09-20', 'applied', None),
-    ('금요일 독서 모임 저장해줘', '2026-09-16', 'needs_clarification', 'date_mismatch'),
-    ('독서 모임 저장해줘', '2026-09-15', 'needs_clarification', 'ungrounded_date'),
+    ('금요일 독서 모임 저장해줘', '2026-09-16', 'applied', None),
+    ('독서 모임 저장해줘', '2026-09-15', None, 'ungrounded_date'),
     ('내일이나 모레 독서 모임 저장해줘', '2026-09-15', 'needs_clarification', 'date_mismatch'),
     ('이번 주말 독서 모임 저장해줘', '2026-09-19', 'needs_clarification', 'date_mismatch'),
 ])
@@ -608,11 +608,15 @@ def test_unknown_fields_cannot_be_invented_in_draft(h, draft):
 def test_model_iso_compared_to_current_source(h, source, iso, status, reason, exact_cue):
     final, record = h.turn(source, 'create', {'title': '독서 모임', 'date': iso},
                            cue=source if exact_cue else '', draft='저장했어.')
+    if status is None:
+        assert record['receipt'] is None and reason in record['warnings']
+        assert h.count_history() == 0 and record['calls'] == 1
+        return
     assert (record['receipt']['status'], record['receipt']['reason_code']) == (status, reason)
     assert record['calls'] == (1 if status == 'applied' else 2)
     assert h.count_history() == (1 if status == 'applied' else 0)
     if status == 'applied':
-        assert h.repo.query()[0].date == iso
+        assert h.repo.query()[0].date == ('2026-09-18' if '금요일' in source else iso)
     else:
         assert '어느 날짜' in final and '저장했어' not in final
         assert '날짜만 질문해' in h.model.requests[-1].messages[-1].content
@@ -640,11 +644,12 @@ def test_partial_title_revision_lookup_and_date_correction_followup(h):
     assert original.revision == 2
     _, record = h.turn('독서 모임 날짜를 금요일로 바꿔줘', 'update', {'date': '2026-09-16'},
                        {'title_hint': '민수랑 독서 모임'}, draft='바꿔놨어.')
-    assert record['receipt']['reason_code'] == 'date_mismatch'
-    assert record['receipt']['schedule_id'] == original.id and h.repo.query()[0] == original
-    final, record = h.turn('금요일이야', 'update', {'date': '금요일'},
+    assert record['receipt']['status'] == 'applied'
+    assert record['receipt']['schedule_id'] == original.id
+    assert h.repo.query()[0].date == '2026-09-18'
+    final, record = h.turn('독서 모임 날짜는 금요일이야', 'update', {'date': '금요일'},
                            {'schedule_id': original.id}, draft='금요일로 바꿔놨어.')
-    assert record['receipt']['status'] == 'applied' and h.count_history() == 3
+    assert record['receipt']['reason_code'] == 'no_change' and h.count_history() == 3
     assert h.repo.query()[0].date == '2026-09-18' and final == '금요일로 바꿔놨어.'
 
 
