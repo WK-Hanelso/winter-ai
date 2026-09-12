@@ -21,9 +21,9 @@ def test_pairs_keep_exact_history_facts_and_budget(tmp_path, scene):
     assert tuple(m for m in a.messages if m.role != "system") == tuple(
         m for m in b.messages if m.role != "system"
     )
-    # Legacy ends with style + grounding/dialogue; minimal has one replacement.
-    assert a.messages[:-4] == b.messages[:-5]  # Identical selected fact blocks.
-    assert a.messages[-4].content == runner.MINIMAL_INSTRUCTION
+    # Instructions now precede the identical selected facts and real history.
+    assert a.messages[2:] == b.messages[3:]
+    assert a.messages[1].content == runner.MINIMAL_INSTRUCTION
     for expected in scene["expect"]:
         assert expected not in json.dumps(asdict(a), ensure_ascii=False)
         assert expected not in json.dumps(asdict(b), ensure_ascii=False)

@@ -145,7 +145,7 @@ def test_honest_limit_is_not_rejected_as_the_claim_it_denies(text: str) -> None:
     assert ResponseClaimGate().violations(text, ClaimEvidence(user_text="질문")) == ()
 
 
-def test_unsupported_user_cause_uses_a_listening_fallback() -> None:
+def test_unsupported_user_cause_is_observed_without_repair() -> None:
     gate = ResponseClaimGate()
     evidence = ClaimEvidence(user_text="오늘은 진짜 지치고 답답해.")
     violations = gate.violations(
@@ -153,11 +153,9 @@ def test_unsupported_user_cause_uses_a_listening_fallback() -> None:
         evidence,
     )
 
-    fallback = gate.fallback(violations)
-
-    assert "말해준 상태는 그대로 들을게" in fallback
-    assert "말하지 않은 이유" in fallback
-    assert gate.violations(fallback, evidence) == ()
+    assert violations[0].kind == "outside_event"
+    assert gate.blocking_violations(violations) == ()
+    assert gate.repair_instruction(violations, evidence) == ""
 
 
 def test_available_capability_scope_authorizes_only_the_matching_claim() -> None:
@@ -250,21 +248,14 @@ class RepeatingUnsafeModel:
         return ChatResult("나도 따뜻한 차를 마시고 올게.")
 
 
-def test_core_repair_failure_persists_only_deterministic_safe_fallback() -> None:
+def test_core_body_claim_is_preserved_and_recorded() -> None:
     model = RepeatingUnsafeModel()
     conversations = InMemoryConversationRepository()
-    core = CompanionCore(model, conversations)
-
+    observations = []
+    core = CompanionCore(model, conversations, claim_observation_recorder=observations.append)
     response = core.respond_to_text("오늘은 너도 좀 쉬어.")
-
-    assert len(model.requests) == 2
-    assert "차" not in response.text
-    # #135 recognizes the complete fallback without skipping final review.
-    assert response.text == (
-        "나는 그걸 몸으로 직접 할 수는 없어. 대신 지금 대화 안에서 함께 생각할게."
-    )
+    assert len(model.requests) == 1
+    assert response.text == "나도 따뜻한 차를 마시고 올게."
     assert conversations.list_messages()[-1].content == response.text
-    assert ResponseClaimGate().violations(
-        response.text,
-        ClaimEvidence(user_text="오늘은 너도 좀 쉬어."),
-    ) == ()
+    assert [item.stage for item in observations] == ["raw", "final"]
+    assert all(item.violations[0].kind == "body_action" for item in observations)

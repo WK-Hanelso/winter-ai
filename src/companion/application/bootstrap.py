@@ -30,6 +30,7 @@ from companion.capabilities import (
     PersistentSelfModel,
     SqliteCapabilityRegistry,
 )
+from companion.claim_observations import JsonlClaimObservationRecorder
 from companion.context import ConversationContextBuilder
 from companion.contracts import ConversationMessage
 from companion.core import CompanionCore
@@ -460,6 +461,11 @@ def build_text_runtime(
         verbal_style_planner=VerbalStylePlanner(style_profile),
         dialogue_policy=dialogue_policy,
         context_assembler=context_assembler,
+        claim_observation_recorder=(
+            JsonlClaimObservationRecorder(
+                config.conversation_db.parent / "claim_observations.jsonl",
+            ) if config.conversation_db is not None else None
+        ),
         belief_retriever=belief_retriever,
         open_loop_repository=open_loop_repository,
         open_loop_retriever=open_loop_retriever,

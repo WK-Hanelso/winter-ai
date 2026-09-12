@@ -44,9 +44,12 @@ def test_legacy_does_not_receive_companion_examples():
 def test_fictional_example_is_not_memory_evidence():
     model = Model("기억나. 너 운동복 샀는데 아직 택도 안 뗐다고 했잖아.")
     runtime = build_text_runtime(TextRuntimeConfig(dialogue_policy="companion"), chat_model=model)
+    observations = []
+    runtime.core._claim_observation_recorder = observations.append
     response = runtime.core.respond_to_text("내가 전에 뭘 샀다고 했지?")
-    assert response.text != model.reply
-    assert len(model.requests) == 2  # Unsupported recall still triggers the existing repair gate.
+    assert response.text == model.reply
+    assert len(model.requests) == 1
+    assert observations[-1].violations[0].kind == "memory"
     assert runtime.close()
 
 
@@ -69,7 +72,10 @@ def test_correction_scenes_keep_roles_and_do_not_become_history():
 def test_correction_scene_facts_are_not_recall_evidence():
     model = Model("너 금요일에 동생이랑 서점 가서 만화책 산다고 했잖아.")
     runtime = build_text_runtime(TextRuntimeConfig(dialogue_policy="companion"), chat_model=model)
+    observations = []
+    runtime.core._claim_observation_recorder = observations.append
     response = runtime.core.respond_to_text("내가 누구랑 어디 간다고 했지?")
-    assert response.text != model.reply
-    assert len(model.requests) == 2
+    assert response.text == model.reply
+    assert len(model.requests) == 1
+    assert observations[-1].violations[0].kind == "memory"
     assert runtime.close()

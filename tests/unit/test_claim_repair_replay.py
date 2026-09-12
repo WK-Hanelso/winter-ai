@@ -29,14 +29,10 @@ class RecordedModel:
         return ChatResult(next(self.answers))
 
 
-@pytest.mark.parametrize("policy,expected,calls", (
-    ("contextual", None, 1),
-    ("stable-register-only", "그건 지금 내 기억 근거에는 없어.", 2),
-    ("contextual-moves-only", "그건 지금 내 기억 근거에는 없어.", 2),
+@pytest.mark.parametrize("policy", (
+    "contextual", "stable-register-only", "contextual-moves-only",
 ))
-def test_real_132_outputs_through_new_core(
-    tmp_path: Path, policy: str, expected: str | None, calls: int,
-) -> None:
+def test_real_132_outputs_are_observed_without_memory_repair(tmp_path: Path, policy: str) -> None:
     row = record(policy)
     model = RecordedModel([c["text"] for c in row["calls"]])
     prefix = tuple(
@@ -44,16 +40,16 @@ def test_real_132_outputs_through_new_core(
         for m in row["calls"][0]["request"]["messages"][:-1] if m["role"] != "system"
     )
     core, gate = make_core(tmp_path, model, policy, row["seed"], prefix)
+    observations = []
+    core._claim_observation_recorder = observations.append
     response = core.respond_to_text(row["user"])
-    assert response.text == (expected or row["calls"][0]["text"])
+    assert response.text == row["calls"][0]["text"]
     assert response.text != row["response"]["text"]
-    assert len(model.requests) == calls
-    assert gate.violations(response.text, ClaimEvidence(user_text=row["user"])) == ()
-    if calls == 2:
-        assert model.requests[1].prompt == row["user"]
-        repair_instruction = model.requests[1].messages[-1].content
-        assert "질문의 대상·주체·목적을 바꾸지 마" in repair_instruction
-        assert "서론만 내놓지 마" in repair_instruction
+    assert len(model.requests) == 1
+    assert [item.stage for item in observations] == ["raw", "final"]
+    assert observations[-1].violations == gate.violations(
+        response.text, ClaimEvidence(user_text=row["user"]))
+    assert gate.blocking_violations(observations[-1].violations) == ()
 
 
 def test_real_legacy_unstated_history_is_now_detected() -> None:

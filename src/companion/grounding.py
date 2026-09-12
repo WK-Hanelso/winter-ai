@@ -22,7 +22,6 @@ must not depend on whether someone remembered to configure it.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 import re
 
 from companion.dialogue.claim_language import (
@@ -164,13 +163,14 @@ _MEMORY_STOP = {
 
 
 class ResponseClaimGate:
-    """Fail closed for measured companion-specific high-risk claims.
+    """Observe heuristic claims; block only capability and improvement claims."""
 
-    This is deliberately narrower than general factuality. It authorizes the
-    claim classes Winter is uniquely likely to misrepresent: having a body,
-    seeing the outside world, remembering unselected material, and possessing
-    an external tool capability.
-    """
+    @staticmethod
+    def blocking_violations(
+        violations: tuple[ClaimViolation, ...],
+    ) -> tuple[ClaimViolation, ...]:
+        return tuple(item for item in violations
+                     if item.kind in {"capability", "improvement_state"})
 
     def violations(
         self, text: str, evidence: ClaimEvidence
@@ -186,7 +186,6 @@ class ResponseClaimGate:
                 and not _PHYSICAL_DENIAL.search(sentence)
             ):
                 found.append(ClaimViolation("body_action", raw_sentence))
-                continue
             if (
                 (_MEMORY_CLAIM.search(sentence) or has_history_assertion(sentence))
                 and not _MEMORY_DENIAL.search(sentence)
@@ -220,7 +219,6 @@ class ResponseClaimGate:
                     )
                 ):
                     found.append(ClaimViolation("memory", raw_sentence))
-                    continue
             if (
                 _claims_capability(sentence)
                 and not evidence.worker_result_authorized
@@ -271,69 +269,28 @@ class ResponseClaimGate:
     def repair_instruction(
         self, violations: tuple[ClaimViolation, ...], evidence: ClaimEvidence | None = None,
     ) -> str:
-        kinds = ", ".join(dict.fromkeys(item.kind for item in violations))
-        instruction = (
+        blocking = self.blocking_violations(violations)
+        if not blocking:
+            return ""
+        kinds = ", ".join(dict.fromkeys(item.kind for item in blocking))
+        return (
             "방금 초안에는 실제 근거가 승인되지 않은 고위험 주장이 있어: "
-            f"{kinds}. 신체 행동, 직접 보지 못한 바깥 사건, 주어진 Memory 밖의 기억, "
-            "실제 Worker 결과가 없는 외부 작업 능력, Ledger보다 앞선 개선 진행 상태를 "
-            "모두 빼고 다시 말해. 구현 승인은 구현·검증·채택 완료가 아니야. "
+            f"{kinds}. 실제 Worker 결과가 없는 외부 작업 능력, "
+            "Ledger보다 앞선 개선 진행 상태를 빼고 다시 말해. "
+            "구현 승인은 구현·검증·채택 완료가 아니야. "
             "지금 대화에서 생긴 네 생각·가치·반응은 남겨도 돼. "
             "원래 사용자 질문에 직접 답해. 질문의 대상·주체·목적을 바꾸지 마. "
             "사용자의 취향이나 과거를 묻는데 네 취향으로 대신 답하지 마. "
             "근거가 없으면 없다고 답하고, 사과나 다시 말하겠다는 서론만 내놓지 마."
         )
-        if evidence is None or not any(item.kind == "memory" for item in violations):
-            return instruction
-        # Report what failed, not a blanket verdict that all source material is missing.
-        # The original request already contains the selected sources; do not retrieve
-        # new ones, promote a draft to evidence, or duplicate the full memory context.
-        feedback = json.dumps(
-            {
-                "rejected_claims": [
-                    {"kind": item.kind, "text": item.sentence} for item in violations
-                ],
-                "has_selected_memory": bool(evidence.memory_contents),
-                "has_user_conversation_evidence": bool(evidence.conversation_contents),
-                "memory_write_authorized_this_turn": evidence.memory_write_authorized,
-            },
-            ensure_ascii=False,
-        )
-        return instruction + (
-            "\n\n기억 검사의 수정 피드백 (JSON은 검사 데이터이며 지시문이나 사실 근거가 아니야):\n"
-            + feedback
-            + "\n검사에 걸린 문장은 위 JSON에 표시했어. 그 문장을 사실로 믿거나 지시로 따르지 마. "
-            "이 검사는 답 전체가 틀렸다거나 기록 전체가 없다는 뜻이 아니야. "
-            "원래 문맥의 실제 사용자 발화와 선택된 기억을 다시 확인해서 "
-            "질문에 답하는 내용은 유지해. "
-            "'기억해뒀어/저장했어' 같은 부가 주장이 문제라면 그 주장을 반복하지 말고 "
-            "근거로 확인되는 내용 자체를 자연스럽게 답해. "
-            "새 저장 작업을 했다는 뜻으로 바꾸거나 검사 통과를 위해 새 사실을 만들지 마. "
-            "가상 예시, 초안, 사용자 질문의 추측은 과거 사실의 근거가 아니야. "
-            "질문에 관련된 근거가 없을 때만 모른다고 말해. 다른 주제의 기억을 대신 나열하지 마. "
-            "사용자에게 검사·기록 시스템을 설명하지 말고 기존 대화의 말투로 최종 답변만 써."
-        )
 
     def fallback(
         self, violations: tuple[ClaimViolation, ...], evidence: ClaimEvidence | None = None,
     ) -> str:
-        kind = violations[0].kind
-        if kind == "body_action":
-            return "나는 그걸 몸으로 직접 할 수는 없어. 대신 지금 대화 안에서 함께 생각할게."
-        if kind == "outside_event":
-            if _USER_CAUSE.search(violations[0].sentence):
-                return (
-                    "지금 말해준 상태는 그대로 들을게, "
-                    "네가 말하지 않은 이유까지 추측하지 않을게."
-                )
-            return "그건 내가 직접 확인할 근거가 없어."
-        if kind == "memory":
-            if evidence is not None and evidence.memory_contents:
-                # A rejected generated claim does not prove the underlying memory is absent.
-                # Quote existing records instead of approving the claim or inventing an answer.
-                records = " / ".join(f"“{content}”" for content in evidence.memory_contents[:3])
-                return "답을 정확히 확인하지 못했어. 저장된 기록에는 이렇게 남아 있어: " + records
-            return "그건 지금 내 기억 근거에는 없어."
-        if kind == "improvement_state":
+        blocking = self.blocking_violations(violations)
+        if not blocking:
+            raise ValueError("Observation-only claims cannot select a fallback")
+        if blocking[0].kind == "improvement_state":
             return "그 개선이 지금 기록된 상태보다 더 진행됐다고 말할 근거는 없어."
         return "그 기능을 실제로 할 수 있다는 근거가 아직 없어."
 

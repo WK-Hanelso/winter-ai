@@ -125,9 +125,8 @@ def test_runtime_uses_shared_model_but_stores_only_actual_dialogue():
     assert runtime.close()
 
 
-def test_claim_guard_still_rejects_body_claim_after_interpretation():
+def test_claim_guard_observes_body_claim_after_interpretation():
     from companion.application.bootstrap import TextRuntimeConfig, build_text_runtime
-    from companion.grounding import ClaimEvidence, ResponseClaimGate
 
     class BodyClaimModel:
         def generate(self, request):
@@ -139,7 +138,9 @@ def test_claim_guard_still_rejects_body_claim_after_interpretation():
         TextRuntimeConfig(dialogue_policy="interpreted"),
         chat_model=BodyClaimModel(),
     )
+    observations = []
+    runtime.core._claim_observation_recorder = observations.append
     response = runtime.core.respond_to_text("뭐해?")
-    assert response.text != "나는 방금 산책을 다녀왔어."
-    assert not ResponseClaimGate().violations(response.text, ClaimEvidence(user_text="뭐해?"))
+    assert response.text == "나는 방금 산책을 다녀왔어."
+    assert observations[-1].violations[0].kind == "body_action"
     assert runtime.close()

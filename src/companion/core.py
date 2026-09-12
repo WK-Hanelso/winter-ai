@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from companion.capabilities import SelfModelProvider
+from companion.claim_observations import ClaimObservation
 from companion.context import ConversationContextBuilder
 from companion.contracts import ChatRequest, ConversationMessage
 from companion.conversation_recall import ConversationRecallRetriever
@@ -16,7 +17,7 @@ from companion.dialogue.context_assembler import ContextAssembler
 from companion.dialogue.policy import DialoguePolicy, DialoguePolicyInput, LegacyDialoguePolicy
 from companion.dialogue_act import classify as classify_dialogue_act
 from companion.dialogue_director import DialogueDirector, DialoguePlan
-from companion.grounding import ClaimEvidence, GroundingPolicy, ResponseClaimGate
+from companion.grounding import ClaimEvidence, ClaimViolation, GroundingPolicy, ResponseClaimGate
 from companion.identity import CompanionIdentity
 from companion.improvements import ImprovementSnapshotProvider
 from companion.maintenance import (
@@ -136,6 +137,7 @@ class CompanionCore:
         improvement_snapshot_provider: ImprovementSnapshotProvider | None = None,
         context_assembler: ContextAssembler | None = None,
         dialogue_policy: DialoguePolicy | None = None,
+        claim_observation_recorder: Callable[[ClaimObservation], None] | None = None,
     ) -> None:
         self._chat_model = chat_model
         self._conversation_repository = conversation_repository
@@ -175,6 +177,7 @@ class CompanionCore:
             owned_work_routing_policy or ReadOnlyProjectCanaryPolicy()
         )
         self._response_claim_gate = response_claim_gate or ResponseClaimGate()
+        self._claim_observation_recorder = claim_observation_recorder
         self._self_model_provider = self_model_provider
         self._improvement_snapshot_provider = improvement_snapshot_provider
         self._context_assembler = (
@@ -359,6 +362,7 @@ class CompanionCore:
         )
 
     def _review_and_repair(self, turn: _Turn, draft: str) -> str:
+        raw = draft
         draft = draft.strip()
         style_repair = self._response_reviewer.repair_instruction(
             turn.dialogue_plan.behavior,
@@ -370,6 +374,8 @@ class CompanionCore:
         claim_violations = self._response_claim_gate.violations(
             draft, claim_evidence
         )
+        self._record_claim_observation(turn, "raw", raw, draft, claim_violations)
+        claim_violations = self._response_claim_gate.blocking_violations(claim_violations)
         if style_repair is None and not claim_violations:
             return draft
         repair = "\n\n".join(
@@ -383,11 +389,13 @@ class CompanionCore:
             if part is not None
         )
         request = self._context_assembler.repair_request(turn.request, draft, repair)
-        repaired = self._chat_model.generate(request).text
-        repaired = repaired.strip()
+        repair_raw = self._chat_model.generate(request).text
+        repaired = repair_raw.strip()
         remaining_claims = self._response_claim_gate.violations(
             repaired, claim_evidence
         )
+        self._record_claim_observation(turn, "repair", repair_raw, repaired, remaining_claims)
+        remaining_claims = self._response_claim_gate.blocking_violations(remaining_claims)
         if remaining_claims:
             return self._response_claim_gate.fallback(remaining_claims, claim_evidence)
         still_failing = self._response_reviewer.repair_instruction(
@@ -614,10 +622,15 @@ class CompanionCore:
             response_text,
             self._claim_evidence(turn, worker_result=worker_result),
         )
-        if final_violations:
+        checked_text = response_text
+        blocking = self._response_claim_gate.blocking_violations(final_violations)
+        if blocking:
             response_text = self._response_claim_gate.fallback(
-                final_violations, self._claim_evidence(turn, worker_result=worker_result),
+                blocking, self._claim_evidence(turn, worker_result=worker_result),
             )
+        self._record_claim_observation(
+            turn, "final", response_text, checked_text, final_violations,
+        )
         self._conversation_repository.append(
             ConversationMessage(role="assistant", content=response_text)
         )
@@ -666,6 +679,16 @@ class CompanionCore:
             ),
             worker_error=worker_error,
         )
+
+    def _record_claim_observation(
+        self, turn: _Turn, stage: str, text: str, checked_text: str,
+        violations: tuple[ClaimViolation, ...],
+    ) -> None:
+        if self._claim_observation_recorder is not None:
+            self._claim_observation_recorder(ClaimObservation(
+                turn.experience_id, turn.shadow_turn_id, self._turn_source,
+                stage, text, checked_text, violations,
+            ))
 
     @staticmethod
     def _claim_evidence(

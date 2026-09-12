@@ -97,25 +97,22 @@ def test_actual_132_draft_survives_core_without_content_or_format_loss(
 
 
 @pytest.mark.parametrize("mode", MODES)
-def test_late_unsafe_claim_in_draft_and_repair_cannot_hide_after_two_sentences(
+def test_late_body_claim_is_observed_and_delivered_after_two_sentences(
     mode: str,
 ) -> None:
     unsafe = "첫 문장이야. 둘째 문장이야. 나도 오늘은 따뜻한 차 한 잔을 꼭 마셔야겠어."
-    repair = "알겠어. 다시 말할게. 나도 오늘은 따뜻한 차 한 잔을 꼭 마셔야겠어."
-    model = model_for(mode, unsafe, repair)
+    model = model_for(mode, unsafe)
     repository = InMemoryConversationRepository()
-    core = CompanionCore(model, repository)
+    observations = []
+    core = CompanionCore(model, repository, claim_observation_recorder=observations.append)
     text, handed = respond(core, "오늘 어때?", mode)
-    gate = ResponseClaimGate()
-    evidence = ClaimEvidence(user_text="오늘 어때?")
-    assert gate.violations(repair, evidence)[0].kind == "body_action"
-    # #135 fixes the measured re-flag without bypassing final review.
-    assert text == gate.fallback(gate.violations(repair, evidence))
-    assert gate.violations(text, evidence) == ()
-    assert "따뜻한 차" not in " ".join(handed)
-    assert len(model.requests) == 2
-    assert any(m.role == "assistant" and m.content == unsafe for m in model.requests[1].messages)
+    assert text == unsafe
+    assert handed == ([] if mode == "plain" else split_sentences(text))
+    assert len(model.requests) == 1
+    assert [item.stage for item in observations] == ["raw", "final"]
+    assert all(item.violations[0].kind == "body_action" for item in observations)
     assert repository.list_messages()[-1].content == text
+
 
 
 @pytest.mark.parametrize("mode", MODES)
@@ -137,7 +134,7 @@ def test_final_gate_result_is_delivered_not_the_pre_finalization_draft(mode: str
         def violations(self, text: str, evidence: ClaimEvidence):  # type: ignore[no-untyped-def]
             self.calls += 1
             if self.calls == 2:
-                return super().violations("나는 그동안 책을 읽고 있을게.", evidence)
+                return super().violations("파일을 바로 수정할게.", evidence)
             return ()
 
     model = model_for(mode, "첫 문장이야. 둘째 문장이야. 셋째 문장이야.")

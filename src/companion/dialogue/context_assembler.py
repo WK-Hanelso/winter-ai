@@ -46,12 +46,19 @@ class ContextAssembler:
         dialogue_instruction: str,
         max_tokens: int,
     ) -> ChatRequest:
-        # Identity leads; style and grounded response move sit nearest the turn.
+        # Keep reusable identity/examples/instructions ahead of turn-specific evidence.
         system_messages: list[ConversationMessage] = []
         if snapshot.identity is not None:
             system_messages.append(
                 ConversationMessage("system", snapshot.identity.system_message())
             )
+        system_messages.extend(self._examples)
+        if style_instruction is not None and self._fixed_instruction is None:
+            system_messages.append(ConversationMessage("system", style_instruction))
+        final_instruction = self._fixed_instruction or "\n\n".join(
+            part for part in (grounding_instruction, dialogue_instruction) if part
+        )
+        system_messages.append(ConversationMessage("system", final_instruction))
         if snapshot.self_model is not None:
             system_messages.append(
                 ConversationMessage("system", snapshot.self_model.system_message())
@@ -80,15 +87,9 @@ class ContextAssembler:
             system_messages.append(
                 ConversationMessage("system", open_loop_context(snapshot.open_loops))
             )
-        if style_instruction is not None and self._fixed_instruction is None:
-            system_messages.append(ConversationMessage("system", style_instruction))
-        final_instruction = self._fixed_instruction or "\n\n".join(
-            part for part in (grounding_instruction, dialogue_instruction) if part
-        )
-        system_messages.append(ConversationMessage("system", final_instruction))
         return ChatRequest(
             prompt=text,
-            messages=tuple(system_messages) + self._examples + recent_messages,
+            messages=tuple(system_messages) + recent_messages,
             max_tokens=self._reply_token_budget or max_tokens,
         )
 

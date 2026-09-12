@@ -42,7 +42,7 @@ def test_claim_v3_contrasts(name: str, text: str, kind: str | None) -> None:
 
 
 @pytest.mark.parametrize("kind", (
-    "body_action", "outside_event", "memory", "improvement_state", "capability",
+    "improvement_state", "capability",
 ))
 def test_each_complete_fallback_passes_the_unchanged_final_review_path(kind: str) -> None:
     gate = ResponseClaimGate()
@@ -65,3 +65,13 @@ def test_new_physical_inflection_keeps_its_denial_scoped(text: str, kind: str | 
     # Post-implementation contrast: adding '마실' must not reject its negation.
     found = ResponseClaimGate().violations(text, ClaimEvidence(user_text="안녕"))
     assert (found[0].kind if found else None) == kind
+
+
+@pytest.mark.parametrize("kind", ("body_action", "outside_event", "memory"))
+def test_observations_cannot_request_repair_or_fallback(kind: str) -> None:
+    gate = ResponseClaimGate()
+    found = (ClaimViolation(kind, "합성 초안"),)
+    assert gate.blocking_violations(found) == ()
+    assert gate.repair_instruction(found) == ""
+    with pytest.raises(ValueError, match="Observation-only"):
+        gate.fallback(found)

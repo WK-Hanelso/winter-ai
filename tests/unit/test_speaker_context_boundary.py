@@ -30,9 +30,11 @@ def test_provenance_boundary_precedes_exact_real_turns_and_is_not_saved() -> Non
         assert len(model.requests) == 1
         messages = model.requests[0].messages
         assert messages[-3:] == history + (query,)
-        assert messages[-4] == ConversationMessage(
+        boundary = ConversationMessage(
             "system", companion_examples.REAL_DIALOGUE_INSTRUCTION,
         )
+        assert messages.index(boundary) < len(messages) - 3
+        assert messages[messages.index(boundary) + 1].role == "system"
         assert runtime.resources.repository.list_messages() == history + (
             query, ConversationMessage("assistant", "응."),
         )

@@ -38,8 +38,11 @@ def test_an_assistant_invention_is_not_user_memory_evidence():
 
     repository = InMemoryConversationRepository()
     repository.append(ConversationMessage("assistant", "동료 이름이 민수라고 말했지."))
-    core = CompanionCore(Model(), repository, ConversationContextBuilder())
-    assert core.respond_to_text("동료 이름 기억나?").text != "전에 동료 이름이 민수라고 말했지."
+    observations = []
+    core = CompanionCore(Model(), repository, ConversationContextBuilder(),
+                         claim_observation_recorder=observations.append)
+    assert core.respond_to_text("동료 이름 기억나?").text == "전에 동료 이름이 민수라고 말했지."
+    assert observations[-1].violations[0].kind == "memory"
 
 
 def test_prior_question_cannot_authorize_its_unconfirmed_premise():
@@ -49,5 +52,8 @@ def test_prior_question_cannot_authorize_its_unconfirmed_premise():
 
     repository = InMemoryConversationRepository()
     repository.append(ConversationMessage("user", "동료 이름이 민수라고 말했지?"))
-    core = CompanionCore(Model(), repository, ConversationContextBuilder())
-    assert core.respond_to_text("동료 이름 기억나?").text != "전에 동료 이름이 민수라고 말했지."
+    observations = []
+    core = CompanionCore(Model(), repository, ConversationContextBuilder(),
+                         claim_observation_recorder=observations.append)
+    assert core.respond_to_text("동료 이름 기억나?").text == "전에 동료 이름이 민수라고 말했지."
+    assert observations[-1].violations[0].kind == "memory"

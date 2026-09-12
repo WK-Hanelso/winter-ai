@@ -69,6 +69,7 @@ from companion.capabilities import (
     PersistentSelfModel,
     SqliteCapabilityRegistry,
 )
+from companion.claim_observations import JsonlClaimObservationRecorder
 from companion.context import ConversationContextBuilder
 from companion.contracts import AudioInput, ConversationMessage, SpeechRequest
 from companion.core import CompanionCore
@@ -778,6 +779,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         turn_understanding_repository=turn_understanding_repository,
         outcome_repository=outcome_repository,
         turn_source="web",
+        claim_observation_recorder=JsonlClaimObservationRecorder(
+            arguments.conversation_path.parent / "claim_observations.jsonl",
+        ),
         winter_event_repository=winter_event_repository,
         clock=SystemClock(),
         day_reflection_retriever=day_reflection_retriever,

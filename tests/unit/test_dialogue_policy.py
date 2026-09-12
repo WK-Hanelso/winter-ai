@@ -168,15 +168,17 @@ def test_memory_acknowledgement_follows_actual_write_not_generation(name, tmp_pa
 
 def test_candidate_keeps_claim_safety_and_worker_opt_in():
     model = SpyModel("나는 방금 산책을 다녀왔어.")
+    observations = []
     core = CompanionCore(
-        model, InMemoryConversationRepository(), dialogue_policy=policy("contextual")
+        model, InMemoryConversationRepository(), dialogue_policy=policy("contextual"),
+        claim_observation_recorder=observations.append,
     )
     evidence = ClaimEvidence(user_text="안녕")
     assert ResponseClaimGate().violations(model.answer, evidence)
     response = core.respond_to_text("안녕")
-    assert response.text != model.answer
-    assert not ResponseClaimGate().violations(response.text, evidence)
-    assert len(model.requests) == 2  # Existing safety repair, not a mandatory style rewrite.
+    assert response.text == model.answer
+    assert observations[-1].violations[0].kind == "body_action"
+    assert len(model.requests) == 1
     model.requests.clear()
     response = core.respond_to_text("코덱스로 README를 확인해줘")
     assert response.worker_error

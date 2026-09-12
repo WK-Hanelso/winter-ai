@@ -1,4 +1,4 @@
-"""Locked synthetic model inputs captured from pre-extraction commit 393bc4c."""
+"""P0.5 prompt contract; the pre-extraction fixture remains as historical evidence."""
 
 from dataclasses import FrozenInstanceError, asdict, replace
 from datetime import UTC, datetime
@@ -25,7 +25,7 @@ from companion.open_loops import OpenLoop
 from companion.verbal_style import VerbalStylePlanner
 
 CASES = ("minimal", "bounded", "full", "explain", "streaming", "repair")
-FIXTURE = Path(__file__).parents[1] / "fixtures/text-context-393bc4c.json"
+FIXTURE = Path(__file__).parents[1] / "fixtures/text-context-p05.json"
 STAMP = "2026-09-01T00:00:00+00:00"
 
 
@@ -149,7 +149,7 @@ def fingerprints():
 
 
 @pytest.mark.parametrize("case", CASES)
-def test_requests_match_pre_extraction_baseline(case):
+def test_requests_match_p05_baseline(case):
     baseline = json.loads(FIXTURE.read_text())
     actual = [hashlib.sha256(json.dumps(asdict(request), ensure_ascii=False,
                                       sort_keys=True).encode()).hexdigest()
@@ -161,9 +161,9 @@ def test_full_request_preserves_system_block_order_and_evidence():
     request = capture("full")[0]
     blocks = [message.content for message in request.messages if message.role == "system"]
     assert len(blocks) == 11
-    markers = ["너는 겨울이야", "SelfModel", "개선 안건", "지난날 회고", "memory-1",
-               "예전에는 YAML을 썼어", "belief-1", "예전에 설정을 비교했어", "loop-1",
-               "문장 이내로", "지어내지 마"]
+    markers = ["너는 겨울이야", "문장 이내로", "지어내지 마", "SelfModel", "개선 안건",
+               "지난날 회고", "memory-1", "예전에는 YAML을 썼어", "belief-1",
+               "예전에 설정을 비교했어", "loop-1"]
     for block, marker in zip(blocks, markers, strict=True):
         assert marker in block
     assert request.messages[-2:] == (
@@ -288,3 +288,41 @@ def test_model_failure_preserves_current_user_turn_after_assembly():
     assert len(assembler.inputs) == 1
     assert repository.list_messages()[-1] == ConversationMessage("user", "현재 질문")
     assert len(repository.list_messages()) == 3
+
+
+def test_companion_prefix_is_byte_identical_across_changed_turn_evidence():
+    from companion.application.bootstrap import TextRuntimeConfig, build_text_runtime
+
+    runtime = build_text_runtime(TextRuntimeConfig(dialogue_policy="companion"),
+                                 chat_model=SpyModel())
+    try:
+        examples = runtime.core._context_assembler._examples
+    finally:
+        runtime.close()
+    assembler = RecordingAssembler()
+    core, _ = synthetic_core(SpyModel(), full=True, context_assembler=assembler)
+    core._prepare("첫 질문")
+    first = assembler.inputs[0]
+    # Use the real companion examples, including corrections and the boundary,
+    # with both style and grounding/dialogue instruction slots populated.
+    cached = ContextAssembler(examples=examples)
+    one = cached.assemble(**first)
+    second = dict(first, text="둘째 질문",
+                  memories=(replace(first["memories"][0], content="이제 TOML을 선호해"),),
+                  recent_messages=(ConversationMessage("user", "둘째 질문"),),
+                  snapshot=replace(first["snapshot"], self_model=None, improvements=None),
+                  recalled_conversation=(ConversationMessage("user", "새 회상"),))
+    two = cached.assemble(**second)
+    count = 1 + len(examples) + 2  # identity, examples/boundary, style, grounding/dialogue
+    expected = (ConversationMessage("system", first["snapshot"].identity.system_message()),)
+    expected += examples
+    expected += (ConversationMessage("system", first["style_instruction"]),
+                 ConversationMessage("system", "\n\n".join((first["grounding_instruction"],
+                                                            first["dialogue_instruction"]))),)
+    assert one.messages[:count] == expected
+    def encode(messages):
+        return json.dumps([asdict(message) for message in messages],
+                          ensure_ascii=False).encode("utf-8")
+    assert encode(one.messages[:count]) == encode(two.messages[:count])
+    assert one.messages[count:] != two.messages[count:]
+    assert cached.assemble(**second) == two
