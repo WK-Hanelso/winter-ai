@@ -388,9 +388,7 @@ class CompanionCore:
         try:
             draft = dialogue.generate(state, self._chat_model, turn.request)
             receipt = dialogue.execute(state, turn.request.prompt)
-            if receipt is not None and (receipt.status == "needs_clarification"
-                                        or receipt.operation == "query"
-                                        and receipt.status == "applied"):
+            if dialogue.needs_followup(state, draft):
                 if state.calls < 2:
                     try:
                         draft = dialogue.generate(
@@ -777,6 +775,7 @@ class CompanionCore:
             memory_contents=turn.memory_contents + (
                 tuple(schedule_fact(item) for item in (
                     turn.schedule_turn.receipt.schedules if turn.schedule_turn.receipt is not None
+                    and turn.schedule_turn.receipt.schedules
                     else turn.schedule_turn.context.schedules
                 )) if turn.schedule_turn is not None else ()
             ),

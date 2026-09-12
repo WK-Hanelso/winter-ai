@@ -24,7 +24,7 @@ Fields = Mapping[str, str | None]
 CALENDAR_DATE = re.compile(r'(?:(\d{4})년\s*)?(\d{1,2})월\s*(\d{1,2})일')
 DATE_EXPRESSIONS = re.compile(
     r'\d{4}-\d{2}-\d{2}|(?:이번 주 |다음 주 )?[월화수목금토일]요일|이번 주말|오늘|내일|모레|'
-    r'(?:\d{4}년\s*)?\d{1,2}월\s*\d{1,2}일'
+    r'(?:\d{4}년\s*)?\d{1,2}월\s*\d{1,2}일|이번 주|다음 주'
 )
 
 SCHEDULES_DDL = """
@@ -128,6 +128,10 @@ def resolve_date_range(expression: str, received_at: datetime) -> tuple[date, da
         elif expression == "이번 주말":
             saturday = today + timedelta(days=5 - today.weekday())
             return saturday, saturday + timedelta(days=1)
+        elif expression in {"이번 주", "다음 주"}:
+            monday = today - timedelta(days=today.weekday())
+            monday += timedelta(days=7 if expression == "다음 주" else 0)
+            return monday, monday + timedelta(days=6)
         elif match := CALENDAR_DATE.fullmatch(expression):
             year, month, day_text = match.groups()
             day = date(int(year) if year else today.year, int(month), int(day_text))
@@ -159,13 +163,52 @@ def resolve_time(expression: str) -> str | None:
     expression = expression.strip()
     if re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", expression):
         return expression
-    match = re.fullmatch(r"(오전|오후) ([0-9]{1,2})시(?: ([0-9]{1,2})분)?", expression)
+    match = re.fullmatch(
+        r"(오전|오후|저녁|밤|새벽)\s*([0-9]{1,2})시(?:\s*([0-9]{1,2})분)?", expression,
+    )
     if match:
         period, hour_text, minute_text = match.groups()
         hour, minute = int(hour_text), int(minute_text or 0)
         if 1 <= hour <= 12 and 0 <= minute < 60:
-            return f"{hour % 12 + (12 if period == '오후' else 0):02d}:{minute:02d}"
+            pm = period in {'오후', '저녁', '밤'} and not (period == '밤' and hour == 12)
+            return f"{hour % 12 + (12 if pm else 0):02d}:{minute:02d}"
     return None
+
+
+def source_time(expression: str, source_text: str) -> str | None:
+    """Restore only a missing period for the same hour/minute in this user turn."""
+    resolved = resolve_time(expression)
+    if resolved is not None:
+        return resolved
+    match = re.fullmatch(r'(\d{1,2})시(?:\s*(\d{1,2})분)?', expression.strip())
+    if match is None:
+        return None
+    requested = tuple(int(v or 0) for v in match.groups())
+    candidates = set()
+    for mention in re.finditer(
+        r'(오전|오후|저녁|밤|새벽)\s*(\d{1,2})시(?:\s*(\d{1,2})분)?', source_text,
+    ):
+        if tuple(int(v or 0) for v in mention.groups()[1:]) == requested:
+            candidates.add(resolve_time(mention.group()))
+    return candidates.pop() if len(candidates) == 1 else None
+
+
+def source_query_dates(source_text: str, now: datetime) -> dict[str, str]:
+    """The user's calendar expressions, never model-computed query bounds."""
+    expressions = [m.group() for m in DATE_EXPRESSIONS.finditer(source_text)]
+    # Writes deliberately ask about an unqualified same-day weekday; reads include today.
+    today = _aware(now).date()
+    spans = [(today, today) if word == '월화수목금토일'[today.weekday()] + '요일'
+             else resolve_date_range(word, now) for word in expressions]
+    if spans:
+        if any(span is None for span in spans):
+            raise _Invalid('ambiguous_date', 'needs_clarification', '어느 날짜를 조회할까?')
+        resolved = [span for span in spans if span is not None]
+        start, end = min(s[0] for s in resolved), max(s[1] for s in resolved)
+    else:
+        today = _aware(now).date()
+        start, end = today - timedelta(days=14), today + timedelta(days=14)
+    return {'date_from': start.isoformat(), 'date_to': end.isoformat()}
 
 
 def cue_matches(cue: object, source_text: str) -> bool:
@@ -353,7 +396,14 @@ class ScheduleService:
         )
         if 'schedule_id' in target:
             return rows
-        hint = target.get('title_hint', '').strip().casefold()
+        return self.match_rows(rows, target.get('title_hint', ''), received_at)
+
+    @staticmethod
+    def match_rows(
+        rows: tuple[Schedule, ...], title_hint: str, received_at: datetime,
+    ) -> tuple[Schedule, ...]:
+        """Match already-bounded candidates without changing the query's date window."""
+        hint = title_hint.strip().casefold()
         if not hint:
             return ()
         exact = tuple(row for row in rows if row.title.casefold() == hint)
@@ -411,11 +461,16 @@ class ScheduleService:
                 request["cue_policy"] = "optional_with_field_grounding"
             if command.operation == "query":
                 now = _aware(command.received_at or self.clock.now())
-                start, end = self._query_dates(command.fields, now)
+                fields = (source_query_dates(source_text, now) if allow_cue_fallback
+                          else command.fields)
+                start, end = self._query_dates(fields, now)
+                hint = command.target.get('title_hint')
                 schedules = self.repository.query(
-                    date_from=start, date_to=end, title_hint=command.target.get("title_hint"),
+                    date_from=start, date_to=end, title_hint=None if allow_cue_fallback else hint,
                     active_only=active_only,
                 )
+                if allow_cue_fallback and hint:
+                    schedules = self.match_rows(schedules, hint, now)
                 return replace(receipt, status="applied", schedules=schedules)
             try:
                 with self.repository.transaction() as connection:
@@ -486,7 +541,9 @@ class ScheduleService:
                     or set(command.target) - {"title_hint"}
                     or command.expected_revision is not None):
                 raise _Invalid("invalid_query")
-            if not command.fields and not command.target:
+            has_filter = (bool(command.target) or bool(DATE_EXPRESSIONS.search(source_text))
+                          if allow_cue_fallback else bool(command.fields or command.target))
+            if not has_filter:
                 raise _Invalid("missing_query_filter", "needs_clarification", "어떤 일정을 찾을까?")
         else:
             if active_only:
@@ -565,7 +622,7 @@ class ScheduleService:
                         raise _Invalid('date_mismatch', 'needs_clarification',
                                        '날짜 계산이 원문과 맞지 않아. 정확히 어느 날짜로 할까?')
             elif name == "time" and value is not None:
-                normalized = resolve_time(value)
+                normalized = source_time(value, source_text) if source_text else resolve_time(value)
                 if normalized is None:
                     if re.fullmatch(r"[0-9]{1,2}:[0-9]{2}", value.strip()):
                         raise _Invalid("invalid_time")

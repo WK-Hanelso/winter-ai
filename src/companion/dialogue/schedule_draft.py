@@ -7,10 +7,16 @@ Missing facts are allowed. Query and clarification retain their separate display
 from datetime import datetime
 import re
 
-from companion.schedules import DATE_EXPRESSIONS, ChangeReceipt, resolve_date, resolve_time
+from companion.schedules import (
+    DATE_EXPRESSIONS,
+    ChangeReceipt,
+    Schedule,
+    resolve_date,
+    resolve_time,
+)
 
 _DATE = DATE_EXPRESSIONS
-_TIME = re.compile(r'\d{1,2}:\d{2}|(?:(?:오전|오후)\s*)?\d{1,2}시(?:\s*\d{1,2}분)?')
+_TIME = re.compile(r'\d{1,2}:\d{2}|(?:(?:오전|오후|저녁|밤|새벽)\s*)?\d{1,2}시(?:\s*\d{1,2}분)?')
 # Extract only explicit place/participant mentions; don't demand their presence.
 _PLACE = re.compile(
     r'([가-힣A-Za-z0-9]+(?:\s+[가-힣A-Za-z0-9]+){0,2})에서|'
@@ -21,8 +27,6 @@ _PEOPLE = re.compile(r'([가-힣A-Za-z0-9]+?)(?:이랑|랑|와|과)(?=\s|$|이�
 _UNKNOWN = {'time': r'시간(?:은|이)?\s*(?:아직\s*)?(?:미정|안\s*정|정하지\s*않)',
             'place': r'장소(?:는|가)?\s*(?:아직\s*)?(?:미정|안\s*정|정하지\s*않)',
             'participants_text': r'참여자(?:는|가)?\s*(?:아직\s*)?(?:미정|안\s*정|정하지\s*않)'}
-_EXTERNAL = re.compile(r'전화해서|업체에\s*(?:연락|취소)|외부\s*캘린더.*(?:저장|바꿔|취소)|'
-                       r'구글\s*캘린더.*(?:저장|바꿔|취소)')
 
 
 def _mentioned_value_conflicts(mention: str, confirmed: str | None) -> bool:
@@ -44,8 +48,6 @@ def draft_conflicts(draft: str, receipt: ChangeReceipt, received_at: datetime) -
     if not receipt.schedules:
         return False
     item = receipt.schedules[0]
-    if _EXTERNAL.search(draft):
-        return True  # A local receipt cannot establish an external cancellation.
     for match in _DATE.finditer(draft):
         word = match.group()
         # "오늘은 쉬고 내일 일정은 저장했어" can mention unrelated dates. This check
@@ -69,7 +71,7 @@ def draft_conflicts(draft: str, receipt: ChangeReceipt, received_at: datetime) -
         word = match.group()
         if item.time is None:
             return True
-        if re.match(r'오[전후]', word):
+        if re.match(r'오[전후]|저녁|밤|새벽', word):
             word = re.sub(r'^(오전|오후)\s*', r'\1 ', word)
             resolved = resolve_time(word)
             if resolved != item.time:
@@ -90,8 +92,10 @@ def draft_conflicts(draft: str, receipt: ChangeReceipt, received_at: datetime) -
             return True
     # Remove known non-place uses of 에서, and temporal/subject prefixes before extraction.
     place_text = re.sub(r'(?:내\s*)?일정에서', '', draft)
-    place_text = _TIME.sub('', place_text)
+    place_text = re.sub('(?:' + _TIME.pattern + r')(?:에)?', '', place_text)
     place_text = _PEOPLE.sub('', place_text)
+    place_text = re.sub('(?:' + _DATE.pattern + r')(?:에)?', '', place_text)
+    place_text = re.sub(r'\b(?:다음에|이번에|나중에|이따가|아까)\s*', '', place_text)
     for match in _PLACE.finditer(place_text):
         mention = next(value for value in match.groups() if value)
         # 날짜/시간 changes ending in 로 are handled above, not treated as places.
@@ -104,5 +108,26 @@ def draft_conflicts(draft: str, receipt: ChangeReceipt, received_at: datetime) -
     for match in _PEOPLE.finditer(people_text):
         mention = match.group(1)
         if _mentioned_value_conflicts(mention, item.participants_text):
+            return True
+    return False
+
+
+def query_draft_matches(
+    draft: str, schedules: tuple[Schedule, ...], received_at: datetime,
+) -> bool:
+    """Accept natural partial recitals, but require an actual identifying fact.
+
+    Each explicit mention must fit one confirmed row; a bare acknowledgement is
+    not a query answer. Multi-row exhaustive recitals retain the display fallback.
+    """
+    for item in schedules:
+        receipt = ChangeReceipt('applied', 'query', 'display', 1, schedules=(item,))
+        if draft_conflicts(draft, receipt, received_at):
+            continue
+        if item.status == 'cancelled' and '취소' not in draft:
+            continue
+        if any(value and value in draft for value in (
+            item.title, item.place, item.participants_text, item.date, item.time,
+        )):
             return True
     return False

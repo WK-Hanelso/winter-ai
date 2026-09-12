@@ -10,10 +10,7 @@ from companion.contracts import (
     SpeechRequest,
     Transcript,
 )
-
-
-class AdapterUnavailableError(RuntimeError):
-    """Raised when a selected adapter cannot serve a request."""
+from companion.errors import AdapterUnavailableError as AdapterUnavailableError
 
 
 @dataclass(frozen=True)

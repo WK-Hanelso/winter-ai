@@ -56,7 +56,10 @@ class Model:
             names = ' / '.join(f"{s['date']} {s['participants_text']} {s['title']}"
                                for s in receipt['schedules'])
             return ChatResult(output(f'{names} 중 어느 모임을 바꿀까?'))
-        receipt['schedules'] = tuple(Schedule(**s) for s in receipt['schedules'])
+        receipt['schedules'] = tuple(Schedule(**s, timezone='Asia/Seoul', source_message_id=1,
+                                              created_at='', updated_at='')
+                                     for s in receipt['schedules'])
+        receipt.update(command_id='fake-display', source_message_id=1)
         return ChatResult(output(receipt_text(ChangeReceipt(**receipt))))
 
 
@@ -153,7 +156,9 @@ def test_scene_3_cancel_is_local_and_visible(h):
            dict(title='미용실 예약', date='내일', time='오전 11시', place='중앙 미용실'))
     final, _ = h.turn(turns[1], 'cancel', target={'title_hint': '미용실 예약'},
                       draft='미용실에 전화해서 예약 취소했어.')
-    assert '전화' not in final and '로컬 일정만 취소했어' in final
+    # Capability claims are observed by the existing claim gate, not schedule contradictions.
+    assert final == '미용실에 전화해서 예약 취소했어.'
+    assert h.observations()[-1]['discard_reason'] is None
     h.turn(turns[2], draft='오늘은 쉬는 쪽으로 마음이 기우네.')
     final, record = h.turn(turns[3], 'query', {'date_from': '내일', 'date_to': '내일'})
     assert '취소됨' in final and record['receipt']['schedules'][0]['status'] == 'cancelled'
@@ -202,8 +207,12 @@ def test_invalid_cue_uses_current_field_grounding(h, cue):
                                  {'title': '전시', 'date': '내일'}, cue=cue))
     final = h.runtime.core.respond_to_text('내일 전시 일정에 넣어줘').text
     record = h.observations()[-1]
-    assert record['receipt']['status'] == 'applied' and record['calls'] == 1
-    assert final and h.count_history() == 1
+    if isinstance(cue, str) and cue and cue not in '내일 전시 일정에 넣어줘':
+        assert record['receipt'] is None and h.count_history() == 0
+        assert 'discarded_stale_cue_proposal' in record['warnings']
+    else:
+        assert record['receipt']['status'] == 'applied' and h.count_history() == 1
+    assert final and record['calls'] == 1
 
 
 @pytest.mark.parametrize('raw', ['바꿔놨어', '```json\n{}\n```', '{', '[]',
@@ -507,7 +516,11 @@ def test_ungrounded_create_fields_reject_without_write(h, cue, fields):
     h.model.queue.append(output('저장했어.', 'create', fields, cue=cue))
     final = h.runtime.core.respond_to_text('내일 북쪽 카페에서 민수랑 독서 모임 저장해줘').text
     record = h.observations()[-1]
-    assert record['receipt']['reason_code'] == 'ungrounded_fields'
+    if cue:
+        assert record['receipt'] is None
+        assert 'discarded_stale_cue_proposal' in record['warnings']
+    else:
+        assert record['receipt']['reason_code'] == 'ungrounded_fields'
     assert record['calls'] == 1 and h.count_history() == 0 and '저장했어' not in final
 
 
@@ -529,8 +542,8 @@ def test_missing_or_stale_cue_leaves_target_resolution_to_service(h, operation):
                                if operation == 'update' else {}, {'title_hint': '전시'}, '옛 원문'))
     h.runtime.core.respond_to_text('전시 요청')
     record = h.observations()[-1]
-    assert record['receipt']['status'] == 'applied' and record['cue_mode'] == 'service_target'
-    assert record['calls'] == (2 if operation == 'query' else 1)
+    assert record['receipt'] is None and record['cue_mode'] == 'discarded_stale_cue'
+    assert record['calls'] == 1 and h.count_history() == 1
 
 
 @pytest.mark.parametrize('bad,reason', [
@@ -573,7 +586,7 @@ def test_explicit_contradictory_applied_drafts_replaced(h, draft):
                            {'title': '독서 모임', 'date': '내일', 'time': '15:00',
                             'place': '시청 도서관', 'participants': ['민수']}, draft=draft)
     assert final != draft and record['discard_reason'] == 'contradictory_applied_draft'
-    assert record['receipt']['status'] == 'applied' and record['calls'] == 1
+    assert record['receipt']['status'] == 'applied' and record['calls'] == 2
 
 
 @pytest.mark.parametrize(
@@ -597,7 +610,7 @@ def test_unknown_fields_cannot_be_invented_in_draft(h, draft):
 @pytest.mark.parametrize('exact_cue', [True, False])
 def test_model_iso_compared_to_current_source(h, source, iso, status, reason, exact_cue):
     final, record = h.turn(source, 'create', {'title': '독서 모임', 'date': iso},
-                           cue=source if exact_cue else '이전 발화', draft='저장했어.')
+                           cue=source if exact_cue else '', draft='저장했어.')
     assert (record['receipt']['status'], record['receipt']['reason_code']) == (status, reason)
     assert record['calls'] == (1 if status == 'applied' else 2)
     assert h.count_history() == (1 if status == 'applied' else 0)
