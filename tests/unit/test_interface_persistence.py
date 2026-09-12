@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from companion import user_cli, voice_cli, web
@@ -7,7 +8,7 @@ def test_all_user_interfaces_default_to_the_same_persistent_state() -> None:
     web_args = web.build_parser().parse_args([])
     voice_args = voice_cli.build_parser().parse_args([])
 
-    expected_data = Path("data")
+    expected_data = Path(os.environ["WINTER_DATA_DIR"])
     assert user_cli.DATA == expected_data
     assert web_args.conversation_path == expected_data / "conversations.sqlite"
     assert voice_args.conversation_path == expected_data / "conversations.sqlite"

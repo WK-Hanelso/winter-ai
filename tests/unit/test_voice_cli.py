@@ -110,6 +110,26 @@ def voice_arguments(tmp_path: Path) -> list[str]:
     return ["--flow-checkpoint", str(flow), "--speaker", str(speaker)]
 
 
+def storage_arguments(tmp_path: Path) -> list[str]:
+    """Opening a CLI initializes all stores, even when speaking later fails."""
+    stores = {
+        "conversation": "conversations",
+        "memory": "memories",
+        "capability": "capabilities",
+        "improvement": "improvements",
+        "belief": "beliefs",
+        "dialogue-state": "dialogue_state",
+        "turn-understanding": "turn_understanding",
+        "outcome": "outcomes",
+        "winter-event": "winter_events",
+        "day-reflection": "day_reflections",
+    }
+    arguments = ["--output-dir", str(tmp_path / "generated_audio")]
+    for option, name in stores.items():
+        arguments.extend([f"--{option}-path", str(tmp_path / f"{name}.sqlite")])
+    return arguments
+
+
 def test_identity_is_loaded_into_the_core(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     identity_path = tmp_path / "identity.json"
     identity_path.write_text(IDENTITY)
@@ -121,7 +141,10 @@ def test_identity_is_loaded_into_the_core(tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.setattr(voice_cli, "speak", capture)
     monkeypatch.setattr(voice_cli, "CosyVoiceSpeechModel", lambda **keywords: RecordingTts())
 
-    arguments = ["--identity-path", str(identity_path), "--say", "안녕", *voice_arguments(tmp_path)]
+    arguments = [
+        "--identity-path", str(identity_path), "--say", "안녕",
+        *voice_arguments(tmp_path), *storage_arguments(tmp_path),
+    ]
     assert voice_cli.main(arguments) == 0
     assert "겨울이" in captured["core"]._identity.system_message()  # type: ignore[union-attr]
 
@@ -137,6 +160,7 @@ def test_a_missing_voice_stops_before_answering(tmp_path: Path) -> None:
         "--say", "안녕",
         "--flow-checkpoint", str(tmp_path / "absent.pt"),
         "--speaker", str(tmp_path / "absent-speaker.pt"),
+        *storage_arguments(tmp_path),
     ]) == 1
 
 
