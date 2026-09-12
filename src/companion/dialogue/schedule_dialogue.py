@@ -23,6 +23,7 @@ from companion.schedules import (
     cue_matches,
     resolve_date,
     source_time,
+    ungrounded_create_fields,
 )
 
 
@@ -359,7 +360,7 @@ class ScheduleDialogue:
         target = cast(dict[str, str], proposal['target'])
         values = cast(dict[str, str | None], proposal['fields'])
         cue = proposal['cue']
-        # A read-only downgrade precedes cue rejection: it cannot authorize a write.
+        # A read-only downgrade precedes field grounding: it cannot authorize a write.
         if operation == 'update' and has_question_form(source_text):
             try:
                 rows = self.service.match_target(target, turn.received_at)
@@ -374,16 +375,18 @@ class ScheduleDialogue:
                 cue = ''
                 turn.proposal = dict(operation=operation, target=target, fields=values, cue=cue)
         if cue and not cue_matches(cue, source_text):
-            turn.warnings.append('discarded_stale_cue_proposal')
-            turn.cue_mode = 'discarded_stale_cue'
-            self.pending = None
-            return None
+            turn.warnings.append('stale_cue_ignored')
+            cue = ''
         base = ChangeReceipt('rejected', operation, f'schedule:{turn.source_message_id}:0',
                              turn.source_message_id)
         turn.cue_mode = ('exact_cue' if cue_matches(cue, source_text)
                          else 'field_grounding' if operation == 'create' else 'service_target')
         if turn.cue_mode != 'exact_cue':
             turn.warnings.append('cue_fallback')
+            if operation != 'query' and ungrounded_create_fields(values, source_text):
+                turn.warnings.append('ungrounded_fields')
+                self.pending = None
+                return None
         original_id = None
         received_at = turn.received_at
         revision = 0 if operation != 'query' else None
@@ -407,6 +410,14 @@ class ScheduleDialogue:
                 rows = self.service.match_target(target, received_at)
                 if len(rows) == 1 and rows[0] is not None:
                     revision = rows[0].revision
+                elif not values and turn.cue_mode != 'exact_cue':
+                    turn.receipt = replace(base, status='needs_clarification',
+                                           schedules=rows,
+                                           reason_code=('ambiguous_target' if rows
+                                                        else 'target_not_found'),
+                                           clarification='어느 일정을 바꿀까?')
+                    self.pending = None
+                    return turn.receipt
             except sqlite3.Error:
                 turn.receipt = replace(base, status='failed', reason_code='database_error')
                 return turn.receipt

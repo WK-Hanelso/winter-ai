@@ -208,10 +208,8 @@ def test_invalid_cue_uses_current_field_grounding(h, cue):
     final = h.runtime.core.respond_to_text('내일 전시 일정에 넣어줘').text
     record = h.observations()[-1]
     if isinstance(cue, str) and cue and cue not in '내일 전시 일정에 넣어줘':
-        assert record['receipt'] is None and h.count_history() == 0
-        assert 'discarded_stale_cue_proposal' in record['warnings']
-    else:
-        assert record['receipt']['status'] == 'applied' and h.count_history() == 1
+        assert 'stale_cue_ignored' in record['warnings']
+    assert record['receipt']['status'] == 'applied' and h.count_history() == 1
     assert final and record['calls'] == 1
 
 
@@ -512,15 +510,13 @@ def test_cancel_fields_and_unknown_keys_are_observation_only(h):
     {'title': '독서 모임', 'date': '내일', 'participants': ['준호']},
     {'title': '독서 영화 모임', 'date': '내일'},
 ])
-def test_ungrounded_create_fields_reject_without_write(h, cue, fields):
+def test_ungrounded_create_fields_discard_without_write(h, cue, fields):
     h.model.queue.append(output('저장했어.', 'create', fields, cue=cue))
     final = h.runtime.core.respond_to_text('내일 북쪽 카페에서 민수랑 독서 모임 저장해줘').text
     record = h.observations()[-1]
     if cue:
-        assert record['receipt'] is None
-        assert 'discarded_stale_cue_proposal' in record['warnings']
-    else:
-        assert record['receipt']['reason_code'] == 'ungrounded_fields'
+        assert 'stale_cue_ignored' in record['warnings']
+    assert record['receipt'] is None and 'ungrounded_fields' in record['warnings']
     assert record['calls'] == 1 and h.count_history() == 0 and '저장했어' not in final
 
 
@@ -540,10 +536,11 @@ def test_missing_or_stale_cue_leaves_target_resolution_to_service(h, operation):
     h.turn('내일 전시 저장해줘', 'create', {'title': '전시', 'date': '내일'})
     h.model.queue.append(output('응.', operation, {'place': '강변 갤러리'}
                                if operation == 'update' else {}, {'title_hint': '전시'}, '옛 원문'))
-    h.runtime.core.respond_to_text('전시 요청')
+    h.runtime.core.respond_to_text('전시 장소 강변 갤러리로 부탁해')
     record = h.observations()[-1]
-    assert record['receipt'] is None and record['cue_mode'] == 'discarded_stale_cue'
-    assert record['calls'] == 1 and h.count_history() == 1
+    assert record['receipt']['status'] == 'applied' and record['cue_mode'] == 'service_target'
+    assert 'stale_cue_ignored' in record['warnings']
+    assert record['calls'] <= 2 and h.count_history() == (1 if operation == 'query' else 2)
 
 
 @pytest.mark.parametrize('bad,reason', [

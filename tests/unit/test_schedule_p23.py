@@ -86,23 +86,53 @@ def test_empty_context_does_not_support_invented_query_answer(h):
 
 
 @pytest.mark.parametrize('operation', ['create', 'update', 'cancel'])
-def test_stale_cue_is_silent_and_never_calls_service(h, monkeypatch, operation):
+def test_stale_cue_uses_field_grounding_and_target_matching(h, operation):
     seed(h)
     before = h.repo.query()
 
-    def forbidden(*args, **kwargs):
-        pytest.fail('A stale cue must not reach the service')
-
-    monkeypatch.setattr(h.dialogue.service, 'execute', forbidden)
     draft = '제목부터 해설이 필요하네ㅋㅋ'
     final, record = h.turn('전시 제목은 왜 어려울까ㅋㅋ', operation,
-                           {'title': '전시', 'date': '내일'} if operation == 'create'
+                           {'title': '영화', 'date': '내일'} if operation == 'create'
                            else {'place': '강변 갤러리'} if operation == 'update' else {},
                            {} if operation == 'create' else {'title_hint': '모임'},
                            draft=draft, cue='지난번 일정 바꿔줘')
-    assert final == draft and record['receipt'] is None
+    assert 'stale_cue_ignored' in record['warnings']
+    if operation == 'cancel':
+        assert record['receipt']['status'] == 'applied'
+        assert h.repo.query()[0].status == 'cancelled' and h.count_history() == 2
+    else:
+        assert record['receipt'] is None and 'ungrounded_fields' in record['warnings']
+        assert h.repo.query() == before and h.count_history() == 1
+    assert final == draft
     assert record['discard_reason'] is None and record['calls'] == 1
-    assert h.repo.query() == before and h.count_history() == 1
+
+
+@pytest.mark.parametrize('cue', ['', '지난번 일정 바꿔줘'])
+@pytest.mark.parametrize('operation', ['update', 'cancel'])
+@pytest.mark.parametrize('candidates', [0, 1, 2])
+def test_empty_fields_without_current_cue_require_unique_target(h, cue, operation, candidates):
+    for _ in range(candidates):
+        seed(h)
+    before = h.repo.query()
+    h.model.queue.append(output('응.', operation, {}, {'title_hint': '모임'}, cue))
+    h.runtime.core.respond_to_text('아까 모임 얘기 말이야')
+    record = h.observations()[-1]
+    if candidates == 1:
+        if operation == 'cancel':
+            assert record['receipt']['status'] == 'applied'
+            assert h.repo.query()[0].status == 'cancelled'
+        else:
+            # The existing service still needs a value to perform an update.
+            assert record['receipt']['reason_code'] == 'missing_fields'
+        assert h.count_history() == candidates + (operation == 'cancel')
+        assert record['calls'] == (1 if operation == 'cancel' else 2)
+    else:
+        assert record['receipt']['status'] == 'needs_clarification'
+        assert record['receipt']['reason_code'] == (
+            'ambiguous_target' if candidates else 'target_not_found')
+        assert len(record['receipt']['schedules']) == candidates
+        assert record['calls'] == 2
+        assert h.repo.query() == before and h.count_history() == candidates
 
 
 def test_no_change_is_not_a_reply_instruction(h):
@@ -233,7 +263,8 @@ def test_followup_replaces_old_context_and_pending_and_keeps_request_contract(h)
 def test_schema_explains_questions_and_preserves_period():
     proposal = OUTPUT_SCHEMA['properties']['schedule_proposal']['anyOf'][1]['properties']
     assert '값 변경 요청만 update' in proposal['operation']['description']
-    assert '오전/오후를 포함해 원문 그대로' in proposal['fields']['properties']['time']['description']
+    time_description = proposal['fields']['properties']['time']['description']
+    assert '오전/오후를 포함해 원문 그대로' in time_description
     assert 'query fields는 비워둬' in INSTRUCTION
 
 
