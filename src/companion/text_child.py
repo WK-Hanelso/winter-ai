@@ -1,0 +1,68 @@
+"""One persistent Shared Core behind a trusted Host terminal supervisor."""
+
+import sys
+from typing import TextIO
+
+from companion.adapters.fake import AdapterUnavailableError
+from companion.adapters.stdio_worker import StdioApprovedWorker
+from companion.application.bootstrap import build_text_runtime
+from companion.cli.__main__ import text_runtime_config
+from companion.owned_work import OwnedWorkUpdate
+from companion.session_wire import SessionProtocolError, receive, send, string
+from companion.user_cli import build_parser, configure_persistent_args
+
+
+def run(argv: list[str], stdin: TextIO, stdout: TextIO) -> int:
+    args = configure_persistent_args(build_parser().parse_args(argv))
+    # Provider construction is exclusively a Host responsibility.
+    args.codex_worker = args.winter_work_canary = False
+    if args.backend != "local" or args.prompt is not None:
+        raise SessionProtocolError("supervised session requires interactive local mode")
+    worker = StdioApprovedWorker(stdin, stdout)
+    runtime = build_text_runtime(text_runtime_config(args), read_only_worker=worker)
+    identity = runtime.resources.identity
+    try:
+        send(stdout, {"kind": "ready", "name": identity.name if identity else "겨울이"})
+        while (frame := receive(stdin)) is not None:
+            if frame == {"kind": "close"}:
+                return 0
+            if frame.get("kind") == "worker_update":
+                if set(frame) != {"kind", "id", "status", "text"}:
+                    raise SessionProtocolError("invalid Worker notification")
+                update_id = string(frame["id"], limit=80)
+                status = string(frame["status"], limit=20)
+                if status not in {"completed", "partial", "failed"}:
+                    raise SessionProtocolError("invalid Worker notification status")
+                text = runtime.core.record_worker_update(OwnedWorkUpdate(
+                    update_id, status, string(frame["text"], limit=64_000),
+                ))
+                send(stdout, {"kind": "notification", "id": update_id, "text": text})
+                continue
+            if set(frame) != {"kind", "id", "text"} or frame["kind"] != "turn":
+                raise SessionProtocolError("expected user turn")
+            turn_id = string(frame["id"], limit=80)
+            text = string(frame["text"])
+            worker.turn_id, worker.used = turn_id, False
+            try:
+                response = runtime.core.respond_to_text(text)
+                send(stdout, {"kind": "reply", "id": turn_id, "text": response.text})
+            except AdapterUnavailableError:
+                send(stdout, {
+                    "kind": "error", "id": turn_id,
+                    "text": "답변을 완성하지 못했어. 입력은 보존했고 다시 이야기할 수 있어.",
+                })
+    finally:
+        runtime.close()
+    return 0
+
+
+def main() -> int:
+    try:
+        return run(sys.argv[1:], sys.stdin, sys.stdout)
+    except (OSError, RuntimeError, ValueError):
+        print("텍스트 세션 연결 또는 저장소 초기화에 실패했습니다.", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

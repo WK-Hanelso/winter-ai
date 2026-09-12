@@ -75,7 +75,83 @@ run_chat() {
     "$PYTHON_BIN" -m companion.user_cli --model-url "$MODEL_URL" "$@"
 }
 
+run_text_container() {
+  # Text defaults to the measured Host Docker profile, not the disabled Orin server.
+  MODEL_URL=${WINTER_LLM_URL:-http://127.0.0.1:18081}
+  local text_data=${WINTER_TEXT_DATA_DIR:-$ROOT_DIR/data}
+  [[ "$text_data" == /* ]] || text_data="$ROOT_DIR/$text_data"
+  for argument in "$@"; do
+    case "$argument" in
+      --codex-worker|--winter-work-canary|--backend|--backend=*)
+        echo "text는 실제 로컬 모델을 사용합니다. 대화 중 Codex 요청은 건별 승인을 받습니다. 별도 Worker/backend 스위치는 사용하지 마세요." >&2
+        exit 2
+        ;;
+    esac
+  done
+  local image=${WINTER_TEXT_IMAGE:-winter-ai:dev}
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    echo "텍스트 실행 이미지가 없습니다: $image (docker compose build dev)" >&2
+    exit 1
+  fi
+  local needs_model=1
+  for argument in "$@"; do
+    case "$argument" in
+      --help|-h|--show-history|--list-*|--companion-overview|--review-*|--outcome-audit|--lived-continuity)
+        needs_model=0 ;;
+    esac
+  done
+  if [[ "$needs_model" -eq 1 ]]; then
+    if [[ "${MODEL_URL%/}" == "http://127.0.0.1:18081" ]]; then
+      bash "$ROOT_DIR/scripts/text-llm.sh" start
+    elif ! curl -fsS --max-time 2 "${MODEL_URL%/}/health" >/dev/null 2>&1; then
+      echo "지정한 로컬 모델이 준비되지 않았습니다: $MODEL_URL. 다른 모델/Orin으로 자동 전환하지 않습니다." >&2
+      exit 1
+    fi
+  fi
+  local supervised=1
+  for argument in "$@"; do
+    case "$argument" in
+      --prompt|--prompt=*|--help|-h|--show-history|--list-*|--companion-overview|--review-*|--outcome-audit|--lived-continuity|--analyze-*|--reflect-history|--close-winter-day|--resolve-open-loop|--dismiss-open-loop)
+        supervised=0 ;;
+    esac
+  done
+  local interactive=(-i)
+  local module=companion.user_cli
+  local prefix=()
+  local container_args=()
+  if [[ "$supervised" -eq 1 ]]; then
+    find_python
+    local container_name="winter-text-session-$("$PYTHON_BIN" -c 'import uuid; print(uuid.uuid4().hex)')"
+    module=companion.text_child
+    container_args=(--name "$container_name")
+    prefix=(env PYTHONPATH="$ROOT_DIR/src" "$PYTHON_BIN" -m companion.text_host
+      --project-root "$ROOT_DIR" --container-name "$container_name"
+      --audit-dir "$text_data/worker_sessions"
+      --codex-executable "${WINTER_CODEX_BIN:-codex}"
+      --codex-model "${WINTER_CODEX_MODEL:-gpt-5.6-sol}" --)
+  elif [[ -t 0 && -t 1 ]]; then
+    interactive+=(-t)
+  fi
+  # Host networking reaches the loopback inference server.
+  # Explicit workers/authentication are deliberately not forwarded to this container.
+  exec "${prefix[@]}" docker run --rm "${container_args[@]}" "${interactive[@]}" --network host --read-only \
+    --user "$LOCAL_UID:$LOCAL_GID" --cap-drop ALL --security-opt no-new-privileges \
+    --pids-limit 128 --memory 1g --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+    --log-opt max-size=5m --log-opt max-file=2 \
+    -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/workspace/src:/workspace \
+    -e WINTER_DATA_DIR=/workspace/data -e WINTER_LLM_URL="$MODEL_URL" \
+    -v "$ROOT_DIR/src:/workspace/src:ro" \
+    -v "$ROOT_DIR/configs:/workspace/configs:ro" \
+    -v "$text_data:/workspace/data:rw" -w /workspace \
+    "$image" python -m "$module" --model-url "$MODEL_URL" \
+    --dialogue-policy companion "$@"
+}
+
 case "${1:-start}" in
+  text)
+    shift
+    run_text_container "$@"
+    ;;
   start)
     shift || true
     run_chat "$@"
@@ -156,18 +232,18 @@ case "${1:-start}" in
       "$@"
     ;;
   status)
-    if curl -fsS --max-time 2 "${MODEL_URL%/}/health" >/dev/null; then
-      echo "Orin LLM: ready ($MODEL_URL)"
-    else
-      echo "Orin LLM: unavailable ($MODEL_URL)"
+    bash "$ROOT_DIR/scripts/text-llm.sh" status
+    if [[ -n "${WINTER_LLM_URL:-}" && "${WINTER_LLM_URL%/}" != "http://127.0.0.1:18081" ]]; then
+      echo "text의 명시적 주소 설정: $WINTER_LLM_URL (자동 시작/종료 대상 아님)"
     fi
     "${COMPOSE[@]}" ps
     ;;
   stop)
+    bash "$ROOT_DIR/scripts/text-llm.sh" stop
     "${COMPOSE[@]}" stop llm
     ;;
   *)
-    echo "Usage: ./winter {start|chat|voice|reflect|memories|overview|state|lived|days|day-close|viewpoints|viewpoint-shadow|capabilities|improvements|project-check|status|stop}" >&2
+    echo "Usage: ./winter {text|start|chat|voice|reflect|memories|overview|state|lived|days|day-close|viewpoints|viewpoint-shadow|capabilities|improvements|project-check|status|stop}" >&2
     exit 2
     ;;
 esac

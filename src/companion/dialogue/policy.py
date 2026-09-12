@@ -7,9 +7,13 @@ from companion.contracts import ConversationMessage
 from companion.dialogue_director import DialogueDirector, DialoguePlan
 from companion.memory import Memory
 from companion.open_loops import OpenLoop
+from companion.ports import ChatModel
 from companion.verbal_style import REGISTER_INSTRUCTIONS, TurnStyle, VerbalStylePlanner
 
-POLICY_NAMES = ("legacy", "contextual", "contextual-moves-only", "stable-register-only")
+POLICY_NAMES = (
+    "legacy", "contextual", "contextual-moves-only", "stable-register-only", "interpreted",
+    "companion",
+)
 
 
 class DialoguePolicyError(ValueError):
@@ -153,11 +157,20 @@ def build_dialogue_policy(
     *,
     director: DialogueDirector | None = None,
     style_planner: VerbalStylePlanner | None = None,
+    chat_model: ChatModel | None = None,
 ) -> DialoguePolicy:
     if name not in POLICY_NAMES:
         raise DialoguePolicyError(f"Unknown dialogue policy: {name}")
     director = director if director is not None else DialogueDirector()
     style_planner = style_planner if style_planner is not None else VerbalStylePlanner()
+    if name == "interpreted":
+        from companion.dialogue.interpreted_policy import InterpretedDialoguePolicy
+
+        if chat_model is None:
+            raise DialoguePolicyError("interpreted policy requires the shared chat model")
+        return InterpretedDialoguePolicy(
+            chat_model, ContextualDialoguePolicy(director, style_planner),
+        )
     if name == "legacy":
         return LegacyDialoguePolicy(director, style_planner)
     return ContextualDialoguePolicy(

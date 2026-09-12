@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from companion.capabilities import SelfModelProvider
@@ -10,6 +11,7 @@ from companion.day_reflection import (
     ActiveDayReflectionRetriever,
 )
 from companion.dialogue.character_snapshot import CharacterSnapshot
+from companion.dialogue.claim_language import claim_units, has_question_form
 from companion.dialogue.context_assembler import ContextAssembler
 from companion.dialogue.policy import DialoguePolicy, DialoguePolicyInput, LegacyDialoguePolicy
 from companion.dialogue_act import classify as classify_dialogue_act
@@ -33,18 +35,20 @@ from companion.open_loops import (
     detect_open_loop,
 )
 from companion.outcome import OutcomeMemoryClaim
-from companion.owned_work import ReadOnlyProjectCanaryPolicy
+from companion.owned_work import OwnedWorkUpdate, ReadOnlyProjectCanaryPolicy
 from companion.ports import (
     BeliefRetriever,
     ChatModel,
     Clock,
     ConversationRepository,
+    IdempotentConversationRepository,
     MemoryCandidateRepository,
     OutcomeRepository,
     OwnedWorkExecutor,
     OwnedWorkSubmitter,
     ReadOnlyWorker,
     TurnUnderstandingRepository,
+    WindowedConversationRepository,
     WinterEventRepository,
 )
 from companion.response import CompanionResponse, VerbalStylePlan
@@ -58,6 +62,8 @@ from companion.worker import (
     ExplicitCodexRoutingPolicy,
     ReadOnlyWorkerRequest,
     ReadOnlyWorkerResult,
+    WorkerApprovalDeclined,
+    WorkerQueued,
     WorkerUnavailableError,
 )
 
@@ -90,6 +96,7 @@ class _Turn:
     experience_id: str
     worker_request: ReadOnlyWorkerRequest | None
     owned_work_request: WorkRequest | None
+    conversation_contents: tuple[str, ...] = ()
 
 
 class CompanionCore:
@@ -178,6 +185,26 @@ class CompanionCore:
             else LegacyDialoguePolicy(self._dialogue_director, self._verbal_style_planner)
         )
 
+    def record_worker_update(self, update: OwnedWorkUpdate) -> str:
+        """Accept a trusted inbox result between turns, without fabricating a user turn."""
+        repository = self._conversation_repository
+        if not isinstance(repository, IdempotentConversationRepository):
+            raise RuntimeError("asynchronous results require idempotent persistence")
+        receipt = repository.append_once(
+            f"worker:{update.id}", ConversationMessage("assistant", update.text),
+        )
+        if self._winter_event_repository is not None and self._clock is not None:
+            if receipt.created_at is None:
+                raise RuntimeError("notification persistence requires a stable timestamp")
+            self._winter_event_repository.record(
+                event_key=f"worker-result:{update.id}", kind="worker_result",
+                subject="winter", source=self._turn_source,
+                source_ref=f"conversation:{receipt.id}",
+                occurred_at=datetime.fromisoformat(receipt.created_at).replace(tzinfo=UTC),
+                metadata={"job_id": update.id, "status": update.status},
+            )
+        return update.text
+
     def respond_to_text(self, text: str) -> CompanionResponse:
         turn = self._prepare(text)
         if turn.worker_request is not None:
@@ -261,6 +288,15 @@ class CompanionCore:
             raise RuntimeError("worker response requires a routed request")
         try:
             result = self._read_only_worker.execute(worker_request)
+        except WorkerQueued:
+            return self._finish(
+                turn, "코덱스에 맡겼어. 끝나면 알려줄게. 우리는 계속 이야기하자.",
+            )
+        except WorkerApprovalDeclined:
+            return self._finish(
+                turn, "알겠어. 외부 Worker에는 보내지 않을게.",
+                worker_name="codex", worker_error=True,
+            )
         except WorkerUnavailableError:
             return self._finish(
                 turn,
@@ -340,7 +376,7 @@ class CompanionCore:
             part
             for part in (
                 style_repair,
-                self._response_claim_gate.repair_instruction(claim_violations)
+                self._response_claim_gate.repair_instruction(claim_violations, claim_evidence)
                 if claim_violations
                 else None,
             )
@@ -353,7 +389,7 @@ class CompanionCore:
             repaired, claim_evidence
         )
         if remaining_claims:
-            return self._response_claim_gate.fallback(remaining_claims)
+            return self._response_claim_gate.fallback(remaining_claims, claim_evidence)
         still_failing = self._response_reviewer.repair_instruction(
             turn.dialogue_plan.behavior,
             repaired,
@@ -431,15 +467,21 @@ class CompanionCore:
                 if memory is not None:
                     automatic_memory_ids_list.append(memory.id)
             automatic_memory_ids = tuple(automatic_memory_ids_list)
-        all_messages = tuple(self._conversation_repository.list_messages())
-        recalled_conversation = self._conversation_recall_retriever.retrieve(
-            all_messages, text
-        )
+        if isinstance(self._conversation_repository, WindowedConversationRepository):
+            limit = self._context_builder.message_limit if self._context_builder is not None else 1
+            all_messages = self._conversation_repository.recent_messages(limit)
+        else:
+            all_messages = tuple(self._conversation_repository.list_messages())
+            recalled_conversation = self._conversation_recall_retriever.retrieve(all_messages, text)
         messages: tuple[ConversationMessage, ...] = (
             ConversationMessage(role="user", content=text),
         )
         if self._context_builder is not None:
             messages = self._context_builder.build(all_messages)
+        if isinstance(self._conversation_repository, WindowedConversationRepository):
+            recalled_conversation = self._conversation_recall_retriever.retrieve_from_repository(
+                self._conversation_repository, text, exclude_latest=len(messages),
+            )
         shadow_turn_id = None
         if (
             maintenance_route.enqueue_turn_analysis
@@ -536,6 +578,13 @@ class CompanionCore:
                 memory.content
                 for memory in selected_memories + current_state_history
             ),
+            conversation_contents=tuple(
+                unit
+                for message in recalled_conversation + messages
+                if message.role == "user" and message.content != text
+                for unit in claim_units(message.content)
+                if not has_question_form(unit)
+            ),
             capability_claim_scopes=snapshot.capability_claim_scopes,
             improvement_statuses=snapshot.improvement_statuses,
             shadow_turn_id=shadow_turn_id,
@@ -566,7 +615,9 @@ class CompanionCore:
             self._claim_evidence(turn, worker_result=worker_result),
         )
         if final_violations:
-            response_text = self._response_claim_gate.fallback(final_violations)
+            response_text = self._response_claim_gate.fallback(
+                final_violations, self._claim_evidence(turn, worker_result=worker_result),
+            )
         self._conversation_repository.append(
             ConversationMessage(role="assistant", content=response_text)
         )
@@ -631,4 +682,5 @@ class CompanionCore:
             worker_result_authorized=worker_result is not None,
             capability_claim_scopes=turn.capability_claim_scopes,
             improvement_statuses=turn.improvement_statuses,
+            conversation_contents=turn.conversation_contents,
         )

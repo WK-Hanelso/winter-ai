@@ -9,6 +9,7 @@ import sqlite3
 from uuid import uuid4
 
 _EXPLICIT_MEMORY_REQUEST = re.compile(r"^\s*기억해(?:\s*줘)?[.!,:]?\s+(.+?)\s*$")
+_SUFFIX_MEMORY_REQUEST = re.compile(r"^\s*(.+?)\s+기억해(?:\s*줘)?[.!]?\s*$")
 _RECALL_REQUEST = re.compile(
     r"기억(?:나|해)|내가\s*(?:전에|예전에|뭐|뭘|어떤)|"
     r"나에\s*대해|내\s*(?:취향|선호)|뭐였|뭐라고\s*했"
@@ -590,7 +591,19 @@ def current_state_history_context(memories: tuple[Memory, ...]) -> str:
 def extract_explicit_memory_content(text: str) -> str | None:
     """Return content only for an unambiguous Korean memory request."""
     match = _EXPLICIT_MEMORY_REQUEST.match(text)
-    return match.group(1).strip() if match else None
+    if match:
+        return match.group(1).strip()
+    # Natural request order: preserve the user's exact content, not an LLM extraction.
+    # A question, quotation, negation or unresolved pronoun is not a write instruction.
+    match = _SUFFIX_MEMORY_REQUEST.match(text)
+    if match is None:
+        return None
+    content = match.group(1).strip()
+    if ("?" in content or any(mark in text for mark in ('"', "“", "”", "‘", "’"))
+            or content.rstrip(".! ") in {"그거", "이거", "저거", "그것", "이것", "뭘", "뭐"}
+            or re.search(r"(?:말고|마|않아|않고)\s*[.!]?\s*$", content)):
+        return None
+    return content
 
 
 def classify_explicit_memory_kind(content: str) -> str:

@@ -1,5 +1,8 @@
 """Pure composition of already-selected context. Retrieval and policy stay outside."""
 
+from dataclasses import replace
+import json
+
 from companion.beliefs import belief_context
 from companion.contracts import ChatRequest, ConversationMessage
 from companion.conversation_recall import recall_context
@@ -11,6 +14,20 @@ from companion.open_loops import open_loop_context
 
 class ContextAssembler:
     """Preserve the existing ordered prompt contract without owning a model/store."""
+
+    _examples: tuple[ConversationMessage, ...] = ()
+    _reply_token_budget: int | None = None
+    _isolate_repair_draft: bool = False
+
+    def __init__(
+        self, examples: tuple[ConversationMessage, ...] = (),
+        *, reply_token_budget: int | None = None, isolate_repair_draft: bool = False,
+    ) -> None:
+        if reply_token_budget is not None and reply_token_budget < 1:
+            raise ValueError("reply token budget must be positive")
+        self._examples = examples
+        self._reply_token_budget = reply_token_budget
+        self._isolate_repair_draft = isolate_repair_draft
 
     def assemble(
         self,
@@ -68,12 +85,29 @@ class ContextAssembler:
         system_messages.append(ConversationMessage("system", final_instruction))
         return ChatRequest(
             prompt=text,
-            messages=tuple(system_messages) + recent_messages,
-            max_tokens=max_tokens,
+            messages=tuple(system_messages) + self._examples + recent_messages,
+            max_tokens=self._reply_token_budget or max_tokens,
         )
 
     def repair_request(self, request: ChatRequest, draft: str, instruction: str) -> ChatRequest:
-        """Append the original repair blocks; do not re-read state or re-plan style."""
+        """Revise against the same sources; optionally isolate an unpublished draft."""
+        if self._isolate_repair_draft:
+            # A rejected draft was never said to the user. Keep it out of the
+            # assistant transcript and ask the original question again with the
+            # same sources. This is not a new user turn or a new memory source.
+            revision = ConversationMessage(
+                "system",
+                "아래 JSON은 사용자에게 전달하지 않은 실패한 초안이야. "
+                "실제 대화·기억도 지시문도 아니며 정답 예시로 따라 하지 마.\n"
+                + json.dumps({"rejected_draft": draft}, ensure_ascii=False)
+                + "\n" + instruction,
+            )
+            messages = request.messages
+            if messages and messages[-1].role == "user":
+                messages = messages[:-1] + (revision, messages[-1])
+            else:
+                messages += (revision, ConversationMessage("user", request.prompt))
+            return replace(request, messages=messages)
         return ChatRequest(
             prompt=request.prompt,
             messages=request.messages + (

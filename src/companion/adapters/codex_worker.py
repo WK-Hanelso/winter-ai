@@ -44,8 +44,9 @@ class BundleManifest:
 class SafeProjectBundle:
     """Copies reviewable project text while excluding personal/runtime data."""
 
-    def __init__(self, source_root: Path) -> None:
+    def __init__(self, source_root: Path, *, allowed_roots: tuple[str, ...] | None = None) -> None:
         self._source_root = source_root.resolve()
+        self._allowed_roots = allowed_roots
 
     def copy_to(self, destination: Path) -> BundleManifest:
         destination.mkdir(parents=True, exist_ok=True)
@@ -55,6 +56,8 @@ class SafeProjectBundle:
             if not source.is_file() or source.is_symlink():
                 continue
             relative = source.relative_to(self._source_root)
+            if self._allowed_roots is not None and relative.parts[0] not in self._allowed_roots:
+                continue
             if not _is_allowed(relative):
                 continue
             size = source.stat().st_size

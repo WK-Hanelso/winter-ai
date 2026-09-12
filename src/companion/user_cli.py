@@ -22,7 +22,7 @@ def _enabled(name: str) -> bool:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="겨울이와 대화합니다.")
+    parser = argparse.ArgumentParser(description="겨울이와 대화합니다.", allow_abbrev=False)
     parser.add_argument("--dialogue-policy", choices=POLICY_NAMES, default="legacy")
     parser.add_argument("--backend", choices=("local", "fake"), default="local")
     parser.add_argument(
@@ -83,6 +83,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not (DATA / "identity.json").exists():
         print("겨울이 Identity가 없습니다: data/identity.json을 먼저 준비하세요.")
         return 1
+    return run(configure_persistent_args(args))
+
+
+def configure_persistent_args(args: argparse.Namespace) -> argparse.Namespace:
+    """Shared persistent paths for terminal and supervised Docker sessions."""
     args.identity_path = DATA / "identity.json"
     args.conversation_db = DATA / "conversations.sqlite"
     args.owned_work_db = DATA / "owned_work.sqlite"
@@ -104,7 +109,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args.show_identity = False
     args.memory_add = args.memory_approve = args.memory_activate = None
     args.memory_deprecate = args.memory_replace = args.memory_delete = None
-    return run(args)
+    return args
 
 
 if __name__ == "__main__":

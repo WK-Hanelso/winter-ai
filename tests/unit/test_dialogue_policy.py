@@ -126,7 +126,7 @@ class SpyModel:
         return ChatResult(self.answer)
 
 
-@pytest.mark.parametrize("name", POLICY_NAMES)
+@pytest.mark.parametrize("name", [name for name in POLICY_NAMES if name != "interpreted"])
 def test_core_passes_recent_text_and_stores_response_without_extra_model_call(name):
     model = SpyModel()
     repository = InMemoryConversationRepository()

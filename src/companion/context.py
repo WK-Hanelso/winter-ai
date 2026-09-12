@@ -22,6 +22,10 @@ class ConversationContextBuilder:
         self._max_messages = max_messages
         self._max_characters = max_characters
 
+    @property
+    def message_limit(self) -> int:
+        return self._max_messages
+
     def build(self, messages: Sequence[ConversationMessage]) -> tuple[ConversationMessage, ...]:
         """Keep newest messages within the budget, always retaining the current turn."""
         if not messages:

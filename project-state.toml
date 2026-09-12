@@ -3,6 +3,22 @@ current_phase = "text_first_foundation"
 active_issue = 137
 # #137 local diagnostic complete; GitHub remains OPEN. T2.7 issue not registered yet.
 # Keep this scope until the next issue/remote synchronization is explicitly settled.
+# Newer private delivery/decisions: data/research/text-foundation-delivery.md (Git-ignored).
+# Current text draft deployment: data/research/draft-delivery.md (Git-ignored).
+# Latest private async/notification follow-up: data/research/background-text-delivery.md.
+# Current priority/agreement: data/research/working-agreement.md.
+# Latest dialogue-only implementation: data/research/dialogue-repair-delivery.md.
+# Latest dialogue behavior comparison (no activation): data/research/reciprocity-delivery.md.
+# Latest situation-understanding comparison (no activation): data/research/situation-delivery.md.
+# Latest persona/input-output parity check: data/research/persona-parity-delivery.md.
+# Latest adaptation preparation and cleanup: data/research/adaptation-preparation-delivery.md.
+# Latest actual training pilot (rejected): data/research/adaptation-pilot-delivery.md.
+# Latest authorized Orin runtime probe: data/research/orin-training-runtime-delivery.md.
+# Latest isolated30B adaptation work: data/research/adaptation-30b-delivery.md.
+# Latest correction-example implementation: data/research/correction-fix/delivery.md.
+# Latest emotional-correction attempt/restoration: data/research/emotion-fix/delivery.md.
+# Latest host text runtime / actual CLI restart: data/research/rtx2060-hybrid/README.md.
+# Latest dialogue speaker/correction work: data/research/speaker-grounding/delivery.md.
 active_work = ["text_first_foundation"]
 
 # These files define mission, current product target, maturity and the audit baseline.
@@ -29,6 +45,20 @@ status_documents = [
 id = "text_first_foundation"
 maturity = "contract"
 evidence = [
+  "docs/adr/0041-host-worker-inbox.md",
+  "tests/unit/test_background_text.py",
+  "tests/unit/test_memory_evidence_fallback.py",
+  "tests/unit/test_text_session.py",
+  "configs/dialogue/companion_model.py",
+  "tests/unit/test_incomplete_reply.py",
+  "tests/unit/test_draft_session.py",
+  "configs/dialogue/companion_examples.py",
+  "tests/unit/test_companion_policy.py",
+  "tests/unit/test_recent_claim_evidence.py",
+  "tests/unit/test_windowed_conversation.py",
+  "tests/unit/test_text_launcher.py",
+  "src/companion/dialogue/interpreted_policy.py",
+  "tests/unit/test_interpreted_dialogue.py",
   "docs/adr/0039-dialogue-capability-first.md",
   "experiments/text_context_ablation.py",
   "tests/unit/test_text_context_ablation.py",

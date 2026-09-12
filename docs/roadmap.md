@@ -11,6 +11,21 @@
 
 ## Text-first — 현재 최우선 (2026-09-10)
 
+`./winter text` 초안 경로는 이름 표시·오류 후 세션 유지·불완전 응답 차단을 포함한다.
+최근 로컬 배포와 판단은 Git에서 제외한 `data/research/draft-delivery.md`에 인계한다.
+대화창의 건별 승인형 read-only Worker를 연결했으며 write Worker/Voice 보류는 유지한다.
+이 후속의 검증·판단은 비공개 `data/research/session-worker-delivery.md`에 이어 기록한다.
+비차단 작업과 자동 결과 알림·재접속 인계는 `data/research/background-text-delivery.md`에 있다.
+
+사용 가능한 텍스트 진입점은 `./winter text`다. 기존 Shared Core/DB를 Docker에서 쓰며
+`companion` 예시 설정을 선택한다. 최근 원문과 오래된 원문 검색을 분리하고, 실제 사용자
+발화만 회상 근거로 사용한다. 설계 판단과 평가 원문은 로컬에만 보관한다. 아래 Issue 상태는
+마지막 공개 동기화 기준이며 새 경로의 대화 품질 수락이나 기능 전체 완료를 뜻하지 않는다.
+
+`interpreted` 대화 정책을 명시적으로 선택하는 Shared Core 경로를 추가했다.
+기본 정책/모델/개인 DB는 유지하며 운영 activation과 품질 수락은 별도다.
+원격 Issue 동기화나 공개 평가 게시 없이 로컬 개발 상태로 관리한다.
+
 Epic [#127](https://github.com/WK-Hanelso/winter-ai/issues/127)의 목표는 지속되는 정체성/기억,
 관계가 느껴지는 텍스트 대화, 외부 Agent 활용이다. T0 [#128](https://github.com/WK-Hanelso/winter-ai/issues/128)은
 기록과 기준의 인계를 완료했다. [#129](https://github.com/WK-Hanelso/winter-ai/issues/129)는

@@ -10,6 +10,14 @@ class WorkerUnavailableError(RuntimeError):
     """Raised when an explicitly requested Worker did not produce a result."""
 
 
+class WorkerApprovalDeclined(WorkerUnavailableError):
+    """The user did not approve external execution; no provider call was made."""
+
+
+class WorkerQueued(RuntimeError):
+    """A durable approved job was accepted, not completed."""
+
+
 @dataclass(frozen=True)
 class ReadOnlyWorkerRequest:
     task: str

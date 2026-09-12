@@ -22,8 +22,11 @@ class SqliteOwnedWorkRepository:
 
     _SCHEMA_VERSION = 1
 
-    def __init__(self, database_path: Path) -> None:
+    def __init__(self, database_path: Path, *, recovery: str = "resume") -> None:
+        if recovery not in {"resume", "fail", "none"}:
+            raise ValueError("invalid work recovery policy")
         self._database_path = database_path
+        self._recovery = recovery
         self._initialize()
 
     def enqueue(self, work_id: str, request: WorkRequest) -> None:
@@ -66,17 +69,17 @@ class SqliteOwnedWorkRepository:
                 f"could not enqueue owned work in {self._database_path}"
             ) from error
 
-    def claim_pending(self) -> tuple[str, WorkRequest] | None:
+    def claim_pending(self, *, expected_id: str | None = None) -> tuple[str, WorkRequest] | None:
         try:
             with self._connect() as connection:
                 connection.execute("BEGIN IMMEDIATE")
                 row = connection.execute(
                     """
                     SELECT id, user_text FROM owned_work_jobs
-                    WHERE status = 'pending'
+                    WHERE status = 'pending' AND (? IS NULL OR id = ?)
                     ORDER BY created_at, id
                     LIMIT 1
-                    """
+                    """, (expected_id, expected_id),
                 ).fetchone()
                 if row is None:
                     return None
@@ -209,6 +212,15 @@ class SqliteOwnedWorkRepository:
             ) from error
         return None if row is None else str(row["status"])
 
+    def assign_pending_owner(self, work_id: str, pid: int) -> None:
+        if pid < 1:
+            raise ValueError("invalid pending worker PID")
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE owned_work_jobs SET owner_pid = ? WHERE id = ? AND status = 'pending'",
+                (pid, work_id),
+            )
+
     def _initialize(self) -> None:
         try:
             self._database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -256,7 +268,16 @@ class SqliteOwnedWorkRepository:
                 ).fetchall()
                 for row in running:
                     owner_pid = row["owner_pid"]
+                    if self._recovery == "none":
+                        continue
                     if owner_pid is None or not _process_alive(int(owner_pid)):
+                        if self._recovery == "fail":
+                            connection.execute(
+                                "UPDATE owned_work_jobs SET status = 'failed', owner_pid = NULL, "
+                                "result_text = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                                ("이전 작업이 중단됐어. 자동 재실행하지 않았어.", row["id"]),
+                            )
+                            continue
                         connection.execute(
                             """
                             UPDATE owned_work_jobs
@@ -265,6 +286,19 @@ class SqliteOwnedWorkRepository:
                             WHERE id = ? AND status = 'running'
                             """,
                             (row["id"],),
+                        )
+                if self._recovery == "fail":
+                    pending = connection.execute(
+                        "SELECT id, owner_pid FROM owned_work_jobs WHERE status = 'pending'"
+                    ).fetchall()
+                    for row in pending:
+                        pid = row["owner_pid"]
+                        if pid is not None and _process_alive(int(pid)):
+                            continue
+                        connection.execute(
+                            "UPDATE owned_work_jobs SET status = 'failed', result_text = ?, "
+                            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                            ("이전 작업의 실행 여부를 몰라. 자동 재실행하지 않았어.", row["id"]),
                         )
         except OwnedWorkRepositoryError:
             raise

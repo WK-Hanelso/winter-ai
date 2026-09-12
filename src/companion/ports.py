@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from companion.contracts import (
     AudioInput,
@@ -116,10 +116,28 @@ class TextToSpeech(Protocol):
     def synthesize(self, request: SpeechRequest) -> AudioOutput: ...
 
 
+@runtime_checkable
+class IdempotentConversationRepository(Protocol):
+    def append_once(
+        self, key: str, message: ConversationMessage,
+    ) -> ConversationAppendReceipt: ...
+
+
 class ConversationRepository(Protocol):
     def append(self, message: ConversationMessage) -> ConversationAppendReceipt: ...
 
     def list_messages(self) -> Sequence[ConversationMessage]: ...
+
+
+@runtime_checkable
+class WindowedConversationRepository(Protocol):
+    """Optional bounded foreground reads; full history remains available for export/audit."""
+
+    def recent_messages(self, limit: int) -> tuple[ConversationMessage, ...]: ...
+
+    def search_messages(
+        self, terms: tuple[str, ...], *, exclude_latest: int, limit: int,
+    ) -> tuple[ConversationMessage, ...]: ...
 
 
 class Clock(Protocol):

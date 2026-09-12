@@ -39,6 +39,14 @@ class LlamaCppHttpChatModel:
 
     base_url: str
     timeout_seconds: float = 120.0
+    presence_penalty: float = SAMPLING["presence_penalty"]
+    min_p: float | None = None
+
+    def __post_init__(self) -> None:
+        if not -2 <= self.presence_penalty <= 2:
+            raise ValueError("presence penalty must be between -2 and 2")
+        if self.min_p is not None and not 0 <= self.min_p <= 1:
+            raise ValueError("min_p must be between zero and one")
 
     def _endpoint(self) -> str:
         return f"{self.base_url.rstrip('/')}/v1/chat/completions"
@@ -53,7 +61,10 @@ class LlamaCppHttpChatModel:
             "stream": stream,
             "max_tokens": request.max_tokens or MAX_TOKENS,
             **SAMPLING,
+            "presence_penalty": self.presence_penalty,
         }
+        if self.min_p is not None:
+            payload["min_p"] = self.min_p
         if request.response_format is not None:
             payload["response_format"] = request.response_format
         if request.temperature is not None:
@@ -149,6 +160,8 @@ def _stream_piece(line: bytes) -> str:
         return ""
     try:
         choices = json.loads(body).get("choices") or []
+        if choices and choices[0].get("finish_reason") in {"length", "content_filter"}:
+            raise AdapterUnavailableError("local llama.cpp server returned an incomplete reply")
         return str(choices[0].get("delta", {}).get("content") or "")
     except (ValueError, KeyError, IndexError, AttributeError):
         return ""
@@ -157,7 +170,12 @@ def _stream_piece(line: bytes) -> str:
 def _extract_text(raw_response: bytes, endpoint: str) -> str:
     try:
         response: dict[str, Any] = json.loads(raw_response)
-        text = response["choices"][0]["message"]["content"]
+        choice = response["choices"][0]
+        if choice.get("finish_reason") in {"length", "content_filter"}:
+            raise AdapterUnavailableError(
+                f"local llama.cpp server returned an incomplete reply at {endpoint}"
+            )
+        text = choice["message"]["content"]
     except (IndexError, KeyError, TypeError, json.JSONDecodeError) as error:
         raise AdapterUnavailableError(
             f"local llama.cpp server returned an invalid chat response at {endpoint}"

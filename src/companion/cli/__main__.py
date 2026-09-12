@@ -502,7 +502,11 @@ def run(
     except TextRuntimeError as error:
         print(str(error), file=stdout)
         return 1
-    if config.dialogue_policy != "legacy":
+    is_draft = config.dialogue_policy == "companion"
+    speaker = (
+        resources.identity.name if is_draft and resources.identity is not None else "Companion"
+    )
+    if config.dialogue_policy not in {"legacy", "companion"}:
         print(f"Experimental dialogue policy: {config.dialogue_policy}", file=stdout)
     core = runtime.core
     try:
@@ -512,8 +516,11 @@ def run(
                 args.prompt,
                 stdout,
                 streaming=getattr(args, "winter_work_canary", False),
+                speaker=speaker,
             )
 
+        if is_draft:
+            print(f"{speaker} 텍스트 초안 · 기존 기억을 이어서 대화합니다.", file=stdout)
         print("winter-ai CLI. 종료하려면 /exit 를 입력하세요.", file=stdout)
         while True:
             print("You> ", end="", file=stdout, flush=True)
@@ -530,7 +537,12 @@ def run(
                 text,
                 stdout,
                 streaming=getattr(args, "winter_work_canary", False),
+                speaker=speaker,
             ):
+                if is_draft:
+                    print("[시스템] 응답을 완료하지 못했어. 입력은 보존했고 세션은 열어둘게.",
+                          file=stdout)
+                    continue
                 return 1
 
     finally:
@@ -543,12 +555,13 @@ def _run_turn(
     stdout: TextIO,
     *,
     streaming: bool = False,
+    speaker: str = "Companion",
 ) -> int:
     try:
         if streaming:
             response = core.respond_to_text_streaming(
                 text,
-                lambda sentence: print(f"Companion> {sentence}", file=stdout),
+                lambda sentence: print(f"{speaker}> {sentence}", file=stdout),
             )
         else:
             response = core.respond_to_text(text)
@@ -556,7 +569,7 @@ def _run_turn(
         print(f"Companion unavailable: {error}", file=stdout)
         return 1
     if not streaming:
-        print(f"Companion> {response.text}", file=stdout)
+        print(f"{speaker}> {response.text}", file=stdout)
     for memory_id in response.memory_candidate_ids:
         print(f"Memory {memory_id} is active.", file=stdout)
     for memory_id in response.automatic_memory_ids:

@@ -12,6 +12,48 @@
 
 ## 2026-09-10 우선순위 전환
 
+텍스트 초안의 런타임 배포와 대화 검토는 로컬 인계 문서에 기록한다. 실행 가능한 초안과
+사용자 품질 수락을 구분하며 사용자 체감은 계속 **사용자 관찰 대기**다. 응답 중단 검출과
+세션 복구를 추가했지만 장기 기억 정확성·자연스러움 전체의 완료를 의미하지 않는다.
+
+로컬 텍스트 실행형: `./winter text`에서 Docker Shared Core, `companion` 구성, 기존
+Identity/SQLite 기록을 사용한다. 최근 발화 근거와 bounded 원문 조회를 구현했다.
+평가와 설계 판단은 로컬에만 보관하며 품질 성숙도를 자동으로 올리지 않는다.
+이 경로의 사용자 체감은 **사용자 관찰 대기**다. Voice 고도화는 계속 보류다.
+
+호스트 Docker 분할 추론 프로필의 자동 시작·재사용·명시적 종료를 `./winter text`에
+연결했다. 기존 Identity/DB 형식은 유지하고 Orin 자동 연결은 하지 않는다. 계약 검사는
+`tests/unit/test_text_launcher.py`, `tests/unit/test_text_llm_lifecycle.py`에 둔다.
+실제 CLI 응답과 재시작 결과는 로컬 인계에 기록한다. 이 변경은 실행 경로 복구이며
+자연스러움·기억 정확성·장시간 안정성의 수락이나 maturity 승격이 아니다.
+
+`companion` 입력의 정정 예시는 사용자 자기 수정과 assistant 오해 수정을 구분한 독립
+다중 턴 장면으로 보완했다. 추가 모델 호출이나 자동 기억 수정은 없고 legacy는 유지한다.
+역할·문맥 연결 및 예시의 기억 근거 유입 차단은 `tests/unit/test_companion_policy.py`로
+검사한다. 실제 전후 답변과 CLI 확인은 로컬 인계에만 보관한다. 전체 대화 품질의 승격이나
+사용자 수락을 뜻하지 않으며 자연스러움과 장기 기억은 여전히 **사용자 관찰 대기**다.
+
+발화자 구분 후속: `companion`의 실제 대화 경계에서 사용자 원문과 assistant 반응을
+구분하도록 보완했다. 내용 없는 자기 정정 때문에 근거 있는 답 전체를 폐기하던 기억
+검사 오탐을 수정했다. `tests/unit/test_speaker_context_boundary.py`와
+`tests/unit/test_memory_self_correction.py`에서 원문/역할 보존, 추가 모델 호출 부재,
+정정을 이용한 허위 사실·저장 약속 우회 차단을 검사한다. 실제 비교와 CLI 응답은 로컬
+인계에 보관한다. 생략된 질문의 대상 선택과 감정 반응의 자연스러움은 미완료이며
+이는 모델 교체·학습·장기 기억 정확성 전체의 검증이나 성숙도 승격이 아니다.
+
+`text`의 대화창에 Host 건별 승인 → typed read-only Codex → Shared Core 결과 저장 경로를
+추가했다. 읽기 범위는 공유 README·패키지 설정·소스·테스트이며 개인 DB·연구·설정 원본은
+제외한다. 승인 audit을 외부 실행 전에 로컬에 남긴다. 기존 write Worker와 Shadow activation
+gate는 유지한다. 명시적 승인 작업의 Host background 실행과 미전달 결과 복구를 연결했다.
+기존 #126의 자동 intent 판단·write Worker·재실행 정책을 활성화한 것은 아니다.
+명시적 기억 저장은 내용 뒤의 `기억해줘`도 인식하며 기존 DB schema·직접 승인 정책을 유지한다.
+구현 계약은 `tests/unit/test_text_session.py`, 실제 실행과 실패 근거는 비공개
+`data/research/session-worker-delivery.md`에 기록한다. 사용자 품질 수락과 기능 전체 완료는 별도다.
+비차단 후속은 `data/research/background-text-delivery.md`에 이어 기록한다. 결과를 Core에 저장한
+뒤 화면에 전달하고 inbox를 확인 처리한다. 대화 저장의 중복은 차단하지만 출력 직후 crash 시
+화면 알림의 재표시는 가능하다. 대화 DB에 부가 delivery receipt table만 추가하며 기존 원문과
+schema version은 보존한다. 검증 실패를 기억 부재로 오인한 응답은 원문 근거 인용으로 구분한다.
+
 2026-09-11 [ADR 0039](adr/0039-dialogue-capability-first.md)로 T2 후반의 모델/예시 확보와
 형체 없는 표현 경계를 합의했다. 한숨·웃음은 선택적 전달 metadata 설계이며 아직 새 필드나
 Voice 합성 기능은 없다. 모델 후보 조사/비교/CLI 경험은 후속이고 성숙도를 올리지 않는다.
@@ -32,6 +74,11 @@ T3.1 #133은 open/미착수 보류다. Voice 고도화와 #126 actual-phone
 write Worker는 기존 품질·승인 gate를 유지한다.
 
 ### T2.6 #137 — 로컬 진단 완료 / 운영 activation 없음
+
+별도 선택형 `interpreted` 정책의 코드 경로를 추가했다. 동일 로컬 모델의 제한된 해석을
+응답 방식 선택에만 사용하며 기본 `legacy`, 기존 기억/권한 gate와 maturity는 유지한다.
+구현 계약은 `tests/unit/test_interpreted_dialogue.py`에서 검사한다. 개인 평가 기록과
+원문은 로컬에만 보존하고, 기능 선택 가능과 대화 품질 검증 완료를 구분한다.
 
 - 범위: 고정된 합성 대화/기억/예산에서 같은 A.X의 최소/legacy 전체 문맥을 3 seed로 42회 비교.
   별도 warm-up 2회, HTTP 실패 0, repair 미실행. [사전 계약/요약](evaluations/137-context-ablation/README.md).

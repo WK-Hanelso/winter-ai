@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from companion.contracts import ConversationMessage
+from companion.ports import WindowedConversationRepository
 
 _TOKENS = re.compile(r"[0-9A-Za-z가-힣_+-]+")
 _KOREAN_SUFFIXES = (
@@ -65,6 +66,27 @@ class ConversationRecallRetriever:
         self._recent_messages = recent_messages
         self._max_turns = max_turns
         self._max_characters = max_characters
+
+    def retrieve_from_repository(
+        self, repository: WindowedConversationRepository, query: str,
+        *, exclude_latest: int | None = None,
+    ) -> tuple[ConversationMessage, ...]:
+        terms = tuple(sorted(_terms(query), key=lambda item: (-len(item), item))[:12])
+        if not terms:
+            return ()
+        candidates = repository.search_messages(
+            terms,
+            exclude_latest=self._recent_messages if exclude_latest is None else exclude_latest,
+            limit=self._max_turns,
+        )
+        selected: list[ConversationMessage] = []
+        characters = 0
+        for _, turn in _turns(list(candidates)):
+            size = sum(len(item.content) for item in turn)
+            if characters + size <= self._max_characters:
+                selected.extend(turn)
+                characters += size
+        return tuple(selected)
 
     def retrieve(
         self, messages: list[ConversationMessage] | tuple[ConversationMessage, ...], query: str

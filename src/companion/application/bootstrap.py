@@ -30,12 +30,14 @@ from companion.capabilities import (
     SqliteCapabilityRegistry,
 )
 from companion.context import ConversationContextBuilder
+from companion.contracts import ConversationMessage
 from companion.core import CompanionCore
 from companion.day_reflection import (
     ActiveDayReflectionRetriever,
     DayReflectionRepositoryError,
     SqliteDayReflectionRepository,
 )
+from companion.dialogue.context_assembler import ContextAssembler
 from companion.dialogue.policy import DialoguePolicyError, build_dialogue_policy
 from companion.identity import CompanionIdentity, IdentityRepositoryError, JsonIdentityRepository
 from companion.improvements import (
@@ -84,6 +86,7 @@ from companion.winter_events import (
     SystemClock,
     WinterEventRepositoryError,
 )
+from companion.worker import ReadOnlyWorker
 
 
 class TextRuntimeError(RuntimeError):
@@ -166,6 +169,12 @@ def build_chat_model(config: TextRuntimeConfig) -> ChatModel:
         return FakeChatModel()
     if config.backend != "local":
         raise TextRuntimeError(f"Unknown chat backend: {config.backend}")
+    if config.dialogue_policy == "companion":
+        from configs.dialogue.companion_model import MIN_P, PRESENCE_PENALTY
+
+        return LlamaCppHttpChatModel(
+            base_url=config.model_url, presence_penalty=PRESENCE_PENALTY, min_p=MIN_P,
+        )
     return LlamaCppHttpChatModel(base_url=config.model_url)
 
 
@@ -316,11 +325,13 @@ def build_text_runtime(
     resources: TextResources | None = None,
     chat_model: ChatModel | None = None,
     completion_sink: Callable[[OwnedWorkUpdate], None] | None = None,
+    read_only_worker: ReadOnlyWorker | None = None,
 ) -> TextRuntime:
     resources = resources if resources is not None else build_text_resources(config)
     try:
         dialogue_policy = build_dialogue_policy(
-            config.dialogue_policy, style_planner=VerbalStylePlanner(resources.style_profile),
+            "contextual" if config.dialogue_policy == "interpreted" else config.dialogue_policy,
+            style_planner=VerbalStylePlanner(resources.style_profile),
         )
     except DialoguePolicyError as error:
         raise TextRuntimeError(f"Dialogue policy unavailable: {error}") from error
@@ -354,6 +365,11 @@ def build_text_runtime(
         if priority_scheduler is not None
         else base_chat_model
     )
+    if config.dialogue_policy == "interpreted":
+        dialogue_policy = build_dialogue_policy(
+            "interpreted", style_planner=VerbalStylePlanner(resources.style_profile),
+            chat_model=chat_model,
+        )
     owned_work_canary = (
         WinterOwnedProjectCanary(
             config.project_root,
@@ -389,6 +405,36 @@ def build_text_runtime(
         except OwnedWorkRepositoryError as error:
             raise TextRuntimeError(f"Winter owned work unavailable: {error}") from error
         owned_work_executor = None
+    context_assembler = None
+    if config.dialogue_policy == "companion":
+        from configs.dialogue.companion_examples import (
+            CORRECTION_INSTRUCTION,
+            CORRECTION_SCENES,
+            EXAMPLES,
+            MAX_REPLY_TOKENS,
+            REAL_DIALOGUE_INSTRUCTION,
+        )
+
+        example_messages = [ConversationMessage(
+            "system", "다음은 말하는 방식을 보여주는 가상 예시야. "
+            "실제 천우의 정보나 겨울이의 경험이 아니며 기억으로 사용하지 마.",
+        )]
+        for user, assistant in EXAMPLES:
+            example_messages.extend((ConversationMessage("user", user),
+                                     ConversationMessage("assistant", assistant)))
+        example_messages.append(ConversationMessage("system", CORRECTION_INSTRUCTION))
+        for scene in CORRECTION_SCENES:
+            example_messages.append(ConversationMessage("system", "독립된 가상 정정 장면 시작."))
+            for user, assistant in scene:
+                example_messages.extend((ConversationMessage("user", user),
+                                         ConversationMessage("assistant", assistant)))
+        example_messages.append(ConversationMessage(
+            "system", REAL_DIALOGUE_INSTRUCTION,
+        ))
+        context_assembler = ContextAssembler(
+            tuple(example_messages), reply_token_budget=MAX_REPLY_TOKENS,
+            isolate_repair_draft=True,
+        )
     core = CompanionCore(
         chat_model,
         repository,
@@ -401,6 +447,7 @@ def build_text_runtime(
         memory_repository,
         verbal_style_planner=VerbalStylePlanner(style_profile),
         dialogue_policy=dialogue_policy,
+        context_assembler=context_assembler,
         belief_retriever=belief_retriever,
         open_loop_repository=open_loop_repository,
         open_loop_retriever=open_loop_retriever,
@@ -413,13 +460,12 @@ def build_text_runtime(
         self_model_provider=self_model_provider,
         improvement_snapshot_provider=improvement_snapshot_provider,
         read_only_worker=(
-            CodexReadOnlyWorker(
+            read_only_worker if read_only_worker is not None else (CodexReadOnlyWorker(
                 config.project_root,
                 executable=config.codex_executable,
                 model=config.codex_model,
             )
-            if config.codex_worker
-            else None
+            if config.codex_worker else None)
         ),
         owned_work_executor=owned_work_executor,
         owned_work_submitter=owned_work_coordinator,

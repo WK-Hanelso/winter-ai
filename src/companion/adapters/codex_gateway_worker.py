@@ -134,6 +134,7 @@ class CodexTypedProjectWorker:
         model: str = "gpt-5.4",
         timeout_seconds: int = 600,
         runner: Callable[..., object] = subprocess.run,
+        allowed_roots: tuple[str, ...] | None = None,
     ) -> None:
         self._source_root = source_root.resolve()
         self._codex_home = (
@@ -146,6 +147,7 @@ class CodexTypedProjectWorker:
         self._model = model
         self._timeout_seconds = timeout_seconds
         self._runner = runner
+        self._allowed_roots = allowed_roots
 
     def execute(self, packet: WorkerTaskPacket) -> GatewayWorkerResult:
         try:
@@ -156,7 +158,9 @@ class CodexTypedProjectWorker:
                 isolated_codex_home = root / "codex-home"
                 agent_root.mkdir()
                 isolated_codex_home.mkdir()
-                SafeProjectBundle(self._source_root).copy_to(bundle)
+                SafeProjectBundle(
+                    self._source_root, allowed_roots=self._allowed_roots,
+                ).copy_to(bundle)
                 copy_control_plane_auth(self._codex_home, isolated_codex_home)
 
                 packet_path = root / "worker-task.json"

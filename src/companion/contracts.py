@@ -54,3 +54,4 @@ class ConversationAppendReceipt:
     """Stable reference to the exact persisted conversation row."""
 
     id: int
+    created_at: str | None = None

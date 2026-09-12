@@ -1,5 +1,14 @@
 # Text-first Winter 구현 TODO
 
+현재 초안 배포 인계는 로컬 `data/research/draft-delivery.md`를 먼저 확인한다.
+같은 대화창의 승인형 Worker 연결과 명시적 기억 저장 후속은
+`data/research/session-worker-delivery.md`에 이어 기록한다. 공개 Issue 상태를 임의로 변경하지 않는다.
+이후 Host 비차단 작업·미전달 알림 복구는 `data/research/background-text-delivery.md`에 기록한다.
+
+최신 로컬 실행형은 `./winter text`다. 코드 변경, 판단, 실제 평가와 다음 우선순위의 상세
+인계는 Git에서 제외한 `data/research/text-foundation-delivery.md`에 있다. 아래 체크박스와
+Issue 상태는 마지막 공개 동기화 기록이며 로컬 후속 작업을 미실행으로 단정하지 않는다.
+
 - 작성일: 2026-09-10
 - 상태: #128~#132 및 #134~#136 범위 완료, #137 로컬 진단 완료. T2 후보 품질 gate 실패·legacy 유지.
   다음 T2.7 모델/예시 조사는 Issue 미등록. GitHub #137 OPEN/동기화 보류로 active 유지, #133 보류.
