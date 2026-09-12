@@ -63,6 +63,7 @@ from companion.day_reflection import (
     SqliteDayReflectionRepository,
 )
 from companion.dialogue.policy import POLICY_NAMES
+from companion.dialogue.schedule_dialogue import ScheduleOutputError
 from companion.lived_continuity import (
     render_lived_continuity,
     summarize_lived_continuity,
@@ -565,7 +566,7 @@ def _run_turn(
             )
         else:
             response = core.respond_to_text(text)
-    except AdapterUnavailableError as error:
+    except (AdapterUnavailableError, ScheduleOutputError) as error:
         print(f"Companion unavailable: {error}", file=stdout)
         return 1
     if not streaming:

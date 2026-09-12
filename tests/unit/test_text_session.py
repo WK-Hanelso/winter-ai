@@ -210,7 +210,9 @@ def test_supervised_child_uses_shared_persistent_core_for_decline_success_and_ch
 
     class Model:
         def generate(self, request):
-            return ChatResult("응, 계속 이야기하자.")
+            return ChatResult(json.dumps({
+                "reply_draft": "응, 계속 이야기하자.", "schedule_proposal": None,
+            }, ensure_ascii=False))
 
     monkeypatch.setattr(bootstrap, "build_chat_model", lambda config: Model())
     output = StringIO()

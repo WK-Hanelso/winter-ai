@@ -45,6 +45,8 @@ class ContextAssembler:
         grounding_instruction: str | None,
         dialogue_instruction: str,
         max_tokens: int,
+        schedule_instruction: str | None = None,
+        schedule_context: tuple[ConversationMessage, ...] = (),
     ) -> ChatRequest:
         # Keep reusable identity/examples/instructions ahead of turn-specific evidence.
         system_messages: list[ConversationMessage] = []
@@ -59,6 +61,8 @@ class ContextAssembler:
             part for part in (grounding_instruction, dialogue_instruction) if part
         )
         system_messages.append(ConversationMessage("system", final_instruction))
+        if schedule_instruction is not None:
+            system_messages.append(ConversationMessage("system", schedule_instruction))
         if snapshot.self_model is not None:
             system_messages.append(
                 ConversationMessage("system", snapshot.self_model.system_message())
@@ -87,10 +91,13 @@ class ContextAssembler:
             system_messages.append(
                 ConversationMessage("system", open_loop_context(snapshot.open_loops))
             )
+        system_messages.extend(schedule_context)
         return ChatRequest(
             prompt=text,
             messages=tuple(system_messages) + recent_messages,
-            max_tokens=self._reply_token_budget or max_tokens,
+            max_tokens=(max(768, self._reply_token_budget or max_tokens)
+                        if schedule_instruction else self._reply_token_budget or max_tokens),
+            response_format={"type": "json_object"} if schedule_instruction else None,
         )
 
     def repair_request(self, request: ChatRequest, draft: str, instruction: str) -> ChatRequest:

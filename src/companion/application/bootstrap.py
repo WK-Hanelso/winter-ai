@@ -41,6 +41,7 @@ from companion.day_reflection import (
 )
 from companion.dialogue.context_assembler import ContextAssembler
 from companion.dialogue.policy import DialoguePolicyError, build_dialogue_policy
+from companion.dialogue.schedule_dialogue import ScheduleDialogue
 from companion.identity import CompanionIdentity, IdentityRepositoryError, JsonIdentityRepository
 from companion.improvements import (
     ImprovementLedgerError,
@@ -72,6 +73,7 @@ from companion.reflection import (
     ReflectionRepositoryError,
     SqliteReflectionRepository,
 )
+from companion.schedules import ScheduleRepository, ScheduleService
 from companion.turn_understanding import (
     SqliteTurnUnderstandingRepository,
     TurnUnderstandingRepositoryError,
@@ -102,6 +104,7 @@ class TextRuntimeConfig:
     backend: str = "local"
     model_url: str = "http://127.0.0.1:18080"
     conversation_db: Path | None = None
+    knowledge_db: Path | None = None
     turn_understanding_db: Path | None = None
     outcome_db: Path | None = None
     reflection_db: Path | None = None
@@ -448,6 +451,15 @@ def build_text_runtime(
             isolate_repair_draft=True,
             fixed_instruction=examples.INSTRUCTION if lean else None,
         )
+    schedule_dialogue = None
+    if config.dialogue_policy == "companion" and config.knowledge_db is not None:
+        if config.conversation_db is None:
+            raise TextRuntimeError("Schedules require a persistent conversation source")
+        config.knowledge_db.parent.mkdir(parents=True, exist_ok=True)
+        schedule_dialogue = ScheduleDialogue(
+            ScheduleService(ScheduleRepository(config.knowledge_db), SystemClock()),
+            config.conversation_db.parent / "schedule_observations.jsonl",
+        )
     core = CompanionCore(
         chat_model,
         repository,
@@ -461,6 +473,7 @@ def build_text_runtime(
         verbal_style_planner=VerbalStylePlanner(style_profile),
         dialogue_policy=dialogue_policy,
         context_assembler=context_assembler,
+        schedule_dialogue=schedule_dialogue,
         claim_observation_recorder=(
             JsonlClaimObservationRecorder(
                 config.conversation_db.parent / "claim_observations.jsonl",

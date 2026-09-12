@@ -90,6 +90,7 @@ def configure_persistent_args(args: argparse.Namespace) -> argparse.Namespace:
     """Shared persistent paths for terminal and supervised Docker sessions."""
     args.identity_path = DATA / "identity.json"
     args.conversation_db = DATA / "conversations.sqlite"
+    args.knowledge_db = DATA / "knowledge.sqlite"
     args.owned_work_db = DATA / "owned_work.sqlite"
     args.memory_db = DATA / "memories.sqlite"
     args.capability_db = DATA / "capabilities.sqlite"

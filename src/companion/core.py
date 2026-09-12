@@ -15,6 +15,15 @@ from companion.dialogue.character_snapshot import CharacterSnapshot
 from companion.dialogue.claim_language import claim_units, has_question_form
 from companion.dialogue.context_assembler import ContextAssembler
 from companion.dialogue.policy import DialoguePolicy, DialoguePolicyInput, LegacyDialoguePolicy
+from companion.dialogue.schedule_dialogue import (
+    INSTRUCTION as SCHEDULE_INSTRUCTION,
+)
+from companion.dialogue.schedule_dialogue import (
+    ScheduleDialogue,
+    ScheduleOutputError,
+    ScheduleTurn,
+    schedule_fact,
+)
 from companion.dialogue_act import classify as classify_dialogue_act
 from companion.dialogue_director import DialogueDirector, DialoguePlan
 from companion.grounding import ClaimEvidence, ClaimViolation, GroundingPolicy, ResponseClaimGate
@@ -98,6 +107,7 @@ class _Turn:
     worker_request: ReadOnlyWorkerRequest | None
     owned_work_request: WorkRequest | None
     conversation_contents: tuple[str, ...] = ()
+    schedule_turn: ScheduleTurn | None = None
 
 
 class CompanionCore:
@@ -138,7 +148,9 @@ class CompanionCore:
         context_assembler: ContextAssembler | None = None,
         dialogue_policy: DialoguePolicy | None = None,
         claim_observation_recorder: Callable[[ClaimObservation], None] | None = None,
+        schedule_dialogue: ScheduleDialogue | None = None,
     ) -> None:
+        self._schedule_dialogue = schedule_dialogue
         self._chat_model = chat_model
         self._conversation_repository = conversation_repository
         self._context_builder = context_builder
@@ -214,6 +226,8 @@ class CompanionCore:
             return self._respond_with_worker(turn)
         if turn.owned_work_request is not None:
             return self._respond_with_owned_work(turn)
+        if turn.schedule_turn is not None:
+            return self._respond_with_schedules(turn)
         if turn.dialogue_plan.behavior == "acknowledge_memory":
             return self._finish(turn, "")
         result = self._chat_model.generate(turn.request)
@@ -250,6 +264,11 @@ class CompanionCore:
             if on_status is not None:
                 on_status("내가 코드와 기록을 확인하고 있어.")
             response = self._respond_with_owned_work(turn)
+            for sentence in split_sentences(response.text):
+                on_sentence(sentence)
+            return response
+        if turn.schedule_turn is not None:
+            response = self._respond_with_schedules(turn)
             for sentence in split_sentences(response.text):
                 on_sentence(sentence)
             return response
@@ -361,7 +380,51 @@ class CompanionCore:
             worker_result=result,
         )
 
-    def _review_and_repair(self, turn: _Turn, draft: str) -> str:
+    def _respond_with_schedules(self, turn: _Turn) -> CompanionResponse:
+        dialogue, state = self._schedule_dialogue, turn.schedule_turn
+        assert dialogue is not None and state is not None
+        final = None
+        error = None
+        try:
+            draft = dialogue.generate(state, self._chat_model, turn.request)
+            receipt = dialogue.execute(state, turn.request.prompt)
+            if receipt is not None and (receipt.status == "needs_clarification"
+                                        or receipt.operation == "query"
+                                        and receipt.status == "applied"):
+                if state.calls < 2:
+                    try:
+                        draft = dialogue.generate(
+                            state, self._chat_model, dialogue.followup_request(state, turn.request),
+                            draft_only=True,
+                        )
+                    except ScheduleOutputError:
+                        draft = ""
+                else:
+                    draft = ""
+                    state.discard_reason = "call_budget_exhausted"
+            draft = dialogue.display(state, draft)
+            if receipt is None:
+                def repair(request: ChatRequest) -> str:
+                    revised = dialogue.generate(state, self._chat_model, request, draft_only=True)
+                    return dialogue.display(state, revised)
+
+                draft = self._review_and_repair(
+                    turn, draft, repair_generate=repair, allow_repair=state.calls < 2,
+                )
+                draft = dialogue.display(state, draft)
+            response = self._finish(turn, draft)
+            final = response.text
+            return response
+        except Exception as exc:
+            error = type(exc).__name__ + ": " + str(exc)
+            raise
+        finally:
+            dialogue.record(state, final, error)
+
+    def _review_and_repair(
+        self, turn: _Turn, draft: str, *,
+        repair_generate: Callable[[ChatRequest], str] | None = None, allow_repair: bool = True,
+    ) -> str:
         raw = draft
         draft = draft.strip()
         style_repair = self._response_reviewer.repair_instruction(
@@ -389,7 +452,10 @@ class CompanionCore:
             if part is not None
         )
         request = self._context_assembler.repair_request(turn.request, draft, repair)
-        repair_raw = self._chat_model.generate(request).text
+        repair_raw = (
+            (repair_generate(request) if repair_generate is not None
+             else self._chat_model.generate(request).text) if allow_repair else draft
+        )
         repaired = repair_raw.strip()
         remaining_claims = self._response_claim_gate.violations(
             repaired, claim_evidence
@@ -420,6 +486,8 @@ class CompanionCore:
         user_message = self._conversation_repository.append(
             ConversationMessage(role="user", content=text)
         )
+        schedule_turn = (self._schedule_dialogue.begin(user_message.id)
+                         if self._schedule_dialogue is not None else None)
         evidence_ref = f"conversation:{user_message.id}"
         candidate_ids: tuple[str, ...] = ()
         candidate_content = extract_explicit_memory_content(text)
@@ -561,6 +629,10 @@ class CompanionCore:
             grounding_instruction=self._grounding_policy.instruction(),
             dialogue_instruction=dialogue_plan.instruction,
             max_tokens=224 if dialogue_act == "explain" else 120,
+            schedule_instruction=SCHEDULE_INSTRUCTION if schedule_turn is not None else None,
+            schedule_context=(self._schedule_dialogue.variable_messages(schedule_turn)
+                              if self._schedule_dialogue is not None
+                              and schedule_turn is not None else ()),
         )
         explicit_worker_request = self._worker_routing_policy.route(text)
         owned_work_request = (
@@ -600,6 +672,7 @@ class CompanionCore:
             experience_id=str(uuid4()),
             worker_request=explicit_worker_request,
             owned_work_request=owned_work_request,
+            schedule_turn=schedule_turn,
         )
 
     def _finish(
@@ -657,6 +730,9 @@ class CompanionCore:
                     "worker_error": worker_error,
                 },
             )
+        if (turn.schedule_turn is not None and self._schedule_dialogue is not None
+                and (turn.worker_request is not None or turn.owned_work_request is not None)):
+            self._schedule_dialogue.record(turn.schedule_turn, response_text)
         return CompanionResponse(
             text=response_text,
             dialogue_act=turn.dialogue_act,
@@ -698,7 +774,12 @@ class CompanionCore:
     ) -> ClaimEvidence:
         return ClaimEvidence(
             user_text=turn.request.prompt,
-            memory_contents=turn.memory_contents,
+            memory_contents=turn.memory_contents + (
+                tuple(schedule_fact(item) for item in (
+                    turn.schedule_turn.receipt.schedules if turn.schedule_turn.receipt is not None
+                    else turn.schedule_turn.context.schedules
+                )) if turn.schedule_turn is not None else ()
+            ),
             memory_write_authorized=bool(
                 turn.candidate_ids or turn.automatic_memory_ids
             ),

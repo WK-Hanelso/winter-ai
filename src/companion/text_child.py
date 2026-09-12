@@ -7,6 +7,7 @@ from companion.adapters.fake import AdapterUnavailableError
 from companion.adapters.stdio_worker import StdioApprovedWorker
 from companion.application.bootstrap import build_text_runtime
 from companion.cli.__main__ import text_runtime_config
+from companion.dialogue.schedule_dialogue import ScheduleOutputError
 from companion.owned_work import OwnedWorkUpdate
 from companion.session_wire import SessionProtocolError, receive, send, string
 from companion.user_cli import build_parser, configure_persistent_args
@@ -46,7 +47,7 @@ def run(argv: list[str], stdin: TextIO, stdout: TextIO) -> int:
             try:
                 response = runtime.core.respond_to_text(text)
                 send(stdout, {"kind": "reply", "id": turn_id, "text": response.text})
-            except AdapterUnavailableError:
+            except (AdapterUnavailableError, ScheduleOutputError):
                 send(stdout, {
                     "kind": "error", "id": turn_id,
                     "text": "답변을 완성하지 못했어. 입력은 보존했고 다시 이야기할 수 있어.",
