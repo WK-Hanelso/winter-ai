@@ -159,6 +159,29 @@ def resolve_time(expression: str) -> str | None:
     return None
 
 
+def cue_matches(cue: object, source_text: str) -> bool:
+    return isinstance(cue, str) and bool(cue.strip()) and cue in source_text
+
+
+def ungrounded_create_fields(fields: Mapping[str, str | None], source_text: str) -> bool:
+    """Every supplied identifying field needs its own current-turn core tokens.
+
+    Strip only common Korean particles, not arbitrary word stems. Titles may contain
+    glue words (보러/가는/가기); dates/times are normalized by the existing service.
+    """
+    glue = {'보러', '가는', '가기', '하는', '하기', '일정', '예약', '약속'}
+    for key in ('title', 'place', 'participants'):
+        value = fields.get(key)
+        if not value or value.casefold() in source_text.casefold():
+            continue
+        tokens = re.findall(r'[가-힣A-Za-z0-9]+', value)
+        tokens = [re.sub(r'(?:에서|으로|이랑|하고|랑|를|을|와|과)$', '', t) for t in tokens]
+        tokens = [t for t in tokens if t and (key != 'title' or t not in glue)]
+        if not tokens or any(t.casefold() not in source_text.casefold() for t in tokens):
+            return True
+    return False
+
+
 class ScheduleRepository:
     """Explicit path only. One connection per operation, no legacy schema migration."""
 
@@ -303,17 +326,19 @@ class ScheduleService:
 
     def execute(
         self, command: ScheduleCommand, *, source_text: str, active_only: bool = False,
+        allow_cue_fallback: bool = False,
     ) -> ChangeReceipt:
         """Query is read-only; other operations atomically check, resolve and write.
 
-        source_text is only used to verify the exact cue and is never persisted.
+        source_text verifies cue or P2.1 field grounding and is never persisted.
+        allow_cue_fallback is selected by Core, never by a model-owned field.
         received_at may be supplied by the future Core, otherwise Clock is sampled once.
         """
         receipt = ChangeReceipt(
             "rejected", command.operation, command.command_id, command.source_message_id,
         )
         try:
-            self._validate(command, source_text, active_only)
+            self._validate(command, source_text, active_only, allow_cue_fallback)
             request: dict[str, object] = {
                 "operation": command.operation, "target": dict(command.target),
                 "fields": dict(command.fields), "expected_revision": command.expected_revision,
@@ -322,6 +347,8 @@ class ScheduleService:
                 "received_at": (_aware(command.received_at).astimezone(UTC).isoformat()
                                 if command.received_at is not None else None),
             }
+            if allow_cue_fallback:
+                request["cue_policy"] = "optional_with_field_grounding"
             if command.operation == "query":
                 now = _aware(command.received_at or self.clock.now())
                 start, end = self._query_dates(command.fields, now)
@@ -359,7 +386,10 @@ class ScheduleService:
             return replace(receipt, status="failed", reason_code="database_error")
 
     @staticmethod
-    def _validate(command: ScheduleCommand, source_text: str, active_only: bool) -> None:
+    def _validate(
+        command: ScheduleCommand, source_text: str, active_only: bool,
+        allow_cue_fallback: bool = False,
+    ) -> None:
         if command.operation not in {"create", "update", "cancel", "query"}:
             raise _Invalid("invalid_operation")
         if not isinstance(command.command_id, str) or not command.command_id.strip():
@@ -374,8 +404,10 @@ class ScheduleService:
         for source in sources:
             if type(source) is not int or source <= 0:
                 raise _Invalid("invalid_source")
-        if (not isinstance(command.cue, str) or not 2 <= len(command.cue.strip()) <= 160
-                or command.cue not in source_text):
+        if not allow_cue_fallback and (
+            not isinstance(command.cue, str) or not 2 <= len(command.cue.strip()) <= 160
+            or command.cue not in source_text
+        ):
             raise _Invalid("invalid_cue")
         if not isinstance(command.fields, Mapping) or not isinstance(command.target, Mapping):
             raise _Invalid("invalid_schema")
@@ -383,6 +415,10 @@ class ScheduleService:
             raise _Invalid("invalid_target")
         if any(v is not None and not isinstance(v, str) for v in command.fields.values()):
             raise _Invalid("invalid_fields")
+        if (allow_cue_fallback and not cue_matches(command.cue, source_text)
+                and command.operation == "create"
+                and ungrounded_create_fields(command.fields, source_text)):
+            raise _Invalid("ungrounded_fields")
         allowed = {"title", "date", "time", "place", "participants"}
         if command.operation == "query":
             if (set(command.fields) - {"date_from", "date_to"}

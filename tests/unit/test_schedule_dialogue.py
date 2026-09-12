@@ -38,7 +38,8 @@ class Model:
 
     def generate(self, request):
         self.requests.append(request)
-        assert request.response_format == {'type': 'json_object'}
+        assert request.response_format['type'] == 'json_schema'
+        assert request.response_format['schema'] == request.response_format['json_schema']['schema']
         if self.queue:
             value = self.queue.pop(0)
             if isinstance(value, Exception):
@@ -193,13 +194,13 @@ def test_scene_6_no_schedule_writes_or_second_call(h):
 
 
 @pytest.mark.parametrize('cue', ['없는 원문 구절', '일', '', None, 123, 'x' * 161])
-def test_invalid_cue_discards_entire_draft(h, cue):
+def test_invalid_cue_uses_current_field_grounding(h, cue):
     h.model.queue.append(output('바꿔놨어. 이제 거기로 가면 되겠네.', 'create',
                                  {'title': '전시', 'date': '내일'}, cue=cue))
     final = h.runtime.core.respond_to_text('내일 전시 일정에 넣어줘').text
     record = h.observations()[-1]
-    assert record['receipt']['reason_code'] == 'invalid_cue' and record['calls'] == 1
-    assert '바꿔놨어' not in final and '거기로' not in final and h.count_history() == 0
+    assert record['receipt']['status'] == 'applied' and record['calls'] == 1
+    assert final and h.count_history() == 1
 
 
 @pytest.mark.parametrize('raw', ['바꿔놨어', '```json\n{}\n```', '{', '[]',
@@ -301,11 +302,13 @@ def test_context_is_bounded_and_cancelled_status_retained(h):
     assert not h.dialogue.begin(100).context.schedules
 
 
-def test_schema_rejects_model_owned_command_fields():
+def test_schema_ignores_and_records_model_owned_command_fields():
     value = json.loads(output('응', 'create', {'title': '전시', 'date': '내일'}, cue='전시'))
     value['schedule_proposal']['command_id'] = 'model-owned'
-    with pytest.raises(ValueError):
-        parse_output(json.dumps(value))
+    warnings = []
+    _, proposal = parse_output(json.dumps(value), warnings=warnings)
+    assert 'command_id' not in proposal
+    assert warnings == ['ignored_key:proposal.command_id']
 
 
 def test_applied_grounded_draft_is_preserved_verbatim(h):
@@ -462,3 +465,116 @@ def test_context_date_window_includes_both_boundaries(h):
     assert {s.date for s in h.dialogue.begin(99).context.schedules} == {
         '2026-08-31', '2026-09-28',
     }
+
+
+@pytest.mark.parametrize('participants,expected', [(['민수', '지수'], '민수, 지수'),
+                                                  ([], ''), ('민수', '민수')])
+def test_participants_normalized_before_service(h, participants, expected):
+    _, record = h.turn('내일 민수랑 지수 독서 모임 저장해줘', 'create',
+                       {'title': '독서 모임', 'date': '내일', 'participants': participants})
+    assert record['proposal']['fields']['participants'] == expected
+    assert h.repo.query()[0].participants_text == expected
+
+
+def test_cancel_fields_and_unknown_keys_are_observation_only(h):
+    h.turn('내일 전시 저장해줘', 'create', {'title': '전시', 'date': '내일'})
+    raw = json.loads(output('전시 취소했어.', 'cancel', {'time': ['invalid but ignored'],
+                           'status': 'planned'}, {'title_hint': '전시', 'id': 'ignored'}))
+    raw['extra'] = 'ignored'
+    raw['schedule_proposal']['command_id'] = 'model-command'
+    del raw['schedule_proposal']['cue']
+    h.model.queue.append(json.dumps(raw))
+    assert h.runtime.core.respond_to_text('전시 취소해줘').text == '전시 취소했어.'
+    record = h.observations()[-1]
+    assert record['receipt']['status'] == 'applied' and record['calls'] == 1
+    assert record['proposal']['fields'] == {} and h.repo.query()[0].status == 'cancelled'
+    assert set(record['warnings']) == {'ignored_key:response.extra',
+        'ignored_key:proposal.command_id', 'ignored_key:target.id', 'ignored_key:fields.status',
+        'ignored_cancel_fields', 'cue_fallback'}
+
+
+@pytest.mark.parametrize('cue', [None, '이전 턴에서 복사한 말'])
+@pytest.mark.parametrize('fields', [
+    {'title': '영화', 'date': '내일'},
+    {'title': '독서 모임', 'date': '내일', 'place': '남쪽 카페'},
+    {'title': '독서 모임', 'date': '내일', 'participants': ['준호']},
+    {'title': '독서 영화 모임', 'date': '내일'},
+])
+def test_ungrounded_create_fields_reject_without_write(h, cue, fields):
+    h.model.queue.append(output('저장했어.', 'create', fields, cue=cue))
+    final = h.runtime.core.respond_to_text('내일 북쪽 카페에서 민수랑 독서 모임 저장해줘').text
+    record = h.observations()[-1]
+    assert record['receipt']['reason_code'] == 'ungrounded_fields'
+    assert record['calls'] == 1 and h.count_history() == 0 and '저장했어' not in final
+
+
+def test_missing_target_and_cue_default_with_grounded_create(h):
+    raw = json.loads(output('독서 모임 남겼어.', 'create',
+                           {'title': '민수랑 독서 모임', 'date': '내일', 'participants': ['민수']}))
+    del raw['schedule_proposal']['target'], raw['schedule_proposal']['cue']
+    h.model.queue.append(json.dumps(raw))
+    h.runtime.core.respond_to_text('내일 민수랑 독서 모임 저장해줘')
+    record = h.observations()[-1]
+    assert record['receipt']['status'] == 'applied' and record['cue_mode'] == 'field_grounding'
+    assert 'default_target' in record['warnings']
+
+
+@pytest.mark.parametrize('operation', ['update', 'cancel', 'query'])
+def test_missing_or_stale_cue_leaves_target_resolution_to_service(h, operation):
+    h.turn('내일 전시 저장해줘', 'create', {'title': '전시', 'date': '내일'})
+    h.model.queue.append(output('응.', operation, {'place': '강변 갤러리'}
+                               if operation == 'update' else {}, {'title_hint': '전시'}, '옛 원문'))
+    h.runtime.core.respond_to_text('전시 요청')
+    record = h.observations()[-1]
+    assert record['receipt']['status'] == 'applied' and record['cue_mode'] == 'service_target'
+    assert record['calls'] == (2 if operation == 'query' else 1)
+
+
+@pytest.mark.parametrize('bad,reason', [
+    ('plain text', 'Expecting value'),
+    ('{"schedule_proposal":null}', 'reply_draft: required nonblank string'),
+    ('{"reply_draft":"응"}', 'schedule_proposal: required null or object'),
+    (output('응', 'create', {'participants': [42]}),
+     'fields.participants: expected string or array of strings'),
+    (output('응', 'create', {'time': 123}), 'fields.time: expected string or null'),
+])
+def test_retry_explains_specific_failure_in_one_system_line(h, bad, reason):
+    h.model.queue.extend([bad, output('안녕!')])
+    assert h.runtime.core.respond_to_text('안녕').text == '안녕!'
+    message = h.model.requests[-1].messages[-1]
+    assert message.role == 'system' and reason in message.content and '\n' not in message.content
+    assert reason in h.observations()[-1]['validation_errors'][0]
+
+
+@pytest.mark.parametrize('draft', [
+    '응, 남겨뒀어. 독서 모임 기대되겠다.',
+    '민수랑 도서관에서 독서 모임이 3시에 있네.',
+    '내일 오후 3시 시청 도서관에서 민수랑 독서 모임이야.',
+])
+def test_natural_applied_draft_need_not_list_receipt(h, draft):
+    final, record = h.turn('내일 민수랑 시청 도서관 독서 모임 저장해줘', 'create',
+                           {'title': '독서 모임', 'date': '내일', 'time': '15:00',
+                            'place': '시청 도서관', 'participants': ['민수']}, draft=draft)
+    assert final == draft and record['discard_reason'] is None and record['calls'] == 1
+
+
+@pytest.mark.parametrize('draft', [
+    '2026-09-16에 저장했어.', '9월 16일이야.', '모레 독서 모임이네.', '금요일에 보자.',
+    '오후 4시야.', '16:00으로 저장했어.', '4시 30분이네.',
+    '남쪽 카페에서 민수랑 독서 모임이야.', '구청 도서관에서 만나.',
+    '준호랑 독서 모임이야.', '참여자는 준호야.', '시간은 아직 안 정했네.',
+    '장소는 남쪽 카페야.',
+])
+def test_explicit_contradictory_applied_drafts_replaced(h, draft):
+    final, record = h.turn('내일 민수랑 시청 도서관 독서 모임 저장해줘', 'create',
+                           {'title': '독서 모임', 'date': '내일', 'time': '15:00',
+                            'place': '시청 도서관', 'participants': ['민수']}, draft=draft)
+    assert final != draft and record['discard_reason'] == 'contradictory_applied_draft'
+    assert record['receipt']['status'] == 'applied' and record['calls'] == 1
+
+
+@pytest.mark.parametrize('draft', ['오후 3시에 보자.', '강변 갤러리에서 볼 전시네.', '민수랑 가는구나.'])
+def test_unknown_fields_cannot_be_invented_in_draft(h, draft):
+    final, record = h.turn('내일 전시 저장해줘', 'create', {'title': '전시', 'date': '내일'},
+                           draft=draft)
+    assert final != draft and record['discard_reason'] == 'contradictory_applied_draft'

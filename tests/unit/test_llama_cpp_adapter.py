@@ -176,3 +176,31 @@ def test_llama_adapter_sends_sampling_on_the_streaming_path(
     assert body["temperature"] == 0.7
     assert body["presence_penalty"] == 1.0
     assert body["max_tokens"] == 300
+
+
+@pytest.mark.parametrize('stream', [False, True])
+def test_llama_adapter_forwards_p21_schema_unchanged(monkeypatch, stream):
+    from companion.dialogue.schedule_dialogue import OUTPUT_SCHEMA, response_format
+
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured['body'] = json.loads(request.data)
+        if stream:
+            return FakeHttpResponse(
+                b'data: {"choices":[{"delta":{"content":"{}"}}]}\n'
+                b'data: [DONE]\n'
+            )
+        return FakeHttpResponse(b'{"choices":[{"message":{"content":"{}"}}]}')
+
+    monkeypatch.setattr('companion.adapters.llama_cpp.urlopen', fake_urlopen)
+    request = ChatRequest(prompt='안녕', response_format=response_format())
+    model = LlamaCppHttpChatModel('http://llm:8080')
+    if stream:
+        assert ''.join(model.generate_stream(request)) == '{}'
+    else:
+        assert model.generate(request).text == '{}'
+    actual = captured['body']['response_format']
+    assert actual == request.response_format
+    assert actual['type'] == 'json_schema'
+    assert actual['schema'] == actual['json_schema']['schema'] == OUTPUT_SCHEMA

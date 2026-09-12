@@ -8,6 +8,7 @@ from companion.contracts import ChatRequest, ConversationMessage
 from companion.conversation_recall import recall_context
 from companion.day_reflection import day_reflection_context
 from companion.dialogue.character_snapshot import CharacterSnapshot
+from companion.dialogue.schedule_dialogue import response_format
 from companion.memory import Memory, current_state_history_context, memory_context
 from companion.open_loops import open_loop_context
 
@@ -97,7 +98,7 @@ class ContextAssembler:
             messages=tuple(system_messages) + recent_messages,
             max_tokens=(max(768, self._reply_token_budget or max_tokens)
                         if schedule_instruction else self._reply_token_budget or max_tokens),
-            response_format={"type": "json_object"} if schedule_instruction else None,
+            response_format=response_format() if schedule_instruction else None,
         )
 
     def repair_request(self, request: ChatRequest, draft: str, instruction: str) -> ChatRequest:

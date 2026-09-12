@@ -9,6 +9,7 @@ import sqlite3
 from typing import cast
 
 from companion.contracts import ChatRequest, ConversationMessage
+from companion.dialogue.schedule_draft import draft_conflicts
 from companion.ports import ChatModel
 from companion.schedules import (
     KST,
@@ -17,7 +18,7 @@ from companion.schedules import (
     Schedule,
     ScheduleCommand,
     ScheduleService,
-    resolve_date,
+    cue_matches,
 )
 
 
@@ -29,11 +30,13 @@ INSTRUCTION = (
     'JSON 객체 하나만 출력해: {"reply_draft": "대답 초안", "schedule_proposal": null}. '
     '일정 요청이면 schedule_proposal은 {"operation": "create|update|cancel|query", '
     '"target": {}, "fields": {}, "cue": "현재 사용자 원문에서 복사한 구절"}야. '
-    '다른 키·코드 펜스·JSON 밖 문장은 금지야. cue는 원문 그대로 2~160자야. '
+    '다른 키·코드 펜스·JSON 밖 문장은 금지야. cue는 선택이며 쓰면 현재 원문을 복사해. '
     '명시적 저장·정정·취소 의도만 제안하고 인용·가정·단순 언급과 일반 수다는 null로 해. '
     'query는 실제 일정 질문에만 써. target은 schedule_id 또는 title_hint이고 '
     'create는 빈 객체, query는 title_hint만 허용해. '
     'fields는 title/date/time/place/participants만 허용하고 cancel은 빈 객체야. '
+    'participants는 문자열이나 문자열 배열이야. cue 없는 create는 제목·장소·참여자의 '
+    '핵심 단어가 현재 사용자 원문에 있어야 해. '
     'query fields는 date_from/date_to 쌍만 허용하며 제목 또는 날짜 범위가 필요해. '
     'create는 제목·날짜가 필요하고 시간 미정은 null로 저장할 수 있어. '
     'update는 변경 항목만 보내고 생략한 값은 보존해. null은 시간·장소·참여자만 지워. '
@@ -41,7 +44,8 @@ INSTRUCTION = (
     '대기 제안을 확정하는 답이면 제시된 후보의 schedule_id와 원래 operation/fields를 이어받아. '
     '사용자가 다른 화제로 넘어가면 대기 제안을 실행하지 말고 null로 반응해. '
     '초안은 아직 실행 결과가 아니야. 로컬 일정만 다루며 업체 예약·외부 캘린더는 바꾸지 않아. '
-    '완료 문장은 확인될 제목·날짜·시간·장소·참여자를 구체적으로 쓰고 시간 미정은 구분해.'
+    '초안은 자연스럽게 쓰고 일정 항목을 전부 나열할 필요는 없어. '
+    '언급한 날짜·시간·장소·참여자는 제안과 일치해야 하고 미정 값은 지어내지 마.'
 )
 # Output diagnostics only: never a keyword classifier for incoming user intent.
 _COMPLETION = re.compile(
@@ -55,7 +59,51 @@ def claims_completion(text: str) -> bool:
     return _COMPLETION.search(text) is not None
 
 
-def parse_output(raw: str) -> tuple[str, dict[str, object] | None]:
+# Keep the grammar structural; operation semantics remain with ScheduleService.
+OUTPUT_SCHEMA: dict[str, object] = {
+    'type': 'object', 'additionalProperties': False,
+    'required': ['reply_draft', 'schedule_proposal'],
+    'properties': {
+        'reply_draft': {'type': 'string', 'minLength': 1},
+        'schedule_proposal': {'anyOf': [
+            {'type': 'null'},
+            {'type': 'object', 'additionalProperties': False,
+             'required': ['operation', 'target', 'fields'],
+             'properties': {
+                 'operation': {'type': 'string', 'enum': ['create', 'update', 'cancel', 'query']},
+                 'target': {'type': 'object', 'additionalProperties': False, 'properties': {
+                     'schedule_id': {'type': 'string'}, 'title_hint': {'type': 'string'},
+                 }},
+                 'fields': {'type': 'object', 'additionalProperties': False, 'properties': {
+                     'title': {'type': 'string'}, 'date': {'type': 'string'},
+                     'time': {'type': ['string', 'null']},
+                     'place': {'type': ['string', 'null']},
+                     'participants': {'anyOf': [
+                         {'type': ['string', 'null']},
+                         {'type': 'array', 'items': {'type': 'string'}},
+                     ]},
+                     'date_from': {'type': 'string'}, 'date_to': {'type': 'string'},
+                 }},
+                 'cue': {'type': 'string'},
+             }},
+        ]},
+    },
+}
+
+
+def response_format() -> dict[str, object]:
+    # llama.cpp b10276 reads json_schema.schema for type=json_schema, not schema.
+    # Retain the requested direct schema as well; both describe the same grammar.
+    schema = json.loads(json.dumps(OUTPUT_SCHEMA))
+    return {'type': 'json_schema', 'schema': schema,
+            'json_schema': {'name': 'schedule_dialogue', 'schema': schema}}
+
+
+def parse_output(
+    raw: str, *, warnings: list[str] | None = None,
+) -> tuple[str, dict[str, object] | None]:
+    observations = warnings if warnings is not None else []
+
     def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
         result: dict[str, object] = {}
         for key, value in pairs:
@@ -64,41 +112,70 @@ def parse_output(raw: str) -> tuple[str, dict[str, object] | None]:
             result[key] = value
         return result
 
+    def known(value: dict[str, object], keys: set[str], path: str) -> dict[str, object]:
+        for key in sorted(value.keys() - keys):
+            observations.append(f'ignored_key:{path}.{key}')
+        return {k: v for k, v in value.items() if k in keys}
+
     payload = json.loads(raw, object_pairs_hook=unique)
-    if (not isinstance(payload, dict) or set(payload) != {'reply_draft', 'schedule_proposal'}
-            or not isinstance(payload['reply_draft'], str) or not payload['reply_draft'].strip()):
-        raise ValueError('invalid response envelope')
+    if not isinstance(payload, dict):
+        raise ValueError('response: expected object with reply_draft and schedule_proposal')
+    payload = known(payload, {'reply_draft', 'schedule_proposal'}, 'response')
+    draft = payload.get('reply_draft')
+    if not isinstance(draft, str) or not draft.strip():
+        raise ValueError('reply_draft: required nonblank string')
+    if 'schedule_proposal' not in payload:
+        raise ValueError('schedule_proposal: required null or object')
     proposal = payload['schedule_proposal']
     if proposal is None:
-        return payload['reply_draft'], None
-    if not isinstance(proposal, dict) or set(proposal) != {'operation', 'target', 'fields', 'cue'}:
-        raise ValueError('invalid proposal schema')
-    operation, target, values = proposal['operation'], proposal['target'], proposal['fields']
-    if (not isinstance(operation, str) or operation not in {'create', 'update', 'cancel', 'query'}
-            or not isinstance(target, dict) or not isinstance(values, dict)
-            or set(target) - {'schedule_id', 'title_hint'}
-            or any(not isinstance(v, str) or not v.strip() for v in target.values())
-            or set(values) - {'title', 'date', 'time', 'place', 'participants',
-                             'date_from', 'date_to'}):
-        raise ValueError('invalid proposal fields')
+        return draft, None
+    if not isinstance(proposal, dict):
+        raise ValueError('schedule_proposal: expected null or object')
+    proposal = known(proposal, {'operation', 'target', 'fields', 'cue'}, 'proposal')
+    operation = proposal.get('operation')
+    if not isinstance(operation, str) or operation not in {'create', 'update', 'cancel', 'query'}:
+        raise ValueError('operation: expected create/update/cancel/query')
+    if 'target' not in proposal:
+        proposal['target'] = {}
+        observations.append('default_target')
+    target, values = proposal['target'], proposal.get('fields')
+    if not isinstance(target, dict) or not isinstance(values, dict):
+        raise ValueError('target and fields: expected objects')
+    target = known(target, {'schedule_id', 'title_hint'}, 'target')
+    if any(not isinstance(v, str) or not v.strip() for v in target.values()):
+        raise ValueError('target: values must be nonblank strings')
+    values = known(values, {'title', 'date', 'time', 'place', 'participants',
+                            'date_from', 'date_to'}, 'fields')
+    if operation == 'cancel':
+        if proposal['fields']:
+            observations.append('ignored_cancel_fields')
+        values = {}
+    participants = values.get('participants')
+    if isinstance(participants, list):
+        if any(not isinstance(v, str) for v in participants):
+            raise ValueError('fields.participants: expected string or array of strings')
+        values['participants'] = ', '.join(participants)
+        observations.append('normalized_participants_array')
     for key, value in values.items():
         if value is None and key in {'time', 'place', 'participants'}:
             continue
         if not isinstance(value, str) or (key not in {'time', 'place', 'participants'}
                                          and not value.strip()):
-            raise ValueError('invalid field type')
+            raise ValueError(f'fields.{key}: expected string'
+                             + (' or null' if key in {'time', 'place', 'participants'} else ''))
     if (operation == 'create' and target
-            or operation in {'update', 'cancel'} and not target
-            or operation == 'update' and not values
-            or operation == 'cancel' and values
             or operation != 'query' and set(values) & {'date_from', 'date_to'}
             or operation == 'query' and (
                 set(target) - {'title_hint'} or set(values) - {'date_from', 'date_to'}
-                or bool(values) and set(values) != {'date_from', 'date_to'}
-                or not target and not values)):
-        raise ValueError('invalid operation schema')
-    # Cue errors produce a rejected receipt, never a retried write interpretation.
-    return payload['reply_draft'], proposal
+                or bool(values) and set(values) != {'date_from', 'date_to'})):
+        raise ValueError('operation fields: create target must be empty; '
+                         'query allows only title_hint and a date_from/date_to pair')
+    # Missing targets/fields are service clarification, not malformed JSON.
+    cue = proposal.get('cue', '')
+    if not isinstance(cue, str):
+        observations.append('invalid_cue_type')
+        cue = ''
+    return draft, dict(operation=operation, target=target, fields=values, cue=cue)
 
 
 def schedule_fact(item: Schedule) -> str:
@@ -130,35 +207,6 @@ def receipt_text(receipt: ChangeReceipt) -> str:
     return '이번 요청은 일정에 반영하지 못했어. 일정으로 남기려는 내용을 다시 알려줘.'
 
 
-def applied_drafts(receipt: ChangeReceipt, received_at: datetime) -> set[str]:
-    """Whole factual clauses derived from the receipt, never a success-substring exemption."""
-    accepted = {receipt_text(receipt)}
-    item = receipt.schedules[0]
-    if receipt.operation == 'cancel':
-        accepted.add(f'내 일정에서 {item.title}은 취소했어.')
-    if receipt.operation == 'create':
-        accepted.update({'일정에 넣어뒀어.', '응, 일정에 넣어뒀어.',
-                         f'{item.title} 일정에 넣어뒀어.'})
-    if receipt.operation == 'update':
-        accepted.update({'일정을 바꿔놨어.', '응, 일정을 바꿔놨어.'})
-        labels = {'title': '제목', 'date': '날짜', 'time': '시간', 'place': '장소',
-                  'participants_text': '참여자'}
-        changed = {k: v for k, v in receipt.changed_fields.items() if k in labels}
-        if len(changed) == 1:
-            key, value = next(iter(changed.items()))
-            if key in labels and value is not None:
-                forms = {value}
-                if key == 'date':
-                    forms.update(word for word in ('오늘', '내일', '모레', '월요일', '화요일',
-                                                   '수요일', '목요일', '금요일', '토요일', '일요일')
-                                 if (day := resolve_date(word, received_at)) is not None
-                                 and day.isoformat() == value)
-                for form in forms:
-                    for particle in ('를', '만'):
-                        for suffix in ('로', '으로'):
-                            accepted.add(f'{item.title} {labels[key]}{particle} '
-                                         f'{form}{suffix} 바꿔놨어.')
-    return accepted
 
 
 @dataclass(frozen=True)
@@ -184,6 +232,9 @@ class ScheduleTurn:
     receipt: ChangeReceipt | None = None
     calls: int = 0
     discard_reason: str | None = None
+    warnings: list[str] = field(default_factory=list)
+    validation_errors: list[str] = field(default_factory=list)
+    cue_mode: str | None = None
 
 
 class ScheduleDialogue:
@@ -233,12 +284,14 @@ class ScheduleDialogue:
             raw = model.generate(request).text
             turn.raw.append(raw)
             try:
-                draft, proposal = parse_output(raw)
-            except (ValueError, TypeError):
+                draft, proposal = parse_output(raw, warnings=turn.warnings)
+            except (ValueError, TypeError) as error:
+                reason = str(error).replace("\n", " ")
+                turn.validation_errors.append(reason)
                 turn.discard_reason = 'invalid_json'
                 request = replace(request, messages=request.messages + (ConversationMessage(
                     'system',
-                    '앞선 출력은 무효야. 초안을 인용하지 말고 지정 JSON 객체 하나만 다시 써.',
+                    f'앞선 출력 검사 실패: {reason}. 지정 JSON 객체 하나만 다시 써.',
                 ),))
                 continue
             turn.drafts.append(draft)
@@ -262,11 +315,10 @@ class ScheduleDialogue:
         cue = proposal['cue']
         base = ChangeReceipt('rejected', operation, f'schedule:{turn.source_message_id}:0',
                              turn.source_message_id)
-        if (not isinstance(cue, str) or not 2 <= len(cue.strip()) <= 160
-                or cue not in source_text):
-            turn.receipt = replace(base, reason_code='invalid_cue')
-            self.pending = None
-            return turn.receipt
+        turn.cue_mode = ('exact_cue' if cue_matches(cue, source_text)
+                         else 'field_grounding' if operation == 'create' else 'service_target')
+        if turn.cue_mode != 'exact_cue':
+            turn.warnings.append('cue_fallback')
         original_id = None
         received_at = turn.received_at
         revision = 0 if operation != 'query' else None
@@ -295,10 +347,12 @@ class ScheduleDialogue:
                 turn.receipt = replace(base, status='failed', reason_code='database_error')
                 return turn.receipt
         command = ScheduleCommand(
-            operation, base.command_id, turn.source_message_id, cue, values, target, revision,
-            received_at, original_id,
+            operation, base.command_id, turn.source_message_id, cast(str, cue), values, target,
+            revision, received_at, original_id,
         )
-        turn.receipt = self.service.execute(command, source_text=source_text)
+        turn.receipt = self.service.execute(
+            command, source_text=source_text, allow_cue_fallback=True,
+        )
         self.pending = ((command, turn.receipt)
                         if turn.receipt.status == 'needs_clarification' else None)
         return turn.receipt
@@ -332,11 +386,9 @@ class ScheduleDialogue:
             turn.discard_reason = receipt.reason_code
             return fallback
         if receipt.status == 'applied' and receipt.operation != 'query':
-            # Exact receipt-derived sentences are provable. Arbitrary Korean paraphrases
-            # are not made safe by matching a date or deleting just a success clause.
-            if draft in applied_drafts(receipt, turn.received_at):
+            if not draft_conflicts(draft, receipt, turn.received_at):
                 return draft
-            turn.discard_reason = 'unverified_applied_draft'
+            turn.discard_reason = 'contradictory_applied_draft'
             return fallback
         allowed_numbers = {v for item in receipt.schedules for v in (item.date, item.time) if v}
         extra_numbers = set(re.findall(r'\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}', draft)) - allowed_numbers
