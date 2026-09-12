@@ -18,14 +18,17 @@ class ContextAssembler:
     _examples: tuple[ConversationMessage, ...] = ()
     _reply_token_budget: int | None = None
     _isolate_repair_draft: bool = False
+    _fixed_instruction: str | None = None
 
     def __init__(
         self, examples: tuple[ConversationMessage, ...] = (),
         *, reply_token_budget: int | None = None, isolate_repair_draft: bool = False,
+        fixed_instruction: str | None = None,
     ) -> None:
         if reply_token_budget is not None and reply_token_budget < 1:
             raise ValueError("reply token budget must be positive")
         self._examples = examples
+        self._fixed_instruction = fixed_instruction
         self._reply_token_budget = reply_token_budget
         self._isolate_repair_draft = isolate_repair_draft
 
@@ -77,9 +80,9 @@ class ContextAssembler:
             system_messages.append(
                 ConversationMessage("system", open_loop_context(snapshot.open_loops))
             )
-        if style_instruction is not None:
+        if style_instruction is not None and self._fixed_instruction is None:
             system_messages.append(ConversationMessage("system", style_instruction))
-        final_instruction = "\n\n".join(
+        final_instruction = self._fixed_instruction or "\n\n".join(
             part for part in (grounding_instruction, dialogue_instruction) if part
         )
         system_messages.append(ConversationMessage("system", final_instruction))

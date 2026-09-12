@@ -215,3 +215,46 @@ def test_close_reports_pending_work_without_cancelling_it(monkeypatch):
     assert not runtime.close()
     assert not runtime.close(timeout=0.01)
     assert timeouts == [0.0, 0.01]
+
+
+def test_lean_examples_are_opt_in_and_keep_shared_evidence(monkeypatch):
+    from configs.dialogue import companion_examples, companion_examples_lean
+
+    class Capture:
+        def generate(self, request):
+            self.request = request
+            return ChatResult("응.")
+
+    for option, examples in ((None, companion_examples), ("lean", companion_examples_lean)):
+        monkeypatch.delenv("WINTER_COMPANION_EXAMPLES", raising=False)
+        if option:
+            monkeypatch.setenv("WINTER_COMPANION_EXAMPLES", option)
+        model = Capture()
+        runtime = build_text_runtime(TextRuntimeConfig(
+            dialogue_policy="companion", interactive=False,
+        ), chat_model=model)
+        runtime.resources.repository.append(ConversationMessage("user", "실제 대화 근거"))
+        runtime.core.respond_to_text("안녕")
+        messages = model.request.messages
+        assert all(ConversationMessage("user", user) in messages for user, _ in examples.EXAMPLES)
+        assert ConversationMessage("user", "실제 대화 근거") in messages
+        assert model.request.max_tokens == 384
+        if option:
+            assert ConversationMessage("system", companion_examples_lean.INSTRUCTION) in messages
+            assert ConversationMessage("user", companion_examples.EXAMPLES[0][0]) not in messages
+        assert runtime.close()
+
+
+def test_context_message_environment_override_reaches_core(monkeypatch):
+    monkeypatch.delenv("WINTER_CONTEXT_MAX_MESSAGES", raising=False)
+    assert TextRuntimeConfig().context_max_messages == 12
+    assert TextRuntimeConfig(context_max_messages=7).context_max_messages == 7
+    monkeypatch.setenv("WINTER_CONTEXT_MAX_MESSAGES", "30")
+    config = TextRuntimeConfig(backend="fake", context_max_messages=12)
+    assert config.context_max_messages == 30
+    runtime = build_text_runtime(config)
+    assert runtime.core._context_builder.message_limit == 30
+    assert runtime.close()
+    monkeypatch.setenv("WINTER_CONTEXT_MAX_MESSAGES", "0")
+    with pytest.raises(ValueError, match="must be positive"):
+        TextRuntimeConfig()

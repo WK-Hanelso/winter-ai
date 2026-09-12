@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NAME=winter-text-llm
 PROFILE=rtx2060-hybrid-v1
 URL=http://127.0.0.1:18081
+CTX_SIZE=${WINTER_TEXT_CTX_SIZE:-4096}
 IMAGE=${WINTER_TEXT_LLM_IMAGE:-winter-ai:rtx2060-llama-8e7f22b}
 MODEL=${WINTER_TEXT_MODEL_PATH:-$ROOT_DIR/data/research/rtx2060-hybrid/model/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf}
 
@@ -63,7 +64,7 @@ if ! docker container inspect "$NAME" >/dev/null 2>&1; then
     -e GGML_CUDA_DISABLE_GRAPHS=1 --log-opt max-size=5m --log-opt max-file=2 \
     --mount "type=bind,src=$MODEL,dst=/model.gguf,readonly" \
     "$image_id" --model /model.gguf --n-gpu-layers 99 --n-cpu-moe 44 \
-    --ctx-size 4096 --parallel 1 --threads 4 --threads-batch 4 \
+    --ctx-size "$CTX_SIZE" --parallel 1 --threads 4 --threads-batch 4 \
     --batch-size 128 --ubatch-size 32 --host 127.0.0.1 --port 18081 >/dev/null
 fi
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 
 from companion.adapters.codex_gateway_worker import CodexTypedProjectWorker
@@ -122,6 +123,14 @@ class TextRuntimeConfig:
     codex_model: str = "gpt-5.4"
     interactive: bool = True
     project_root: Path = field(default_factory=Path.cwd)
+
+    def __post_init__(self) -> None:
+        override = os.environ.get("WINTER_CONTEXT_MAX_MESSAGES")
+        if override is not None:
+            value = int(override)
+            if value < 1:
+                raise ValueError("WINTER_CONTEXT_MAX_MESSAGES must be positive")
+            object.__setattr__(self, "context_max_messages", value)
 
 
 @dataclass(frozen=True)
@@ -407,33 +416,36 @@ def build_text_runtime(
         owned_work_executor = None
     context_assembler = None
     if config.dialogue_policy == "companion":
-        from configs.dialogue.companion_examples import (
-            CORRECTION_INSTRUCTION,
-            CORRECTION_SCENES,
-            EXAMPLES,
-            MAX_REPLY_TOKENS,
-            REAL_DIALOGUE_INSTRUCTION,
-        )
+        from types import ModuleType
+
+        from configs.dialogue import companion_examples
+
+        examples: ModuleType = companion_examples
+
+        lean = os.environ.get("WINTER_COMPANION_EXAMPLES") == "lean"
+        if lean:
+            from configs.dialogue import companion_examples_lean as examples
 
         example_messages = [ConversationMessage(
             "system", "다음은 말하는 방식을 보여주는 가상 예시야. "
             "실제 천우의 정보나 겨울이의 경험이 아니며 기억으로 사용하지 마.",
         )]
-        for user, assistant in EXAMPLES:
+        for user, assistant in examples.EXAMPLES:
             example_messages.extend((ConversationMessage("user", user),
                                      ConversationMessage("assistant", assistant)))
-        example_messages.append(ConversationMessage("system", CORRECTION_INSTRUCTION))
-        for scene in CORRECTION_SCENES:
+        example_messages.append(ConversationMessage("system", examples.CORRECTION_INSTRUCTION))
+        for scene in examples.CORRECTION_SCENES:
             example_messages.append(ConversationMessage("system", "독립된 가상 정정 장면 시작."))
             for user, assistant in scene:
                 example_messages.extend((ConversationMessage("user", user),
                                          ConversationMessage("assistant", assistant)))
         example_messages.append(ConversationMessage(
-            "system", REAL_DIALOGUE_INSTRUCTION,
+            "system", examples.REAL_DIALOGUE_INSTRUCTION,
         ))
         context_assembler = ContextAssembler(
-            tuple(example_messages), reply_token_budget=MAX_REPLY_TOKENS,
+            tuple(example_messages), reply_token_budget=examples.MAX_REPLY_TOKENS,
             isolate_repair_draft=True,
+            fixed_instruction=examples.INSTRUCTION if lean else None,
         )
     core = CompanionCore(
         chat_model,

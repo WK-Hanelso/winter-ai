@@ -76,3 +76,39 @@ def test_recall_has_no_gap_when_recent_window_shrinks(tmp_path, message_limit, c
     ))
     core.respond_to_text("도예 수업에서 뭐 만들었지?")
     assert any("파란 컵" in message.content for message in requests[0].messages)
+
+
+@pytest.mark.parametrize("with_exclusions", [False, True])
+def test_context_exclusions_filter_windows_and_search_but_preserve_audit(
+    tmp_path, with_exclusions,
+):
+    path = tmp_path / "history.sqlite"
+    repo = SqliteConversationRepository(path)
+    messages = (
+        ("user", "도예 첫 수업"), ("assistant", "첫 답변"),
+        ("user", "도예 제외할 질문"), ("assistant", "제외 질문의 답변"),
+        ("user", "도예 두 번째 수업"), ("assistant", "제외할 답변"),
+        ("user", "최근 소식"), ("assistant", "최근 답변"),
+        ("user", "도예 제외할 최신 질문"),
+    )
+    ids = [repo.append(ConversationMessage(*m)).id for m in messages]
+    if with_exclusions:
+        with sqlite3.connect(path) as connection:
+            connection.execute(
+                "CREATE TABLE conversation_context_exclusions (message_id INTEGER PRIMARY KEY)"
+            )
+            connection.executemany("INSERT INTO conversation_context_exclusions VALUES (?)",
+                                   [(ids[i],) for i in (1, 2, 5, 8)])
+    # A table installed after construction must be visible, including after restart.
+    for repository in (repo, SqliteConversationRepository(path)):
+        assert repository.list_messages() == tuple(ConversationMessage(*m) for m in messages)
+        expected_recent = messages[6:8] if with_exclusions else messages[7:9]
+        assert repository.recent_messages(2) == tuple(
+            ConversationMessage(*m) for m in expected_recent
+        )
+        found = repository.search_messages(("도예",), exclude_latest=2, limit=8)
+        expected = (messages[0], messages[4]) if with_exclusions else messages[:6]
+        assert found == tuple(ConversationMessage(*m) for m in expected)
+        all_found = repository.search_messages(("도예",), exclude_latest=0, limit=8)
+        expected_all = expected if with_exclusions else (*messages[:6], messages[8])
+        assert all_found == tuple(ConversationMessage(*m) for m in expected_all)

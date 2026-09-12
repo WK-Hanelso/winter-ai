@@ -154,3 +154,16 @@ def test_daemon_failure_is_not_reported_as_stopped(
     assert result.returncode == 1
     assert "Docker에 연결할 수 없어" in result.stderr
     assert not any(cmd[0] in {"run", "stop", "rm"} for cmd in calls(tmp_path))
+
+
+def test_context_size_environment_only_changes_server_context(
+    runtime: Launcher, tmp_path: Path,
+) -> None:
+    assert runtime("text", "--prompt", "hello", WINTER_TEXT_CTX_SIZE="").returncode == 0
+    server = next(cmd for cmd in calls(tmp_path) if cmd[:2] == ["run", "-d"])
+    assert server[server.index("--ctx-size") + 1] == "4096"
+    assert runtime("stop").returncode == 0
+    assert runtime("text", "--prompt", "hello", WINTER_TEXT_CTX_SIZE="8192").returncode == 0
+    server = [cmd for cmd in calls(tmp_path) if cmd[:2] == ["run", "-d"]][-1]
+    assert server[server.index("--ctx-size") + 1] == "8192"
+    assert server[server.index("--parallel") + 1] == "1"
