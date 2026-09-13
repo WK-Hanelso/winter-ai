@@ -1,5 +1,7 @@
 schema_version = 1
 current_phase = "text_first_foundation"
+# 2026-09-13: P2 six-scene v4 verified; seven-day use observation underway; next P3 character dialogue.
+# User observation pending, not quality acceptance; maturity/active issue unchanged.
 active_issue = 137
 # #137 local diagnostic complete; GitHub remains OPEN. T2.7 issue not registered yet.
 # Keep this scope until the next issue/remote synchronization is explicitly settled.
@@ -45,6 +47,10 @@ status_documents = [
 id = "text_first_foundation"
 maturity = "contract"
 evidence = [
+  "tests/unit/test_test_storage_guard.py", "tests/unit/test_claim_observations.py",
+  "tests/unit/test_schedules.py", "tests/unit/test_schedule_dialogue.py",
+  "tests/unit/test_schedule_p23.py", "tests/unit/test_schedule_p25.py",
+  "tests/unit/test_schedule_p26.py", "docs/adr/0044-typed-schedule-dialogue.md",
   "docs/adr/0041-host-worker-inbox.md",
   "tests/unit/test_background_text.py",
   "tests/unit/test_memory_evidence_fallback.py",

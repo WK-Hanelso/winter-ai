@@ -25,6 +25,12 @@ Memory와 시간축을 공유한다.
 
 ### 텍스트 실행
 
+2026-09-13: ctx 기본값은 8192이며 P2 실모델 6장면 v4 검증 완료 후 7일 실사용 관찰 중이다. **사용자 관찰 대기 · 품질 수락 아님**.
+일정은 말로 생성·변경·취소·조회하며 `data/knowledge.sqlite`에 저장한다. 후보가 둘 이상이면 되묻고 모델은 SQL을 만들지 않는다.
+claim 게이트의 memory/body/outside 검사는 차단 대신 `claim_observations.jsonl`에 기록한다. capability/improvement_state 차단은 유지한다.
+프롬프트는 Identity → 예시 → 고정 지침·일정 계약 → 가변 상태·기억·일정 → 최근 대화 순서다.
+테스트는 import 전에 기본 저장 경로를 `/tmp`로 격리하고, 쓰기 가능한 저장소 `data/`의 DB·WAL·Identity 전후 해시로 개인 DB 변경을 검출한다.
+
 현재 텍스트 초안은 `companion` 구성으로 실행한다. 이름은 저장된 Identity에서 읽고,
 모델 오류가 나도 대화창을 유지한다. 토큰 한도로 중간에 끊긴 응답은 완료된 답변으로
 저장하지 않는다. 기존 Host/Voice 경로와 개인 데이터 형식은 보존한다.
@@ -651,7 +657,7 @@ Identity, active Belief 또는 방금 대화에 근거한 현재 반응·선택�
 
 | 구성요소 | 현재 선택 | 연결 |
 | --- | --- | --- |
-| Conversation LLM | Orin local llama-server, `A.X-4.0-Light-Q4_K_M.gguf` | SSH loopback `127.0.0.1:18080` |
+| Conversation LLM (text) | Host Docker `winter-text-llm`, Qwen3-30B-A3B-Instruct-2507 Q4_K_M, RTX2060 + RAM, ctx 8192 | loopback `127.0.0.1:18081` |
 | STT | SenseVoiceSmall Q8 GGUF CPU | localhost `127.0.0.1:8095` |
 | TTS/Voice | Chatterbox Multilingual V3, S3Gen Reference direct | localhost `127.0.0.1:8093` |
 | Legacy STT | whisper.cpp | 명시적 fallback `127.0.0.1:8094` |

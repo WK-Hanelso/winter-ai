@@ -1,5 +1,9 @@
 # Text-first Winter 구현 TODO
 
+2026-09-13 현재 단계: P2 실모델 6장면 v4 검증 완료, ctx 8192·실제 `data/`로 7일 실사용 관찰 중(2026-09-13~).
+다음은 P3 캐릭터 대화다. **사용자 관찰 대기 · 품질 수락 아님**이며 기능 성숙도는 올리지 않는다.
+아래 T번호·Issue·체크박스는 과거 공개 기록으로 보존한다. 이번 동기화에서 새 Issue 번호는 부여하지 않는다.
+
 현재 초안 배포 인계는 로컬 `data/research/draft-delivery.md`를 먼저 확인한다.
 같은 대화창의 승인형 Worker 연결과 명시적 기억 저장 후속은
 `data/research/session-worker-delivery.md`에 이어 기록한다. 공개 Issue 상태를 임의로 변경하지 않는다.

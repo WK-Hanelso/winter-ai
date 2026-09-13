@@ -11,6 +11,10 @@
 
 ## Text-first — 현재 최우선 (2026-09-10)
 
+2026-09-13 현재 단계: P2 실모델 6장면 v4 검증 완료, ctx 8192·실제 `data/`로 7일 실사용 관찰 중(2026-09-13~).
+다음은 P3 캐릭터 대화다. **사용자 관찰 대기 · 품질 수락 아님**이며 text maturity는 contract로 유지한다.
+아래 T/Issue 순서는 과거 공개 기록이다. 이번 동기화로 새 Issue를 만들거나 Voice·Worker의 우선순위를 바꾸지 않는다.
+
 `./winter text` 초안 경로는 이름 표시·오류 후 세션 유지·불완전 응답 차단을 포함한다.
 최근 로컬 배포와 판단은 Git에서 제외한 `data/research/draft-delivery.md`에 인계한다.
 대화창의 건별 승인형 read-only Worker를 연결했으며 write Worker/Voice 보류는 유지한다.

@@ -12,6 +12,11 @@
 
 ## 2026-09-10 우선순위 전환
 
+2026-09-13 P-1~P2: 테스트 저장소 격리, claim 관찰 전환, 프롬프트 순서 정리와 typed 일정 대화를 반영했다.
+P2 실모델 6장면 v4 검증 완료; ctx 8192·실제 `data/` 사용 승인 뒤 7일 실사용 관찰 중(2026-09-13~). **사용자 관찰 대기 · 품질 수락 아님**, text maturity는 contract 유지.
+근거(`tests/unit/`): `test_test_storage_guard.py`, `test_claim_observations.py`, `test_schedules.py`,
+`test_schedule_dialogue.py`, `test_schedule_p23.py`, `test_schedule_p25.py`; 계약은 [ADR 0044](adr/0044-typed-schedule-dialogue.md).
+
 텍스트 초안의 런타임 배포와 대화 검토는 로컬 인계 문서에 기록한다. 실행 가능한 초안과
 사용자 품질 수락을 구분하며 사용자 체감은 계속 **사용자 관찰 대기**다. 응답 중단 검출과
 세션 복구를 추가했지만 장기 기억 정확성·자연스러움 전체의 완료를 의미하지 않는다.
@@ -262,10 +267,9 @@ diff scope 검사를 다음 고도화로 남긴다.
 | Worker / Level 3 | 2, read-only 제한 운영 + write Shadow | #121~#123의 lifecycle, isolated proposal와 source recovery를 #124 exact coordinator가 결합. #125는 isolated Worker와 source-adoption verifier가 공용 bubblewrap을 사용하게 하고, 정상 exact cycle과 실제 hostile probe에서 read-only source, private `/tmp`, no-network/no-HOME/credential, fixed argv, timeout/no-host-fallback을 검증했다. source/host write·symlink secret·loopback/external network 공격과 timeout 뒤 background child는 차단됐다. 전체 792 tests, Ruff, mypy 171 files 통과 | 실제 Codex write Worker, 운영 source, user route, runtime capability는 미연결. cross-DB atomic transaction·hostile concurrent writer lock·CPU/memory limit 없음. Worker 실행 뒤 patch 저장 전 crash는 수동 복구 | 천우가 고른 실제 작은 capability를 별도 승인과 사람 검토 아래 전체 cycle로 완주 |
 | Winter Work Orchestration | 3, Shadow + actual-phone canary | #126은 동기식 98.77초 turn을 single-job background coordinator와 Web completion inbox로 분리했다. 실제 동일 task에서 접수 text 0.000초, 직후 일반 Local 대화 2.138초, 접수 문장 Chatterbox 2.450초, 전체 82.83초. Local review는 report claim 중 핵심·추천만 선택하고 evidence ID를 코드가 계산해 새 사실 추가를 차단. SQLite job/inbox는 actual child-process crash 뒤 running request와 미전달 결과를 복구한다. queued foreground-first scheduler는 작업 접수·대화 종료·폰 녹음 시작부터 6초 quiet window를 보장하며 실제 `:18080` 겹침 probe에서 foreground 0.498초, background 6.855초였다. 2026-08-21 제한 drop-in 배포와 loopback/Tailscale HTTPS health 확인. source 불변, offline 820 tests·Ruff·mypy 107 files 통과 | 실제 phone 동시 대화 표본은 아직 0건이고 결과는 현재 자료로 다음 한 가지를 확정하지 못해 partial. 이미 시작한 Local generation preemption·lease heartbeat 미검증. SQLite 결과와 Conversation append는 단일 transaction이 아님. 선택해 읽은 project text는 외부 Codex 처리 경로 사용 | phone에서 작업 접수→즉시 후속 대화→완료 복귀 측정·사람 판정 뒤 동일 task 유용성 gate를 거쳐 20 task로 이동 |
 
-현재 검증 기준선은 2026-08-20의 오프라인 test 820개, Ruff 전체와
-`mypy src` 107개 source file 통과다. 실제 model probe와 Voice latency는
-offline 회귀와 분리해 각
-기능 행의 근거로 기록한다.
+현재 검증 기준선은 검토자의 2026-09-13 Docker offline **1484 passed**다(P2.6 수정 전).
+아래·위 과거 수치는 당시 근거로 보존한다. 실제 model probe와 Voice latency는
+offline 회귀와 분리하며, 테스트 통과는 사용자 대화 품질 수락이 아니다.
 
 Issue #114의 Web ingress safety는 loopback 기본값·명시적 systemd host·16 MiB body limit과
 HTTP 400/411/413 offline 회귀를 구현했다. 설치된 user service, 실제 loopback socket,
