@@ -62,6 +62,10 @@ class LlamaCppHttpChatModel:
             "max_tokens": request.max_tokens or MAX_TOKENS,
             **SAMPLING,
             "presence_penalty": self.presence_penalty,
+            # Qwen3 templates may open a hidden <think> block; those tokens are billed
+            # as completion tokens and were measured at up to 485 per turn while the
+            # visible answer was ~40. The 2507 Instruct model needs no thinking.
+            "chat_template_kwargs": {"enable_thinking": False},
         }
         if self.min_p is not None:
             payload["min_p"] = self.min_p

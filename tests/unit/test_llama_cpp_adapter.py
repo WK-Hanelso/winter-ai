@@ -53,6 +53,7 @@ def test_llama_adapter_posts_openai_compatible_request(monkeypatch: pytest.Monke
         "top_p": 0.8,
         "top_k": 20,
         "presence_penalty": 1.0,
+        "chat_template_kwargs": {"enable_thinking": False},
     }
     assert captured["timeout"] == 120.0
 

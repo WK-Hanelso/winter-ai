@@ -65,6 +65,7 @@ if ! docker container inspect "$NAME" >/dev/null 2>&1; then
     --mount "type=bind,src=$MODEL,dst=/model.gguf,readonly" \
     "$image_id" --model /model.gguf --n-gpu-layers 99 --n-cpu-moe 44 \
     --ctx-size "$CTX_SIZE" --parallel 1 --threads 4 --threads-batch 4 \
+    --reasoning-budget 0 \
     --batch-size 128 --ubatch-size 32 --host 127.0.0.1 --port 18081 >/dev/null
 fi
 
