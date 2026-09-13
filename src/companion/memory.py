@@ -583,23 +583,30 @@ class ActiveMemoryRetriever:
 
 
 def memory_context(memories: tuple[Memory, ...]) -> str:
-    labels = {
-        "semantic": "사실", "relationship": "관계", "project": "프로젝트",
-        "preference": "선호", "decision": "결정", "procedural": "지원 방식",
-        "episodic": "경험",
-    }
-    groups: dict[str, list[str]] = {}
+    background: list[str] = []
+    states: list[str] = []
     for memory in memories:
-        label = ("현재 상태" if memory.kind.startswith(_CURRENT_STATE_PREFIX)
-                 else labels.get(memory.kind, memory.kind))
-        groups.setdefault(label, []).append(memory.content)
-    return (
-        "천우가 직접 말해 활성화된 관련 기억이야. "
-        "[현재 상태]는 천우의 영구 특성이 아니라 지금의 상태이며, "
-        "같은 주제의 새 상태가 들어오면 최신 값으로 교체돼:\n"
-    ) + "\n".join(
-        f"[{label}]\n" + "\n".join(f"- {content}" for content in contents)
-        for label, contents in groups.items()
+        if memory.kind.startswith(_CURRENT_STATE_PREFIX):
+            states.append(memory.content)
+        else:
+            background.append(_memory_sentence(memory.content))
+    if states:
+        background.append(_memory_sentence("요즘은 " + ", ".join(states)))
+    return MEMORY_BACKGROUND_INSTRUCTION + "\n" + " ".join(background)
+
+
+MEMORY_BACKGROUND_INSTRUCTION = (
+    "아래는 네가 이미 아는 천우의 배경이야. 물어보면 지금 대화에 맞는 한두 가지만 "
+    "골라 네 말로 짧게 말하고, 목록처럼 읊거나 전부 말하지 마. "
+    "안 물어보면 굳이 꺼내지 마."
+)
+
+
+def _memory_sentence(content: str) -> str:
+    # Add separators only: never paraphrase, strip or truncate source text.
+    # Embedded source newlines/punctuation remain intact for exact provenance.
+    return content if content.rstrip().endswith((".", "!", "?", "。", "！", "？")) else (
+        content + "."
     )
 
 

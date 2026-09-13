@@ -7,7 +7,12 @@ import pytest
 from companion.adapters.fake import InMemoryConversationRepository
 from companion.contracts import ChatResult
 from companion.core import CompanionCore
-from companion.memory import ActiveMemoryRetriever, Memory, memory_context
+from companion.memory import (
+    MEMORY_BACKGROUND_INSTRUCTION,
+    ActiveMemoryRetriever,
+    Memory,
+    memory_context,
+)
 
 STAMP = "2026-09-13T00:00:00+00:00"
 # Same shape as the reported ten-memory store; these are synthetic facts/questions.
@@ -57,9 +62,13 @@ def test_small_store_includes_all_ten_in_real_core_prompt(question):
                          memory_retriever=ActiveMemoryRetriever(Store(items)))
     core.respond_to_text(question)
     blocks = [m.content for m in model.requests[0].messages if m.role == "system"]
-    block = next(b for b in blocks if "활성화된 관련 기억" in b)
+    block = next(b for b in blocks if b.startswith(MEMORY_BACKGROUND_INSTRUCTION))
     assert all(memory.content in block for memory in items)
-    assert "[사실]" in block and "[현재 상태]" in block
+    instruction, paragraph = block.split("\n", 1)
+    assert instruction == MEMORY_BACKGROUND_INSTRUCTION
+    assert "[" not in paragraph and "\n" not in paragraph
+    assert not paragraph.startswith("- ")
+    assert paragraph.endswith("요즘은 오늘 조금 피곤하다, 요즘 업무가 많다.")
     assert all(memory.id not in block.splitlines() for memory in items)
 
 
@@ -118,13 +127,35 @@ def test_exact_budget_includes_everything_and_overflow_never_truncates_sources()
     assert all(m in items for m in selected)
 
 
-def test_grouped_block_preserves_exact_text_and_unknown_kind():
+def test_prose_preserves_exact_source_even_with_whitespace_and_unknown_kind():
     items = memories((("semantic", "  원문\n줄바꿈  "), ("project", "다른 종류"),
                       ("semantic", "두 번째 사실"), ("custom", "알 수 없는 종류")))
     block = memory_context(items)
-    assert block.count("[사실]") == 1
-    assert "[사실]\n-   원문\n줄바꿈  \n- 두 번째 사실\n[프로젝트]" in block
-    assert "[custom]\n- 알 수 없는 종류" in block
+    assert all(m.content in block for m in items)
+    assert block.endswith("  원문\n줄바꿈  . 다른 종류. 두 번째 사실. 알 수 없는 종류.")
+    assert "[custom]" not in block and "[사실]" not in block
+
+
+def test_interleaved_states_move_to_one_final_sentence_without_changing_selection():
+    items = memories((("current_state:one", "공부가 버겁다"),
+                      ("semantic", "1990년생이다."),
+                      ("current_state:two", "운동을 시작했다"),
+                      ("semantic", "예시 연구소 선임연구원이다")))
+    selected = ActiveMemoryRetriever(Store(items)).retrieve("do you know about me?")
+    assert selected == items
+    assert memory_context(selected) == (
+        MEMORY_BACKGROUND_INSTRUCTION + "\n1990년생이다. 예시 연구소 선임연구원이다. "
+        "요즘은 공부가 버겁다, 운동을 시작했다."
+    )
+
+
+@pytest.mark.parametrize("facts,ending", [
+    ((("semantic", "예시 연구원이다"),), "예시 연구원이다."),
+    ((("current_state:one", "잠깐 쉬는 중"),), "요즘은 잠깐 쉬는 중."),
+    ((("current_state:one", "첫 문장. 다음 문장!"),), "요즘은 첫 문장. 다음 문장!"),
+])
+def test_background_or_state_only_does_not_add_empty_sections(facts, ending):
+    assert memory_context(memories(facts)) == MEMORY_BACKGROUND_INSTRUCTION + "\n" + ending
 
 
 def test_small_store_all_inclusion_also_applies_to_current_states():

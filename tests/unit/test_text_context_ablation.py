@@ -30,7 +30,8 @@ def test_pairs_keep_exact_history_facts_and_budget(tmp_path, scene):
     if scene["id"] == "known_memory":
         assert pair.evidence.memory_contents == ("나는 결론부터 듣는 설명을 좋아해",)
         for request in (a, b):
-            assert any("[선호]" in m.content for m in request.messages)
+            assert any(m.role == "system" and m.content.endswith(
+                "\n나는 결론부터 듣는 설명을 좋아해.") for m in request.messages)
     else:
         assert pair.evidence.memory_contents == ()
 

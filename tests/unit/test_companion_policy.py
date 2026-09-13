@@ -1,6 +1,7 @@
 """Synthetic style examples are instructions, never user history or evidence."""
 
 from configs.dialogue.companion_examples import CORRECTION_SCENES, EXAMPLES
+import pytest
 
 from companion.application.bootstrap import TextRuntimeConfig, build_text_runtime
 from companion.contracts import ChatResult, ConversationMessage
@@ -69,8 +70,12 @@ def test_correction_scenes_keep_roles_and_do_not_become_history():
     assert runtime.close()
 
 
-def test_correction_scene_facts_are_not_recall_evidence():
-    model = Model("너 금요일에 동생이랑 서점 가서 만화책 산다고 했잖아.")
+@pytest.mark.parametrize("reply", [
+    "너 사촌이 만든 케이크 받으러 간다고 했잖아.",
+    "너 로봇 연구한다고 했잖아.",
+])
+def test_fictional_correction_and_profile_facts_are_not_recall_evidence(reply):
+    model = Model(reply)
     runtime = build_text_runtime(TextRuntimeConfig(dialogue_policy="companion"), chat_model=model)
     observations = []
     runtime.core._claim_observation_recorder = observations.append

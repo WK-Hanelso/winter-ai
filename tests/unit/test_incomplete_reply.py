@@ -54,7 +54,8 @@ def test_companion_sampling_does_not_change_legacy_sampling():
     original = json.loads(legacy._payload(ChatRequest("hello"), stream=False))
     assert original["presence_penalty"] == 1.0
     payload = json.loads(draft._payload(ChatRequest("hello"), stream=False))
-    assert payload["presence_penalty"] == 0.0
+    # companion sampling is configured separately; 1.0 restored after long-session repeats
+    assert payload["presence_penalty"] == 1.0
     assert payload["min_p"] == 0.0
 
 

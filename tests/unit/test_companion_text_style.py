@@ -101,8 +101,8 @@ def test_fixed_examples_budget_proxy_includes_boundaries_and_correction_scenes()
     try:
         examples = runtime.core._context_assembler._examples
         proxy_units = sum(len(m.content) + 5 for m in examples) + 3
-        assert proxy_units <= 1000
-        assert len(companion_examples.EXAMPLES) == 7
+        assert proxy_units <= 975  # P3-1 baseline proxy; actual token delta is reviewer-owned.
+        assert len(companion_examples.EXAMPLES) == 9
         assert companion_examples.MAX_REPLY_TOKENS == 640
     finally:
         runtime.close()
@@ -120,3 +120,15 @@ def test_new_scenes_demonstrate_requested_actions_without_replay_questions():
     assert "얘기한 게" in pairs[6][1] and "바깥에서 한 일은 없어" in pairs[6][1]
     assert "같은 추상 명사" in companion_examples.REAL_DIALOGUE_INSTRUCTION
     assert "질문 요청에는 실제 질문" in companion_examples.REAL_DIALOGUE_INSTRUCTION
+
+
+def test_recall_and_meta_complaint_examples_are_brief_and_fictional():
+    pairs = dict(companion_examples.EXAMPLES)
+    assert pairs["나에 대해 알아?"] == "알지. 로봇 연구하잖아. 오늘은 왜 물어봐?"
+    complaint = pairs["왜 나열하듯 말해?"]
+    assert complaint == "아, 아는 걸 그대로 읊었네. 그냥 얘기하자."
+    assert not any(word in complaint for word in ("진심", "이해", "미안", "죄송"))
+    assert (
+        "'진심', '이해해', '느껴져' 같은 말로 답을 채우지 마. "
+        "구체적인 것을 말하거나 물어봐."
+    ) in companion_examples.REAL_DIALOGUE_INSTRUCTION
