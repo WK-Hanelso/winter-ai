@@ -19,7 +19,7 @@ class VerbalStylePlan:
     # Plain vs polite speech is a visible part of who the companion sounds like,
     # so it travels with the plan rather than living only in the prompt.
     register: str = "polite_casual"
-    max_sentences: int = 2
+    max_sentences: int | None = 2
     max_words_per_sentence: int | None = None
 
 

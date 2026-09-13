@@ -117,7 +117,7 @@ class TextRuntimeConfig:
     day_reflection_db: Path | None = None
     dialogue_state_db: Path | None = None
     owned_work_db: Path | None = None
-    verbal_style: str = DEFAULT_PROFILE
+    verbal_style: str | None = None
     dialogue_policy: str = "legacy"
     context_max_messages: int = 12
     context_max_characters: int = 4000
@@ -308,7 +308,10 @@ def build_text_resources(config: TextRuntimeConfig) -> TextResources:
     except OpenLoopRepositoryError as error:
         raise TextRuntimeError(f"Dialogue state unavailable: {error}") from error
     try:
-        style_profile = load_verbal_style(config.verbal_style)
+        profile = config.verbal_style
+        if profile is None:
+            profile = "companion_text" if config.dialogue_policy == "companion" else DEFAULT_PROFILE
+        style_profile = load_verbal_style(profile)
     except VerbalStyleError as error:
         raise TextRuntimeError(f"Verbal style unavailable: {error}") from error
     return TextResources(

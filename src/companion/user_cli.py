@@ -106,7 +106,7 @@ def configure_persistent_args(args: argparse.Namespace) -> argparse.Namespace:
     args.memory_kind = "semantic"
     args.context_max_messages = 12
     args.context_max_characters = 4000
-    args.verbal_style = "reference_conversation"
+    args.verbal_style = None if args.dialogue_policy == "companion" else "reference_conversation"
     args.show_identity = False
     args.memory_add = args.memory_approve = args.memory_activate = None
     args.memory_deprecate = args.memory_replace = args.memory_delete = None

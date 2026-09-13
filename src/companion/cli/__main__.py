@@ -102,10 +102,7 @@ from companion.turn_understanding import (
     SqliteTurnUnderstandingRepository,
     TurnUnderstandingRepositoryError,
 )
-from companion.verbal_style import (
-    ALLOWED_PROFILES,
-    DEFAULT_PROFILE,
-)
+from companion.verbal_style import ALLOWED_PROFILES
 from companion.winter_events import (
     SqliteWinterEventRepository,
     SystemClock,
@@ -294,8 +291,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--verbal-style",
         choices=ALLOWED_PROFILES,
-        default=DEFAULT_PROFILE,
-        help="wording policy profile; reference_broadcast is measured from the Reference",
+        default=None,
+        help="default wording: companion_text for companion, reference_broadcast otherwise",
     )
     parser.add_argument(
         "--conversation-db",

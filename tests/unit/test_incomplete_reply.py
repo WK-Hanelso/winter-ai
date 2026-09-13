@@ -42,7 +42,7 @@ def test_companion_reply_budget_is_separate_from_short_style_guidance():
 
     runtime = build_text_runtime(TextRuntimeConfig(dialogue_policy="companion"), chat_model=Model())
     runtime.core.respond_to_text("안녕")
-    assert requests[0].max_tokens == 384
+    assert requests[0].max_tokens == 640
     assert runtime.close()
 
 

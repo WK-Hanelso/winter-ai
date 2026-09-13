@@ -238,7 +238,7 @@ def test_lean_examples_are_opt_in_and_keep_shared_evidence(monkeypatch):
         messages = model.request.messages
         assert all(ConversationMessage("user", user) in messages for user, _ in examples.EXAMPLES)
         assert ConversationMessage("user", "실제 대화 근거") in messages
-        assert model.request.max_tokens == 384
+        assert model.request.max_tokens == (384 if option else 640)
         if option:
             assert ConversationMessage("system", companion_examples_lean.INSTRUCTION) in messages
             assert ConversationMessage("user", companion_examples.EXAMPLES[0][0]) not in messages

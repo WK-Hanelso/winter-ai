@@ -19,7 +19,7 @@ from typing import Any
 from companion.response import VerbalStylePlan
 
 DEFAULT_PROFILE = "reference_broadcast"
-ALLOWED_PROFILES = ("base", "reference_broadcast", "reference_conversation")
+ALLOWED_PROFILES = ("base", "reference_broadcast", "reference_conversation", "companion_text")
 
 # Plain speech and polite speech are not interchangeable in Korean; picking the
 # wrong one is the most visible way to sound like someone else.
@@ -62,7 +62,7 @@ class VerbalStyleProfile:
     # produced here instead: each turn draws one register and is instructed
     # absolutely. None keeps the register fixed.
     polite_ratio: float | None
-    max_sentences: int
+    max_sentences: int | None
     # Sentence count alone did not control length: generated utterances ran
     # roughly twice the Reference's word count. A word target does.
     max_words_per_sentence: int | None
@@ -152,10 +152,10 @@ class VerbalStylePlanner:
             # length belongs to the kind of turn rather than to the profile.
             sentences = act.get("max_sentences", self._profile.max_sentences)
             words = act.get("max_words_per_sentence", self._profile.max_words_per_sentence)
-            length = f"한 번에 {sentences}문장 이내로 말해."
-            if words:
-                length += f" 한 문장은 {words}단어를 넘기지 마."
-            parts.append(length)
+            if sentences is not None:
+                parts.append(f"한 번에 {sentences}문장 이내로 말해.")
+            if words is not None:
+                parts.append(f"한 문장은 {words}단어를 넘기지 마.")
             if self._profile.discourse_markers:
                 markers = ", ".join(self._profile.discourse_markers)
                 parts.append(f"화제를 바꿀 때는 {markers} 같은 말을 자연스럽게 써.")
@@ -183,8 +183,12 @@ def _parse(profile: str, raw: dict[str, Any]) -> VerbalStyleProfile:
     if usage not in ALLOWED_HESITATION_USAGE:
         raise VerbalStyleError(f"unsupported hesitation usage in profile {profile}: {usage!r}")
     max_sentences = raw.get("max_sentences")
-    if not isinstance(max_sentences, int) or isinstance(max_sentences, bool) or max_sentences < 1:
-        raise VerbalStyleError(f"max_sentences in profile {profile} must be a positive integer")
+    if max_sentences is not None and (
+        not isinstance(max_sentences, int) or isinstance(max_sentences, bool) or max_sentences < 1
+    ):
+        raise VerbalStyleError(
+            f"max_sentences in profile {profile} must be a positive integer or None"
+        )
     max_words = raw.get("max_words_per_sentence")
     if max_words is not None and (
         not isinstance(max_words, int) or isinstance(max_words, bool) or max_words < 1
