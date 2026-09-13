@@ -148,6 +148,8 @@ def resolve_date_range(expression: str, received_at: datetime) -> tuple[date, da
                 offset %= 7
             elif week == "다음 주":
                 offset += 7
+            elif offset < 0:  # A passed weekday in "이번 주" means its next occurrence.
+                offset += 7
             day = today + timedelta(days=offset)
         return day, day
     except (ValueError, OverflowError):
@@ -611,11 +613,18 @@ class ScheduleService:
     def _day(expression: str, now: datetime, *, writing: bool) -> str:
         day = resolve_date(expression, now)
         if day is None:
+            today = _aware(now).date()
+            if expression.strip() == f"{'월화수목금토일'[today.weekday()]}요일":
+                raise _Invalid("ambiguous_date", "needs_clarification",
+                               f"{today.month}월 {today.day}일"
+                               f"({'월화수목금토일'[today.weekday()]}) 말하는 거야?")
             if re.fullmatch(r"[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}", expression.strip()):
                 raise _Invalid("invalid_date")
             raise _Invalid("ambiguous_date", "needs_clarification", "정확히 어느 날짜로 할까?")
         if writing and day < now.date():
-            raise _Invalid("past_date", "needs_clarification", "지난 날짜로 기록하려는 거야?")
+            raise _Invalid("past_date", "needs_clarification",
+                           f"{day.month}월 {day.day}일"
+                           f"({'월화수목금토일'[day.weekday()]}) 말하는 거야?")
         return day.isoformat()
 
     @classmethod
@@ -662,6 +671,9 @@ class ScheduleService:
                             cls._day(value, now, writing=True)  # e.g. 주말쯤: ambiguous
                         raise _Invalid('ungrounded_date')
                     days = {resolve_date(m.group(), now) for m in mentions}
+                    if (len(mentions) == 1 and None in days
+                            and re.fullmatch(r"[월화수목금토일]요일", mentions[0].group())):
+                        cls._day(mentions[0].group(), now, writing=True)
                     if None in days or len(days) != 1:
                         raise _Invalid('date_mismatch', 'needs_clarification',
                                        '정확히 어느 날짜로 할까?')

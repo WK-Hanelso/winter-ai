@@ -607,6 +607,13 @@ class ScheduleDialogue:
             if len(receipt.schedules) == 1 and draft_conflicts(draft, receipt, turn.received_at):
                 turn.discard_reason = 'contradictory_query_draft'
                 return fallback
+        if (receipt.status == 'needs_clarification' and receipt.clarification
+                and (receipt.reason_code == 'past_date'
+                     or receipt.reason_code == 'ambiguous_date'
+                     and re.fullmatch(r'\d+월 \d+일\([월화수목금토일]\) 말하는 거야\?',
+                                      receipt.clarification))):
+            # Keep the calculated date visible even if a model drops it ("그날 맞아?").
+            return receipt.clarification
         allowed_numbers = {v for item in receipt.schedules for v in (item.date, item.time) if v}
         extra_numbers = set(re.findall(r'\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}', draft)) - allowed_numbers
         if claims_completion(draft) or extra_numbers:

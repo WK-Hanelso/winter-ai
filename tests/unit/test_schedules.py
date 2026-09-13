@@ -3,7 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 import json
 import sqlite3
 from threading import Barrier
@@ -333,11 +333,47 @@ def test_ambiguous_date_needs_clarification_without_writes(service, expression):
     assert db_snapshot(service) == ([], [])
 
 
-def test_past_weekday_not_automatically_advanced(service):
-    service.clock.value = datetime(2026, 9, 20, tzinfo=KST)
-    result = execute(service, create_command(date="이번 주 금요일"))
-    assert result.status == "needs_clarification" and result.reason == "past_date"
+@pytest.mark.parametrize("today_offset", range(7))
+@pytest.mark.parametrize("weekday", range(7))
+def test_weekdays_resolve_forward_from_every_day(today_offset, weekday):
+    now = NOW + timedelta(days=today_offset)
+    name = f"{'월화수목금토일'[weekday]}요일"
+    expected = date(2026, 9, 14 + weekday + (7 if weekday < today_offset else 0))
+    assert resolve_date(name, now) == (None if weekday == today_offset else expected)
+    assert resolve_date(f"이번 주 {name}", now) == expected
+    assert resolve_date(f"다음 주 {name}", now) == date(2026, 9, 21 + weekday)
+
+
+@pytest.mark.parametrize("day", [13, 14])
+@pytest.mark.parametrize("expression", ["토요일", "이번 주 토요일"])
+def test_saturday_is_applied_without_clarification(service, day, expression):
+    service.clock.value = datetime(2026, 9, day, tzinfo=KST)
+    result = execute(service, create_command(date=expression))
+    assert result.status == "applied" and result.clarification is None
+    assert result.schedules[0].date == "2026-09-19"
+
+
+@pytest.mark.parametrize("expression", ["9월 12일", "2026-09-12"])
+def test_explicit_past_date_still_asks_with_calculated_day(service, expression):
+    service.clock.value = datetime(2026, 9, 13, tzinfo=KST)
+    result = execute(service, create_command(date=expression))
+    assert (result.status, result.reason) == ("needs_clarification", "past_date")
+    assert result.clarification == "9월 12일(토) 말하는 거야?"
     assert db_snapshot(service) == ([], [])
+
+
+def test_same_day_weekday_asks_with_calculated_day(service):
+    result = execute(service, create_command(date="월요일"))
+    assert (result.status, result.reason) == ("needs_clarification", "ambiguous_date")
+    assert result.clarification == "9월 14일(월) 말하는 거야?"
+    assert db_snapshot(service) == ([], [])
+
+
+def test_weekday_rollover_uses_kst_and_crosses_year():
+    assert resolve_date("이번 주 토요일", datetime(2026, 9, 12, 15, tzinfo=UTC)) == date(
+        2026, 9, 19)
+    assert resolve_date("이번 주 월요일", datetime(2026, 12, 31, tzinfo=KST)) == date(
+        2027, 1, 4)
 
 
 def test_query_weekend_inclusive_title_literal_and_active_state(service):

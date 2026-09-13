@@ -88,7 +88,8 @@ def test_ambiguous_current_date_still_asks_naturally(h, source):
     final = h.runtime.core.respond_to_text(f'{source} 독서 모임 저장해줘').text
     record = h.observations()[-1]
     assert record['receipt']['status'] == 'needs_clarification' and h.count_history() == 0
-    assert final == '정확히 어느 날짜로 할까?' and record['calls'] == 2
+    expected = '9월 14일(월) 말하는 거야?' if source == '월요일' else '정확히 어느 날짜로 할까?'
+    assert final == expected and record['calls'] == 2
 
 
 def test_candidate_question_does_not_need_iso_or_full_title(h):
