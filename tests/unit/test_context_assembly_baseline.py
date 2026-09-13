@@ -151,9 +151,30 @@ def fingerprints():
 @pytest.mark.parametrize("case", CASES)
 def test_requests_match_p05_baseline(case):
     baseline = json.loads(FIXTURE.read_text())
+    requests = capture(case)
+    if case in ("full", "explain", "streaming"):
+        # M1 changes only the memory block. Restore its exact P0.5 representation
+        # for the historical hash, checking all other bytes and order unchanged.
+        current = (
+            "천우가 직접 말해 활성화된 관련 기억이야. "
+            "[현재 상태]는 천우의 영구 특성이 아니라 지금의 상태이며, "
+            "같은 주제의 새 상태가 들어오면 최신 값으로 교체돼:\n"
+            "[선호]\n- Python config를 선호해"
+        )
+        old = (
+            "천우가 직접 말해 활성화된 관련 기억이야. "
+            "current_state:*는 천우의 영구 특성이 아니라 지금의 상태이며, "
+            "같은 주제의 새 상태가 들어오면 최신 값으로 교체돼:\n"
+            "- [memory-1 | preference] Python config를 선호해"
+        )
+        for request in requests:
+            assert sum(m.content == current for m in request.messages) == 1
+        requests = [replace(request, messages=tuple(
+            replace(m, content=old) if m.content == current else m for m in request.messages
+        )) for request in requests]
     actual = [hashlib.sha256(json.dumps(asdict(request), ensure_ascii=False,
                                       sort_keys=True).encode()).hexdigest()
-              for request in capture(case)]
+              for request in requests]
     assert actual == baseline[case]
 
 
@@ -162,7 +183,7 @@ def test_full_request_preserves_system_block_order_and_evidence():
     blocks = [message.content for message in request.messages if message.role == "system"]
     assert len(blocks) == 11
     markers = ["너는 겨울이야", "문장 이내로", "지어내지 마", "SelfModel", "개선 안건",
-               "지난날 회고", "memory-1", "예전에는 YAML을 썼어", "belief-1",
+               "지난날 회고", "[선호]", "예전에는 YAML을 썼어", "belief-1",
                "예전에 설정을 비교했어", "loop-1"]
     for block, marker in zip(blocks, markers, strict=True):
         assert marker in block

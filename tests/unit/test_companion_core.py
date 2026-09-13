@@ -231,7 +231,7 @@ def test_core_injects_selected_active_memory_as_distinct_system_message(tmp_path
     system_messages = [
         message for message in model.requests[0].messages if message.role == "system"
     ]
-    assert any(memory.id in message.content for message in system_messages)
+    assert any(memory.content in message.content for message in system_messages)
 
     recall = core.respond_to_text("내가 어떤 설정 방식을 좋아한다고 했지?")
     assert recall.dialogue_behavior == "recall_memory"
@@ -340,7 +340,7 @@ def test_core_automatically_remembers_a_direct_stable_preference(tmp_path) -> No
 
     assert recall.dialogue_behavior == "recall_memory"
     assert any(
-        memory.id in message.content
+        memory.content in message.content
         for message in restarted_model.requests[0].messages
         if message.role == "system"
     )
@@ -448,7 +448,7 @@ def test_system_messages_are_ordered_identity_style_instructions_memory_belief(
     assert len(system_messages) == 5
     # Reusable instructions precede retrieved evidence.
     assert "너는 Winter야." in system_messages[0].content
-    assert memory.id in system_messages[3].content
+    assert memory.content in system_messages[3].content
     assert belief.id in system_messages[4].content
     # Not "반말": the register is drawn per turn, so asserting on it would fail
     # whenever the polite draw came up. The length rule is in every style block.

@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from companion.adapters.fake import FakeChatModel, InMemoryConversationRepository
 from companion.core import CompanionCore
 from companion.memory import ActiveMemoryRetriever, SqliteMemoryRepository
@@ -61,8 +63,9 @@ def test_core_records_memory_acknowledgement_as_the_actual_response(
     assert outcomes.list()[0].assistant_response == "기억해둘게."
 
 
+@pytest.mark.parametrize("include_all", (True, False))
 def test_core_records_only_memories_actually_selected_for_the_response(
-    tmp_path: Path,
+    tmp_path: Path, include_all: bool,
 ) -> None:
     turns = SqliteTurnUnderstandingRepository(tmp_path / "turns.sqlite")
     outcomes = SqliteOutcomeRepository(tmp_path / "outcomes.sqlite")
@@ -80,7 +83,9 @@ def test_core_records_only_memories_actually_selected_for_the_response(
     core = CompanionCore(
         FakeChatModel(),
         InMemoryConversationRepository(),
-        memory_retriever=ActiveMemoryRetriever(memories),
+        memory_retriever=ActiveMemoryRetriever(
+            memories, max_characters=1500 if include_all else len(selected.content)
+        ),
         turn_understanding_repository=turns,
         outcome_repository=outcomes,
         turn_source="cli",
@@ -90,6 +95,7 @@ def test_core_records_only_memories_actually_selected_for_the_response(
     core.respond_to_text("응, 그 기억이 맞아")
 
     claims = outcomes.list()[0].prior_memory_claims
+    expected = (selected, unrelated) if include_all else (selected,)
     assert [(claim.id, claim.kind, claim.content) for claim in claims] == [
-        (selected.id, selected.kind, selected.content)
+        (memory.id, memory.kind, memory.content) for memory in expected
     ]

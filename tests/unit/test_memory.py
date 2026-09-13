@@ -98,10 +98,12 @@ def test_retriever_selects_only_related_active_memory(tmp_path: Path) -> None:
     for memory in (related, unrelated):
         repo.transition(memory.id, "approved")
         repo.transition(memory.id, "active")
-    assert ActiveMemoryRetriever(repo).retrieve("Python config는 어떻게 관리해?") == (
+    # Force the overflow branch; small stores now include every active item.
+    retriever = ActiveMemoryRetriever(repo, max_characters=len(related.content))
+    assert retriever.retrieve("Python config는 어떻게 관리해?") == (
         repo.get(related.id),
     )
-    retrieved = ActiveMemoryRetriever(repo).retrieve("Python config")
+    retrieved = retriever.retrieve("Python config")
     assert pending.id not in {memory.id for memory in retrieved}
 
 
@@ -311,7 +313,9 @@ def test_retrieval_uses_korean_content_words_not_generic_first_person_words(
     )
 
     assert name is not None and birthday is not None
-    assert ActiveMemoryRetriever(repo).retrieve("내 생일이 언제였지?") == (birthday,)
+    assert ActiveMemoryRetriever(repo, max_characters=len(birthday.content)).retrieve(
+        "내 생일이 언제였지?"
+    ) == (birthday,)
 
 
 def test_legacy_memory_database_migrates_without_losing_lifecycle_or_history(

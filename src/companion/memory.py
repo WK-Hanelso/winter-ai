@@ -8,6 +8,10 @@ import re
 import sqlite3
 from uuid import uuid4
 
+from configs.dialogue.memory import CURRENT_STATE_SLOTS, MAX_CHARACTERS, RANKED_MEMORY_SLOTS
+
+from companion.dialogue.claim_language import has_question_form
+
 _EXPLICIT_MEMORY_REQUEST = re.compile(r"^\s*기억해(?:\s*줘)?[.!,:]?\s+(.+?)\s*$")
 _SUFFIX_MEMORY_REQUEST = re.compile(r"^\s*(.+?)\s+기억해(?:\s*줘)?[.!]?\s*$")
 _RECALL_REQUEST = re.compile(
@@ -496,41 +500,62 @@ class ActiveMemoryRetriever:
         self,
         repository: SqliteMemoryRepository,
         *,
-        max_memories: int = 3,
-        max_characters: int = 1000,
+        max_memories: int = RANKED_MEMORY_SLOTS,
+        max_characters: int = MAX_CHARACTERS,
     ) -> None:
+        if max_memories < 0 or max_characters < 0:
+            raise ValueError("memory budgets must be nonnegative")
         self._repository = repository
         self._max_memories = max_memories
         self._max_characters = max_characters
 
     def retrieve(self, query: str) -> tuple[Memory, ...]:
+        active = self._repository.list_active()
+        # Small stores need no lexical guess about what the user is asking for.
+        if sum(len(memory.content) for memory in active) <= self._max_characters:
+            return tuple(active)
         query_terms = _terms(query)
+        recall = bool(_RECALL_REQUEST.search(query))
+        user_question = recall or (
+            has_question_form(query)
+            and (
+                bool(set(query.split()) & {"나", "난", "나는", "내", "내가", "나에", "나를"})
+                or any(word in query for word in ("뭐하는 사람", "직업", "누구"))
+            )
+        )
+        profile_kinds = {"semantic", "relationship", "project", "preference"}
         ranked: list[tuple[int, int, str, Memory]] = []
-        for memory in self._repository.list_active():
+        states: list[tuple[int, int, str, Memory]] = []
+        for memory in active:
             overlap = len(query_terms & _terms(memory.content))
             if memory.kind.startswith(_CURRENT_STATE_PREFIX):
-                overlap = 10_000 + overlap
-            if overlap:
+                states.append((overlap, memory.importance, memory.created_at, memory))
+            elif overlap or (user_question and memory.kind in profile_kinds):
                 ranked.append((overlap, memory.importance, memory.created_at, memory))
-        if not ranked and _RECALL_REQUEST.search(query):
+        if not ranked and recall:
             ranked = [
                 (0, memory.importance, memory.updated_at, memory)
-                for memory in self._repository.list_active()
+                for memory in active if not memory.kind.startswith(_CURRENT_STATE_PREFIX)
             ]
         selected: list[Memory] = []
         length = 0
-        for _, _, _, memory in sorted(
-            ranked,
-            key=lambda item: (item[0], item[1], item[2], item[3].id),
-            reverse=True,
-        ):
-            if (
-                len(selected) == self._max_memories
-                or length + len(memory.content) > self._max_characters
-            ):
-                continue
-            selected.append(memory)
-            length += len(memory.content)
+        ranked.sort(key=lambda item: (
+            user_question and item[3].kind in profile_kinds,
+            item[0], item[1], item[2], item[3].id,
+        ), reverse=True)
+        states.sort(key=lambda item: (item[0], item[1], item[2], item[3].id), reverse=True)
+        # States have their own slots, never displacing ranked/profile memories.
+        # Both pools share the character budget; preserve whole source strings.
+        for pool, slots in ((ranked, self._max_memories), (states, CURRENT_STATE_SLOTS)):
+            count = 0
+            for _, _, _, memory in pool:
+                if count == slots:
+                    break
+                if length + len(memory.content) > self._max_characters:
+                    continue
+                selected.append(memory)
+                length += len(memory.content)
+                count += 1
         return tuple(selected)
 
     def retrieve_current_state_history(self, query: str) -> tuple[Memory, ...]:
@@ -558,12 +583,23 @@ class ActiveMemoryRetriever:
 
 
 def memory_context(memories: tuple[Memory, ...]) -> str:
+    labels = {
+        "semantic": "사실", "relationship": "관계", "project": "프로젝트",
+        "preference": "선호", "decision": "결정", "procedural": "지원 방식",
+        "episodic": "경험",
+    }
+    groups: dict[str, list[str]] = {}
+    for memory in memories:
+        label = ("현재 상태" if memory.kind.startswith(_CURRENT_STATE_PREFIX)
+                 else labels.get(memory.kind, memory.kind))
+        groups.setdefault(label, []).append(memory.content)
     return (
         "천우가 직접 말해 활성화된 관련 기억이야. "
-        "current_state:*는 천우의 영구 특성이 아니라 지금의 상태이며, "
+        "[현재 상태]는 천우의 영구 특성이 아니라 지금의 상태이며, "
         "같은 주제의 새 상태가 들어오면 최신 값으로 교체돼:\n"
     ) + "\n".join(
-        f"- [{m.id} | {m.kind}] {m.content}" for m in memories
+        f"[{label}]\n" + "\n".join(f"- {content}" for content in contents)
+        for label, contents in groups.items()
     )
 
 
