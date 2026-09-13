@@ -61,6 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--review-outcomes", action="store_true")
     parser.add_argument("--outcome-audit", action="store_true")
     parser.add_argument("--reflect-history", action="store_true")
+    parser.add_argument("--reflection-run-log", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--review-memory-candidates", action="store_true")
     parser.add_argument("--companion-overview", action="store_true")
     parser.add_argument("--lived-continuity", action="store_true")
@@ -80,6 +81,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.reflection_run_log:
+        from companion.text_reflection import run_logged_reflection
+
+        return run_logged_reflection(DATA, configure_persistent_args(args))
     if not (DATA / "identity.json").exists():
         print("겨울이 Identity가 없습니다: data/identity.json을 먼저 준비하세요.")
         return 1

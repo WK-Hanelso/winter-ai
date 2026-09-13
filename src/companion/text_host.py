@@ -20,6 +20,7 @@ from uuid import uuid4
 from companion.adapters.codex_gateway_worker import CodexTypedProjectWorker
 from companion.session_wire import SessionProtocolError, receive, send, string
 from companion.text_jobs import ProcessWorkerQueue
+from companion.text_reflection import review_before_session, start_after_session
 from companion.work_orchestration import WorkerTaskPacket, WorkRequest
 from companion.worker import ReadOnlyWorkerResult, WorkerUnavailableError
 from companion.worker_gateway import GatewayWorkerResult
@@ -219,6 +220,7 @@ def main() -> int:
     parser.add_argument("--project-root", type=Path, required=True)
     parser.add_argument("--container-name", required=True)
     parser.add_argument("--audit-dir", type=Path, required=True)
+    parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--codex-executable", default="codex")
     parser.add_argument("--codex-model", default="gpt-5.6-sol")
     parser.add_argument("command", nargs=argparse.REMAINDER)
@@ -247,6 +249,8 @@ def main() -> int:
     )
     process: subprocess.Popen[str] | None = None
     try:
+        data = args.data_dir or args.audit_dir.parent
+        review_before_session(data, sys.stdin, sys.stdout)
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    text=True, encoding="utf-8", bufsize=1)
         assert process.stdin is not None and process.stdout is not None
@@ -256,7 +260,10 @@ def main() -> int:
                          scope=f"{args.project_root}: README.md, pyproject.toml, src/, tests/",
                          background=jobs)
         process.stdin.close()
-        return result if process.wait(timeout=10) == 0 else 1
+        if process.wait(timeout=10) != 0:
+            return 1
+        start_after_session(data, command, sys.stdout)
+        return result
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError, KeyboardInterrupt):
         print("세션 연결이 종료됐습니다. 완료되지 않은 Worker 결과를 성공으로 처리하지 않습니다.",
               file=sys.stderr)

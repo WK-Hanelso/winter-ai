@@ -47,36 +47,50 @@ def run_memory_candidate_review(
     limit: int,
     stdin: TextIO,
     stdout: TextIO,
+    session_start: bool = False,
 ) -> int:
     candidates = reflections.list(status="candidate", limit=limit)
     if not candidates:
+        if session_start:
+            return 0
         print("지금 검토할 새 기억 후보가 없습니다.", file=stdout)
         print("먼저 ./winter reflect 를 실행하면 새 대화를 정리합니다.", file=stdout)
         return 0
-    print(
-        f"검토할 기억 후보 {len(candidates)}개입니다. s는 넘기기, q는 종료입니다.",
-        file=stdout,
-    )
+    if session_start:
+        for index, candidate in enumerate(candidates, start=1):
+            label = ("천우의 현재 상태 변경" if candidate.is_current_state
+                     else _KIND_LABELS[candidate.kind])
+            evidence = " / ".join(" ".join(item.quote.split()) for item in candidate.evidence)
+            print(f"{index}. [{label}] {' '.join(candidate.content.split())}"
+                  f" — 근거: {evidence}", file=stdout)
+    else:
+        print(
+            f"검토할 기억 후보 {len(candidates)}개입니다. s는 넘기기, q는 종료입니다.",
+            file=stdout,
+        )
     activated = 0
     approved = 0
     rejected = 0
     for index, candidate in enumerate(candidates, start=1):
-        _print_candidate(candidate, index, len(candidates), memories, stdout)
+        if not session_start:
+            _print_candidate(candidate, index, len(candidates), memories, stdout)
         try:
-            action = _ask_action(candidate, stdin, stdout)
+            action = (_ask_session_action(index, stdin, stdout) if session_start
+                      else _ask_action(candidate, stdin, stdout))
             edited_content = None
             if action == "edit":
-                edited_content = _ask_edit(stdin, stdout)
+                edited_content = _ask_edit(stdin, stdout, single_attempt=session_start)
                 action = "approve"
         except _ReviewControl as control:
-            if control.action == "quit":
+            if control.action == "quit" or (session_start and control.action == "skip"):
                 break
             print("이 후보는 나중에 다시 봅니다.", file=stdout)
             continue
         if action == "reject":
             reflections.reject(candidate.id)
             rejected += 1
-            print("기억하지 않도록 제외했습니다.", file=stdout)
+            if not session_start:
+                print("기억하지 않도록 제외했습니다.", file=stdout)
             continue
         result = reflections.approve(
             candidate.id,
@@ -85,13 +99,20 @@ def run_memory_candidate_review(
         )
         if result.status == "active":
             activated += 1
-            print("승인했습니다. 다음 대화부터 겨울이가 사용할 수 있습니다.", file=stdout)
+            if not session_start:
+                print("승인했습니다. 다음 대화부터 겨울이가 사용할 수 있습니다.", file=stdout)
         else:
             approved += 1
-            print(
-                "내용은 확인했습니다. 아직 일반 기억으로 사용하지 않고 별도 보관합니다.",
-                file=stdout,
-            )
+            if not session_start:
+                print(
+                    "내용은 확인했습니다. 아직 일반 기억으로 사용하지 않고 별도 보관합니다.",
+                    file=stdout,
+                )
+    if session_start:
+        deferred = len(candidates) - activated - approved - rejected
+        print(f"승인 {activated}, 보관 {approved}, 제외 {rejected}, 미룸 {deferred}",
+              file=stdout, flush=True)
+        return 0
     remaining = len(reflections.list(status="candidate"))
     print(
         f"\n이번 검토: 기억 사용 {activated}, 확인 보관 {approved}, 제외 {rejected}",
@@ -246,7 +267,20 @@ def _ask_action(
         print("1~3 중 하나나 s, q를 입력해 주세요.", file=stdout)
 
 
-def _ask_edit(stdin: TextIO, stdout: TextIO) -> str:
+def _ask_session_action(index: int, stdin: TextIO, stdout: TextIO) -> str:
+    print(f"후보 {index}: a 승인 / e 수정 후 승인 / n 제외 / Enter·s 모두 미룸 / q 대화 시작> ",
+          end="", file=stdout, flush=True)
+    answer = stdin.readline().strip().lower()
+    if answer in {"", "s", "q"}:
+        raise _ReviewControl("quit")
+    action = {"a": "approve", "e": "edit", "n": "reject"}.get(answer)
+    if action is None:
+        # A mistyped action never approves or repeatedly interrupts the user.
+        raise _ReviewControl("invalid")
+    return action
+
+
+def _ask_edit(stdin: TextIO, stdout: TextIO, *, single_attempt: bool = False) -> str:
     while True:
         print("고친 내용> ", end="", file=stdout, flush=True)
         content = stdin.readline()
@@ -255,4 +289,6 @@ def _ask_edit(stdin: TextIO, stdout: TextIO) -> str:
         content = content.strip()
         if content:
             return content
+        if single_attempt:
+            raise _ReviewControl("invalid")
         print("빈 내용은 저장할 수 없습니다.", file=stdout)

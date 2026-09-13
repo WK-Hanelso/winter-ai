@@ -127,6 +127,7 @@ run_text_container() {
     prefix=(env PYTHONPATH="$ROOT_DIR/src" "$PYTHON_BIN" -m companion.text_host
       --project-root "$ROOT_DIR" --container-name "$container_name"
       --audit-dir "$text_data/worker_sessions"
+      --data-dir "$text_data"
       --codex-executable "${WINTER_CODEX_BIN:-codex}"
       --codex-model "${WINTER_CODEX_MODEL:-gpt-5.6-sol}" --)
   elif [[ -t 0 && -t 1 ]]; then
