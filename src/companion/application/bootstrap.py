@@ -477,6 +477,7 @@ def build_text_runtime(
         dialogue_policy=dialogue_policy,
         context_assembler=context_assembler,
         schedule_dialogue=schedule_dialogue,
+        repeated_reply_guard=config.dialogue_policy == "companion",
         claim_observation_recorder=(
             JsonlClaimObservationRecorder(
                 config.conversation_db.parent / "claim_observations.jsonl",

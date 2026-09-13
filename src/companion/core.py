@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -15,6 +15,11 @@ from companion.dialogue.character_snapshot import CharacterSnapshot
 from companion.dialogue.claim_language import claim_units, has_question_form
 from companion.dialogue.context_assembler import ContextAssembler
 from companion.dialogue.policy import DialoguePolicy, DialoguePolicyInput, LegacyDialoguePolicy
+from companion.dialogue.repeated_reply import (
+    RECENT_REPLY_WINDOW,
+    REGENERATION_INSTRUCTION,
+    is_repeated_reply,
+)
 from companion.dialogue.schedule_dialogue import (
     INSTRUCTION as SCHEDULE_INSTRUCTION,
 )
@@ -149,7 +154,9 @@ class CompanionCore:
         dialogue_policy: DialoguePolicy | None = None,
         claim_observation_recorder: Callable[[ClaimObservation], None] | None = None,
         schedule_dialogue: ScheduleDialogue | None = None,
+        repeated_reply_guard: bool = False,
     ) -> None:
+        self._repeated_reply_guard = repeated_reply_guard
         self._schedule_dialogue = schedule_dialogue
         self._chat_model = chat_model
         self._conversation_repository = conversation_repository
@@ -231,8 +238,7 @@ class CompanionCore:
         if turn.dialogue_plan.behavior == "acknowledge_memory":
             return self._finish(turn, "")
         result = self._chat_model.generate(turn.request)
-        answer = self._review_and_repair(turn, result.text)
-        return self._finish(turn, answer)
+        return self._finish_generated_reply(turn, result.text)
 
     def respond_to_text_streaming(
         self,
@@ -291,11 +297,21 @@ class CompanionCore:
                 if close is not None:
                     close()
             draft = "".join(written)
-        answer = self._review_and_repair(turn, draft)
-        response = self._finish(turn, answer)
+        response = self._finish_generated_reply(turn, draft)
         for sentence in split_sentences(response.text):
             on_sentence(sentence)
         return response
+
+    def _finish_generated_reply(self, turn: _Turn, draft: str) -> CompanionResponse:
+        calls = 1
+
+        def generate(request: ChatRequest) -> str:
+            nonlocal calls
+            calls += 1
+            return self._chat_model.generate(request).text
+
+        answer = self._review_and_repair(turn, draft, repair_generate=generate)
+        return self._finish(turn, answer, repeat_generate=generate if calls < 2 else None)
 
     def _respond_with_worker(self, turn: _Turn) -> CompanionResponse:
         if self._read_only_worker is None:
@@ -410,7 +426,16 @@ class CompanionCore:
                     turn, draft, repair_generate=repair, allow_repair=state.calls < 2,
                 )
                 draft = dialogue.display(state, draft)
-            response = self._finish(turn, draft)
+
+            def regenerate(request: ChatRequest) -> str:
+                if state.receipt is not None:
+                    request = dialogue.followup_request(state, request)
+                revised = dialogue.generate(state, self._chat_model, request, draft_only=True)
+                return dialogue.display(state, revised)
+
+            response = self._finish(
+                turn, draft, repeat_generate=regenerate if state.calls < 2 else None,
+            )
             final = response.text
             return response
         except Exception as exc:
@@ -681,7 +706,58 @@ class CompanionCore:
         worker_result: ReadOnlyWorkerResult | None = None,
         worker_name: str | None = None,
         worker_error: bool = False,
+        repeat_generate: Callable[[ChatRequest], str] | None = None,
     ) -> CompanionResponse:
+        response_text, checked_text, final_violations = self._final_reply_text(
+            turn, answer, worker_result=worker_result,
+        )
+        recent_replies: tuple[str, ...] = ()
+        if (self._repeated_reply_guard and len(response_text) >= 20
+                and turn.worker_request is None and turn.owned_work_request is None):
+            recent_replies = self._recent_assistant_replies()
+        if is_repeated_reply(response_text, recent_replies):
+            if repeat_generate is not None:
+                request = replace(turn.request, messages=turn.request.messages + (
+                    ConversationMessage("system", REGENERATION_INSTRUCTION),
+                ))
+                try:
+                    revised = repeat_generate(request)
+                except ScheduleOutputError:
+                    # The first valid reply/receipt survives a malformed second draft.
+                    pass
+                else:
+                    response_text, checked_text, final_violations = self._final_reply_text(
+                        turn, revised, worker_result=worker_result,
+                    )
+            if is_repeated_reply(response_text, recent_replies):
+                self._record_claim_observation(
+                    turn, "repeated_reply", response_text, response_text,
+                    (ClaimViolation("repeated_reply", response_text),),
+                )
+        self._record_claim_observation(
+            turn, "final", response_text, checked_text, final_violations,
+        )
+        return self._persist_response(
+            turn, response_text, worker_result=worker_result, worker_name=worker_name,
+            worker_error=worker_error,
+        )
+
+    def _recent_assistant_replies(self) -> tuple[str, ...]:
+        repository = self._conversation_repository
+        if isinstance(repository, WindowedConversationRepository):
+            limit = 8
+            while True:
+                messages = repository.recent_messages(limit)
+                replies = tuple(m.content for m in messages if m.role == "assistant")
+                if len(replies) >= RECENT_REPLY_WINDOW or len(messages) < limit:
+                    return replies[-RECENT_REPLY_WINDOW:]
+                limit *= 2
+        replies = tuple(m.content for m in repository.list_messages() if m.role == "assistant")
+        return replies[-RECENT_REPLY_WINDOW:]
+
+    def _final_reply_text(
+        self, turn: _Turn, answer: str, *, worker_result: ReadOnlyWorkerResult | None,
+    ) -> tuple[str, str, tuple[ClaimViolation, ...]]:
         response_text = answer.strip()
         if turn.candidate_ids:
             response_text = (
@@ -699,9 +775,13 @@ class CompanionCore:
             response_text = self._response_claim_gate.fallback(
                 blocking, self._claim_evidence(turn, worker_result=worker_result),
             )
-        self._record_claim_observation(
-            turn, "final", response_text, checked_text, final_violations,
-        )
+        return response_text, checked_text, final_violations
+
+    def _persist_response(
+        self, turn: _Turn, response_text: str, *,
+        worker_result: ReadOnlyWorkerResult | None,
+        worker_name: str | None, worker_error: bool,
+    ) -> CompanionResponse:
         self._conversation_repository.append(
             ConversationMessage(role="assistant", content=response_text)
         )
