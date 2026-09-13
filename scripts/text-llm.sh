@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NAME=winter-text-llm
 PROFILE=rtx2060-hybrid-v1
 URL=http://127.0.0.1:18081
-CTX_SIZE=${WINTER_TEXT_CTX_SIZE:-4096}
+CTX_SIZE=${WINTER_TEXT_CTX_SIZE:-8192}
 IMAGE=${WINTER_TEXT_LLM_IMAGE:-winter-ai:rtx2060-llama-8e7f22b}
 MODEL=${WINTER_TEXT_MODEL_PATH:-$ROOT_DIR/data/research/rtx2060-hybrid/model/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf}
 

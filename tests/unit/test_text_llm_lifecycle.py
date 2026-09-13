@@ -161,9 +161,10 @@ def test_context_size_environment_only_changes_server_context(
 ) -> None:
     assert runtime("text", "--prompt", "hello", WINTER_TEXT_CTX_SIZE="").returncode == 0
     server = next(cmd for cmd in calls(tmp_path) if cmd[:2] == ["run", "-d"])
-    assert server[server.index("--ctx-size") + 1] == "4096"
-    assert runtime("stop").returncode == 0
-    assert runtime("text", "--prompt", "hello", WINTER_TEXT_CTX_SIZE="8192").returncode == 0
-    server = [cmd for cmd in calls(tmp_path) if cmd[:2] == ["run", "-d"]][-1]
+    # Default raised to 8192 after P2 scene runs overflowed 4096 with the schedule block.
     assert server[server.index("--ctx-size") + 1] == "8192"
+    assert runtime("stop").returncode == 0
+    assert runtime("text", "--prompt", "hello", WINTER_TEXT_CTX_SIZE="4096").returncode == 0
+    server = [cmd for cmd in calls(tmp_path) if cmd[:2] == ["run", "-d"]][-1]
+    assert server[server.index("--ctx-size") + 1] == "4096"
     assert server[server.index("--parallel") + 1] == "1"

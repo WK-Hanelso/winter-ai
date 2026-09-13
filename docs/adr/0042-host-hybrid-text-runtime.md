@@ -11,7 +11,7 @@ GPU 추론 배치를 `./winter text`에 연결한다. 작은 모델로의 묵시
 - `127.0.0.1:18081`, `winter-text-llm` 컨테이너 하나를 시작하고 health 이후 Core를 연다.
 - 동일 프로필·프로젝트 소유권을 확인하고 시작/종료를 파일 잠금으로 직렬화한다.
 - 이미지 ID를 해석해 그 artifact를 실행한다. 모델은 read-only, 로그는 최대 5MB × 2개다.
-- CPU 4, RAM/swap 합계 한도 20GiB, context 4096, parallel 1, cpu-moe 44,
+- CPU 4, RAM/swap 합계 한도 20GiB, context 8192(2026-09-13, 이전 4096), parallel 1, cpu-moe 44,
   batch 128/ubatch 32, CUDA graph 비활성화 프로필을 사용한다.
 - `/exit`는 대화창만 종료하고 `./winter stop`은 모델 자원도 반환한다. 부팅 자동 실행은 없다.
 - 명시적 별도 모델 주소는 연결 상태만 확인한다. Orin에 SSH하거나 fake로 전환하지 않는다.
