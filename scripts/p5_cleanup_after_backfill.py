@@ -11,6 +11,9 @@ What it does, in this order, on data/memories.sqlite and data/reflection.sqlite:
    "'was that'" sentences, a question restated as a fact, a trivial routine line).
 5. Rejects the eight pre-P5 reflection candidates (verbatim sentences superseded by the
    extracted fact sentences).
+6. Sets each extracted memory's created_at to the time the user actually said it (the
+   conversation message behind evidence_ref, converted from naive UTC to ISO UTC), keeping
+   updated_at as the extraction time. The backfill had stamped every fact with 2026-09-14.
 Prints every change and the final active list. Deletes nothing.
 """
 from __future__ import annotations
@@ -95,6 +98,23 @@ def main() -> int:
     ).rowcount
     reflection.commit()
     print(f"  reflection candidates rejected: {rejected}")
+
+    conversations = sqlite3.connect(f"file:{(DATA / 'conversations.sqlite').resolve()}?mode=ro",
+                                    uri=True)
+    said_at = {
+        f"conversation:{row[0]}": row[1].replace(" ", "T") + "+00:00"
+        for row in conversations.execute("SELECT id, created_at FROM conversation_messages")
+    }
+    restamped = 0
+    for row in memories.execute(
+        "SELECT id, evidence_ref, created_at FROM memories WHERE source = 'extracted'"
+    ).fetchall():
+        spoken = said_at.get(row[1])
+        if spoken and row[2] != spoken:
+            memories.execute("UPDATE memories SET created_at = ? WHERE id = ?", (spoken, row[0]))
+            restamped += 1
+    memories.commit()
+    print(f"  created_at set to utterance time: {restamped}")
 
     print("\nACTIVE memories now:")
     for row in memories.execute(
