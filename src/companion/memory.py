@@ -10,8 +10,6 @@ from uuid import uuid4
 
 from configs.dialogue.memory import CURRENT_STATE_SLOTS, MAX_CHARACTERS, RANKED_MEMORY_SLOTS
 
-from companion.dialogue.claim_language import has_question_form
-
 _EXPLICIT_MEMORY_REQUEST = re.compile(r"^\s*기억해(?:\s*줘)?[.!,:]?\s+(.+?)\s*$")
 _SUFFIX_MEMORY_REQUEST = re.compile(r"^\s*(.+?)\s+기억해(?:\s*줘)?[.!]?\s*$")
 _EXPLICIT_FORGET_REQUEST = re.compile(r"^\s*잊어\s*줘[.!,:]?\s+(.+?)\s*$")
@@ -304,8 +302,11 @@ class SqliteMemoryRepository:
 
     def remember_current_state(
         self, *, topic: str, content: str, source: str = "user_current_state",
+        importance: int = 7, confidence: float = 1.0,
+        evidence_ref: str | None = None, temporal_scope: str = "episodic",
+        connection: sqlite3.Connection | None = None,
     ) -> Memory:
-        """Keep only the newest accepted state for one topic."""
+        """Keep state History; optionally join an extraction's atomic transaction."""
         normalized_topic = topic.strip().lower()
         normalized_content = content.strip()
         if not _CURRENT_STATE_TOPIC.fullmatch(normalized_topic):
@@ -314,32 +315,42 @@ class SqliteMemoryRepository:
             )
         if not normalized_content:
             raise MemoryRepositoryError("current-state content is required")
+        _validate_provenance(evidence_ref, temporal_scope)
+        if connection is None:
+            try:
+                with self._connect() as own:
+                    own.execute("BEGIN IMMEDIATE")
+                    return self.remember_current_state(
+                        topic=normalized_topic, content=normalized_content, source=source,
+                        importance=importance, confidence=confidence, evidence_ref=evidence_ref,
+                        temporal_scope=temporal_scope, connection=own,
+                    )
+            except sqlite3.Error as error:
+                raise MemoryRepositoryError(f"could not save current state: {error}") from error
         kind = f"{_CURRENT_STATE_PREFIX}{normalized_topic}"
-        current = next(
-            (
-                memory
-                for memory in reversed(self.list_active())
-                if memory.kind == kind
-            ),
-            None,
-        )
+        row = connection.execute(
+            "SELECT * FROM memories WHERE kind = ? AND status = 'active' "
+            "ORDER BY created_at DESC, rowid DESC LIMIT 1", (kind,),
+        ).fetchone()
+        current = _from_row(row) if row is not None else None
         if current is not None and current.content == normalized_content:
             return current
-        candidate = self.add_candidate(
-            kind=kind,
-            content=normalized_content,
-            source=source,
-            importance=7,
-            confidence=1.0,
-            temporal_scope="episodic",
+        now = _now()
+        memory = Memory(
+            str(uuid4()), kind, normalized_content, importance, confidence, "active", source,
+            now, now, None, current.id if current else None, evidence_ref, temporal_scope,
+        )
+        connection.execute(
+            "INSERT INTO memories (id, kind, content, importance, confidence, status, source, "
+            "created_at, updated_at, last_accessed_at, supersedes, evidence_ref, temporal_scope) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", _values(memory),
         )
         if current is not None:
-            self._write(
-                "UPDATE memories SET supersedes = ? WHERE id = ?",
-                (current.id, candidate.id),
+            connection.execute(
+                "UPDATE memories SET status = 'deprecated', updated_at = ? WHERE id = ?",
+                (now, current.id),
             )
-        self.transition(candidate.id, "approved")
-        return self.transition(candidate.id, "active")
+        return memory
 
     def forget_explicit(self, content: str) -> Memory | None:
         """Deprecate one active memory using whitespace tokens, without stemming."""
@@ -525,10 +536,10 @@ class ActiveMemoryRetriever:
         self,
         repository: SqliteMemoryRepository,
         *,
-        max_memories: int = RANKED_MEMORY_SLOTS,
+        max_memories: int | None = None,
         max_characters: int = MAX_CHARACTERS,
     ) -> None:
-        if max_memories < 0 or max_characters < 0:
+        if (max_memories is not None and max_memories < 0) or max_characters < 0:
             raise ValueError("memory budgets must be nonnegative")
         self._repository = repository
         self._max_memories = max_memories
@@ -536,45 +547,53 @@ class ActiveMemoryRetriever:
 
     def retrieve(self, query: str) -> tuple[Memory, ...]:
         active = self._repository.list_active()
-        # Small stores need no lexical guess about what the user is asking for.
-        if sum(len(memory.content) for memory in active) <= self._max_characters:
-            return tuple(active)
         query_terms = _terms(query)
         recall = bool(_RECALL_REQUEST.search(query))
-        user_question = recall or (
-            has_question_form(query)
-            and (
-                bool(set(query.split()) & {"나", "난", "나는", "내", "내가", "나에", "나를"})
-                or any(word in query for word in ("뭐하는 사람", "직업", "누구"))
-            )
+
+        def latest(memory: Memory) -> tuple[float, str, str]:
+            return memory.confidence, memory.updated_at, memory.id
+
+        def rank(memory: Memory) -> tuple[int, float, str, str]:
+            return (len(query_terms & _terms(memory.content)), *latest(memory))
+
+        profiles = sorted(
+            (m for m in active if m.kind in {"semantic", "relationship"}),
+            key=latest, reverse=True,
         )
-        profile_kinds = {"semantic", "relationship", "project", "preference"}
-        ranked: list[tuple[int, int, str, Memory]] = []
-        states: list[tuple[int, int, str, Memory]] = []
-        for memory in active:
-            overlap = len(query_terms & _terms(memory.content))
-            if memory.kind.startswith(_CURRENT_STATE_PREFIX):
-                states.append((overlap, memory.importance, memory.created_at, memory))
-            elif overlap or (user_question and memory.kind in profile_kinds):
-                ranked.append((overlap, memory.importance, memory.created_at, memory))
-        if not ranked and recall:
-            ranked = [
-                (0, memory.importance, memory.updated_at, memory)
-                for memory in active if not memory.kind.startswith(_CURRENT_STATE_PREFIX)
-            ]
+        states = sorted(
+            (m for m in active if m.kind.startswith(_CURRENT_STATE_PREFIX)),
+            key=rank, reverse=True,
+        )
+        remaining = [m for m in active if m.kind in {
+            "preference", "project", "decision", "procedural", "episodic",
+        }]
+        matched = sorted(
+            (m for m in remaining if query_terms & _terms(m.content)), key=rank, reverse=True,
+        )
+        fallback = sorted(
+            (m for m in remaining if m.kind in {"preference", "project"}
+             and not query_terms & _terms(m.content)),
+            key=lambda m: (m.updated_at, m.confidence, m.id), reverse=True,
+        )
+        if not recall:
+            fallback = fallback[:RANKED_MEMORY_SLOTS]
+        if recall:
+            overview_kinds = {"preference", "project"}
+            relevant = ([m for m in matched if m.kind in overview_kinds] + fallback
+                        + [m for m in matched if m.kind not in overview_kinds])
+        else:
+            relevant = matched + fallback
         selected: list[Memory] = []
         length = 0
-        ranked.sort(key=lambda item: (
-            user_question and item[3].kind in profile_kinds,
-            item[0], item[1], item[2], item[3].id,
-        ), reverse=True)
-        states.sort(key=lambda item: (item[0], item[1], item[2], item[3].id), reverse=True)
-        # States have their own slots, never displacing ranked/profile memories.
-        # Both pools share the character budget; preserve whole source strings.
-        for pool, slots in ((ranked, self._max_memories), (states, CURRENT_STATE_SLOTS)):
+        # Profile and recall inclusion are bounded by content budget, not ranked slots.
+        for pool, slots in (
+            (profiles, None),
+            (relevant, None if recall else self._max_memories),
+            (states, CURRENT_STATE_SLOTS),
+        ):
             count = 0
-            for _, _, _, memory in pool:
-                if count == slots:
+            for memory in pool:
+                if slots is not None and count == slots:
                     break
                 if length + len(memory.content) > self._max_characters:
                     continue
@@ -613,7 +632,7 @@ def memory_context(memories: tuple[Memory, ...]) -> str:
     for memory in memories:
         if memory.source == "reflection_auto":
             background.append(f'천우가 말하길 “{memory.content}”.')
-        elif memory.kind.startswith(_CURRENT_STATE_PREFIX):
+        elif memory.kind.startswith(_CURRENT_STATE_PREFIX) and memory.source != "extracted":
             states.append(memory.content)
         else:
             background.append(_memory_sentence(memory.content))

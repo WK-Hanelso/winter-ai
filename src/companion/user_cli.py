@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from contextlib import closing
 import os
 from pathlib import Path
+import sqlite3
 
 from companion.cli.__main__ import run
 from companion.dialogue.policy import POLICY_NAMES
@@ -60,6 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--analyze-pending-outcomes", action="store_true")
     parser.add_argument("--review-outcomes", action="store_true")
     parser.add_argument("--outcome-audit", action="store_true")
+    parser.add_argument("--extract-facts", action="store_true", help=argparse.SUPPRESS)
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--limit", type=int, default=40, help=argparse.SUPPRESS)
+    scope.add_argument("--all", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--run-log", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--reflect-history", action="store_true")
     parser.add_argument("--reflection-run-log", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--review-memory-candidates", action="store_true")
@@ -81,6 +88,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.extract_facts:
+        from companion.text_reflection import run_fact_extraction
+
+        return run_fact_extraction(DATA, configure_persistent_args(args))
     if args.reflection_run_log:
         from companion.text_reflection import run_logged_reflection
 
@@ -88,7 +99,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not (DATA / "identity.json").exists():
         print("겨울이 Identity가 없습니다: data/identity.json을 먼저 준비하세요.")
         return 1
+    if args.review_memory_candidates:
+        _show_extracted_candidates(DATA)
     return run(configure_persistent_args(args))
+
+
+def _show_extracted_candidates(data: Path) -> None:
+    """Expose P5 candidates in ./winter memories without changing legacy review."""
+    path = data / "memories.sqlite"
+    if not path.exists():
+        return
+    with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
+        rows = connection.execute(
+            "SELECT kind, content, confidence FROM memories "
+            "WHERE source = 'extracted' AND status = 'candidate' ORDER BY created_at, rowid",
+        ).fetchall()
+    for kind, content, confidence in rows:
+        print(f"[candidate/{kind}] {content} (확신도 {confidence:.2f})")
 
 
 def configure_persistent_args(args: argparse.Namespace) -> argparse.Namespace:

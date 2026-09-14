@@ -20,7 +20,7 @@ from uuid import uuid4
 from companion.adapters.codex_gateway_worker import CodexTypedProjectWorker
 from companion.session_wire import SessionProtocolError, receive, send, string
 from companion.text_jobs import ProcessWorkerQueue
-from companion.text_reflection import activate_before_session, start_after_session
+from companion.text_reflection import notify_before_session, start_after_session
 from companion.work_orchestration import WorkerTaskPacket, WorkRequest
 from companion.worker import ReadOnlyWorkerResult, WorkerUnavailableError
 from companion.worker_gateway import GatewayWorkerResult
@@ -250,7 +250,7 @@ def main() -> int:
     process: subprocess.Popen[str] | None = None
     try:
         data = args.data_dir or args.audit_dir.parent
-        activate_before_session(data, sys.stdout)
+        notify_before_session(data, sys.stdout)
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    text=True, encoding="utf-8", bufsize=1)
         assert process.stdin is not None and process.stdout is not None

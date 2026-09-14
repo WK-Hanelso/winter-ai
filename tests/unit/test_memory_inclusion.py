@@ -1,4 +1,4 @@
-"""M1 inclusion checks; synthetic stores and fake responses, no personal DB."""
+"""P5 selection and inherited prose checks; synthetic stores and fake responses."""
 
 from dataclasses import replace
 
@@ -55,7 +55,7 @@ class Capture:
 
 
 @pytest.mark.parametrize("question", QUESTIONS + ("안녕", "내가뭐하는사람인지알아"))
-def test_small_store_includes_all_ten_in_real_core_prompt(question):
+def test_small_store_profiles_and_fallback_in_real_core_prompt(question):
     items = memories()
     model = Capture()
     core = CompanionCore(model, InMemoryConversationRepository(),
@@ -63,68 +63,64 @@ def test_small_store_includes_all_ten_in_real_core_prompt(question):
     core.respond_to_text(question)
     blocks = [m.content for m in model.requests[0].messages if m.role == "system"]
     block = next(b for b in blocks if b.startswith(MEMORY_BACKGROUND_INSTRUCTION))
-    assert all(memory.content in block for memory in items)
+    assert all(m.content in block for m in items if m.kind in {
+        "semantic", "relationship", "preference", "project",
+    })
+    assert items[5].content not in block  # unrelated decision, even in a small store
     instruction, paragraph = block.split("\n", 1)
     assert instruction == MEMORY_BACKGROUND_INSTRUCTION
     assert "[" not in paragraph and "\n" not in paragraph
     assert not paragraph.startswith("- ")
-    assert paragraph.endswith("요즘은 오늘 조금 피곤하다, 요즘 업무가 많다.")
     assert all(memory.id not in block.splitlines() for memory in items)
 
 
-def overflow():
-    # 20 items exceed 1500 chars: four profile kinds, twelve decisions, four states.
-    facts = [(kind, f"프로필{i} " + "배경 " * 30)
-             for i, kind in enumerate(("semantic", "relationship", "project", "preference"))]
-    facts += [("decision", f"키워드 일치{i} " + "계정 " * 30) for i in range(12)]
-    facts += [(f"current_state:topic{i}", f"현재{i} " + "상태 " * 30) for i in range(4)]
-    return memories(facts)
+def test_overlap_confidence_recency_rank_after_profiles():
+    items = list(memories((("semantic", "기본 프로필"), ("relationship", "관계"),
+                           ("decision", "Python config 결정"),
+                           ("procedural", "Python config 설명"),
+                           ("episodic", "Python 경험"),
+                           ("episodic", "전시회 경험"))))
+    items[2] = replace(items[2], confidence=.8, updated_at="2026-09-14")
+    items[3] = replace(items[3], confidence=.9, updated_at="2026-09-13")
+    selected = ActiveMemoryRetriever(Store(items)).retrieve("Python config")
+    assert {m.kind for m in selected[:2]} == {"semantic", "relationship"}
+    assert selected[2:] == (items[3], items[2], items[4])
+    items[2] = replace(items[2], confidence=.9)
+    selected = ActiveMemoryRetriever(Store(items)).retrieve("Python config")
+    assert selected[2:] == (items[2], items[3], items[4])
 
 
-@pytest.mark.parametrize("question", QUESTIONS + ("나는 누구?", "직업이 뭐야"))
-def test_overflow_prefers_profile_kinds_and_states_have_separate_slots(question):
-    items = overflow()
-    assert len(items) == 20 and sum(len(m.content) for m in items) > 1500
-    retrieved = ActiveMemoryRetriever(Store(items), max_memories=4).retrieve(question + " 계정?")
-    assert {m.kind for m in retrieved[:4]} == {
-        "semantic", "relationship", "project", "preference",
-    }
-    assert len(retrieved) == 6
-    assert sum(m.kind.startswith("current_state:") for m in retrieved) == 2
-    default = ActiveMemoryRetriever(Store(items)).retrieve(question)
-    assert len(default) == 5
-    assert all(m.kind != "decision" for m in default)
-    assert sum(len(m.content) for m in default) <= 1500
+def test_fallback_latest_three_and_recall_all_within_budget():
+    items = list(memories(tuple(("preference" if i % 2 else "project", f"관심사 {i}")
+                                for i in range(8))))
+    items = [replace(m, updated_at=f"2026-09-{i + 1:02}", confidence=1 - i / 20)
+             for i, m in enumerate(items)]
+    retriever = ActiveMemoryRetriever(Store(items))
+    assert retriever.retrieve("안녕") == tuple(reversed(items[-3:]))
+    assert retriever.retrieve("나에 대해 말해줘") == tuple(reversed(items))
 
 
-def test_overflow_keeps_keyword_ranking_and_does_not_boost_states():
-    items = list(overflow())
-    items[4] = replace(items[4], content="키워드 일치 계정 Python config", importance=9)
-    retrieved = ActiveMemoryRetriever(Store(items)).retrieve("Python config 계정")
-    assert retrieved[0] == items[4]
-    assert len(retrieved) == 5
-    assert all(m.kind == "decision" for m in retrieved[:3])
-    assert all(m.kind.startswith("current_state:") for m in retrieved[3:])
-    # '내일' must not become a self-profile question just because it contains '내'.
-    unrelated = ActiveMemoryRetriever(Store(items)).retrieve("내일 날씨 어때?")
-    assert len(unrelated) == 2
-    assert all(m.kind.startswith("current_state:") for m in unrelated)
+def test_profiles_confidence_then_recency_cut_whole_sentences_to_budget():
+    items = list(memories((("semantic", "프로필가"), ("relationship", "프로필나"),
+                           ("semantic", "프로필다"), ("semantic", "프로필라"))))
+    items = [replace(m, confidence=c, updated_at=t) for m, c, t in zip(
+        items, (.7, .9, .9, .9), ("2026-09-14", "2026-09-12", "2026-09-13", "2026-09-14"),
+        strict=True,
+    )]
+    selected = ActiveMemoryRetriever(Store(items), max_characters=8).retrieve("안녕")
+    assert selected == (items[3], items[2])
+    assert sum(len(m.content) for m in selected) == 8
+    long = replace(items[3], content="긴 프로필 " * 500)
+    assert long not in ActiveMemoryRetriever(Store([long] + items[:3])).retrieve("나에 대해?")
 
 
-def test_exact_budget_includes_everything_and_overflow_never_truncates_sources():
-    items = memories()
-    size = sum(len(m.content) for m in items)
-    assert ActiveMemoryRetriever(Store(items), max_characters=size).retrieve("안녕") == items
-    assert ActiveMemoryRetriever(Store(items), max_characters=size - 1).retrieve("안녕") == (
-        items[9], items[8],
-    )
-    long = replace(items[0], content="초장문 " * 400)
-    selected = ActiveMemoryRetriever(Store((long,) + items[1:]), max_characters=60).retrieve(
-        "나에 대해 뭐 알아?"
-    )
-    assert long not in selected
-    assert sum(len(m.content) for m in selected) <= 60
-    assert all(m in items for m in selected)
+def test_2200_budget_no_ranked_three_cap_and_episodic_requires_overlap():
+    items = memories(tuple(("semantic", str(i) + "가" * 299) for i in range(8)))
+    selected = ActiveMemoryRetriever(Store(items)).retrieve("안녕")
+    assert len(selected) == 7 and sum(len(m.content) for m in selected) == 2100
+    episodic = memories((("episodic", "전시회에 갔다"),))
+    assert ActiveMemoryRetriever(Store(episodic)).retrieve("나에 대해 말해줘") == ()
+    assert ActiveMemoryRetriever(Store(episodic)).retrieve("전시회 기억나?") == episodic
 
 
 def test_prose_preserves_exact_source_even_with_whitespace_and_unknown_kind():
@@ -142,8 +138,8 @@ def test_interleaved_states_move_to_one_final_sentence_without_changing_selectio
                       ("current_state:two", "운동을 시작했다"),
                       ("semantic", "예시 연구소 선임연구원이다")))
     selected = ActiveMemoryRetriever(Store(items)).retrieve("do you know about me?")
-    assert selected == items
-    assert memory_context(selected) == (
+    assert set(selected) == set(items)
+    assert memory_context(items) == (
         MEMORY_BACKGROUND_INSTRUCTION + "\n1990년생이다. 예시 연구소 선임연구원이다. "
         "요즘은 공부가 버겁다, 운동을 시작했다."
     )
@@ -158,11 +154,35 @@ def test_background_or_state_only_does_not_add_empty_sections(facts, ending):
     assert memory_context(memories(facts)) == MEMORY_BACKGROUND_INSTRUCTION + "\n" + ending
 
 
-def test_small_store_all_inclusion_also_applies_to_current_states():
+def test_small_store_current_states_have_two_slots():
     items = memories(tuple((f"current_state:{i}", f"상태 {i}") for i in range(4)))
-    assert ActiveMemoryRetriever(Store(items)).retrieve("안녕") == items
+    assert ActiveMemoryRetriever(Store(items)).retrieve("안녕") == (items[3], items[2])
 
 
 def test_empty_and_zero_budget():
     assert ActiveMemoryRetriever(Store(())).retrieve("나에 대해?") == ()
     assert ActiveMemoryRetriever(Store(memories()), max_characters=0).retrieve("나에 대해?") == ()
+
+
+@pytest.mark.parametrize("source", ["extracted", "reflection_reviewed", "user_explicit",
+                                    "user_direct", "reflection_auto"])
+def test_fact_sources_use_prose_only_legacy_auto_is_quoted(source):
+    item = replace(memories((("semantic", "천우는 6년차 개발자다."),))[0], source=source)
+    rendered = memory_context((item,))
+    expected = f'천우가 말하길 “{item.content}”.' if source == "reflection_auto" else item.content
+    assert rendered == MEMORY_BACKGROUND_INSTRUCTION + "\n" + expected
+
+
+def test_extracted_state_is_already_third_person_prose():
+    item = replace(memories((("current_state:work", "천우는 업무로 피곤하다."),))[0],
+                   source="extracted")
+    assert memory_context((item,)) == MEMORY_BACKGROUND_INSTRUCTION + "\n" + item.content
+
+
+def test_recall_overview_precedes_other_matching_facts_when_budget_is_tight():
+    items = memories((("preference", "간결한 설명"), ("project", "영어 공부"),
+                      ("episodic", "예전 전시회 기록")))
+    selected = ActiveMemoryRetriever(Store(items), max_characters=11).retrieve(
+        "나에 대해 말해줘 전시회 기록"
+    )
+    assert {m.kind for m in selected} == {"preference", "project"}

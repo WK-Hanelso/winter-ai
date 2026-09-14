@@ -9,6 +9,7 @@ import pytest
 from companion import text_host, text_reflection, user_cli
 from companion.adapters.sqlite_repository import SqliteConversationRepository
 from companion.contracts import ConversationMessage
+from companion.fact_extraction import FactExtractionRequest, SqliteFactExtractionRepository
 from companion.identity import CompanionIdentity, JsonIdentityRepository
 from companion.memory import SqliteMemoryRepository
 from companion.reflection import (
@@ -93,7 +94,7 @@ def test_detached_launch_copies_exact_child_configuration_once(tmp_path, monkeyp
     assert calls[0][4] == "label=" + launched[4]
     assert launched[launched.index("python"):] == [
         "python", "-m", "companion.user_cli", "--model-url", "http://127.0.0.1:18081",
-        "--reflect-history", "--analysis-limit", "3", "--reflection-run-log",
+        "--extract-facts", "--limit", "3", "--run-log",
     ]
     assert output.getvalue() == (
         "기억 정리를 뒤에서 시작했어 (발화 3개). 다음 대화 시작 때 기억한 걸 알려줄게.\n"
@@ -105,7 +106,9 @@ def test_detached_launch_copies_exact_child_configuration_once(tmp_path, monkeyp
 def test_no_pending_messages_means_no_docker_or_output(tmp_path, monkeypatch, existing):
     if existing:
         history(tmp_path, 1)
-        candidate(tmp_path, 1)
+        SqliteFactExtractionRepository(tmp_path / "memories.sqlite").store(
+            FactExtractionRequest(1, "나는 1년차 개발자야"), (), total=0, rejected=0,
+        )
     calls = fake_docker(monkeypatch)
     output = StringIO()
     text_reflection.start_after_session(tmp_path, command(tmp_path), output)
@@ -130,7 +133,12 @@ def test_pending_count_matches_has_extraction_and_caps_at_40(tmp_path):
     refs.record_extraction_failure(42, "fixture")
     assert refs.has_extraction(43) and not refs.has_extraction(42)
     assert text_reflection.pending_count(tmp_path) == 40
-    assert text_reflection.pending_count(tmp_path, limit=100) == 42
+    assert text_reflection.pending_count(tmp_path, limit=100) == 40
+    facts = SqliteFactExtractionRepository(tmp_path / "memories.sqlite")
+    for i in range(1, 42):
+        facts.store(FactExtractionRequest(i, "발화"), (), total=0, rejected=0)
+    facts.record_failure(42, "synthetic failure")
+    assert text_reflection.pending_count(tmp_path) == 2
 
 
 def host_main(tmp_path, monkeypatch, inputs, *, child_check=None, child_exit=0,
@@ -176,7 +184,7 @@ def test_host_activation_and_notice_precede_real_child_runtime_memory_read(tmp_p
     ordered = refs.list(status="candidate")
     calls = fake_docker(monkeypatch)
     monkeypatch.setattr(user_cli, "DATA", tmp_path)
-    original_activate = text_host.activate_before_session
+    original_activate = text_host.notify_before_session
 
     def activate(data, stdout):
         with (data / "worker_sessions" / "terminal.lock").open("a") as lock:
@@ -184,7 +192,7 @@ def test_host_activation_and_notice_precede_real_child_runtime_memory_read(tmp_p
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         original_activate(data, stdout)
 
-    monkeypatch.setattr(text_host, "activate_before_session", activate)
+    monkeypatch.setattr(text_host, "notify_before_session", activate)
 
     def child_check(output):
         from companion import text_child
@@ -203,7 +211,7 @@ def test_host_activation_and_notice_precede_real_child_runtime_memory_read(tmp_p
         assert text_child.run([], StringIO('{"kind":"close"}\n'), StringIO()) == 0
         assert {item.content for item in observed} == {item.content for item in ordered}
         assert all(item.source == "reflection_auto" for item in observed)
-        assert "지난 대화에서 기억한 것 2개:" in output.getvalue()
+        assert "지난 대화에서 기억한 것" not in output.getvalue()
 
     code, output, events = host_main(tmp_path, monkeypatch, "/exit\n",
                                      child_check=child_check)
@@ -213,7 +221,7 @@ def test_host_activation_and_notice_precede_real_child_runtime_memory_read(tmp_p
     assert refs.get(ordered[1].id).status == "active"
     text = output.getvalue()
     assert "후보" not in text and "승인" not in text
-    assert text.count("지난 대화에서 기억한 것") == 1
+    assert text.count("지난 대화에서 기억한 것") == 0
     assert not calls
 
 
@@ -244,11 +252,11 @@ def test_host_launch_failure_is_logged_after_clean_child_exit(tmp_path, monkeypa
     fake_docker(monkeypatch, failure=failure)
     code, output, events = host_main(tmp_path, monkeypatch, "/exit\n")
     assert code == 0 and events[-1] == "child_exited"
-    rows = (tmp_path / "reflection_runs.jsonl").read_text().splitlines()
+    rows = (tmp_path / "fact_runs.jsonl").read_text().splitlines()
     assert len(rows) == 1
     entry = json.loads(rows[0])
     assert entry["error"] and entry["started_at"] <= entry["ended_at"]
-    assert entry["processed"] == entry["created_candidates"] == 0
+    assert entry["processed"] == entry["stored"] == 0
     assert "뒤에서 시작했어" not in output.getvalue()
 
 
@@ -360,7 +368,7 @@ def test_host_starts_detached_run_only_after_child_wait(tmp_path, monkeypatch):
     assert code == 0 and events == ["child_started", "child_exited"]
     assert exited == ["closed", "detached"]
     assert len(calls) == 2
-    assert calls[1][calls[1].index("--analysis-limit") + 1] == "40"
+    assert calls[1][calls[1].index("--limit") + 1] == "40"
     assert "발화 40개" in output.getvalue()
 
 
@@ -377,7 +385,7 @@ def test_docker_run_failure_includes_stderr_and_keeps_exit_success(tmp_path, mon
     monkeypatch.setattr(text_reflection.subprocess, "run", docker)
     code, _, _ = host_main(tmp_path, monkeypatch, "/exit\n")
     assert code == 0 and len(calls) == 2
-    entry = json.loads((tmp_path / "reflection_runs.jsonl").read_text())
+    entry = json.loads((tmp_path / "fact_runs.jsonl").read_text())
     assert "Cannot connect to Docker socket" in entry["error"]
 
 
@@ -409,7 +417,7 @@ def test_successful_logged_entry_records_once_and_does_not_reextract(tmp_path, m
     assert entry["error"] is None
     calls = fake_docker(monkeypatch)
     text_reflection.start_after_session(tmp_path, command(tmp_path), StringIO())
-    assert not calls
+    assert len(calls) == 2  # Legacy completion does not mark P5 facts completed.
     assert (tmp_path / "reflection_runs.jsonl").read_text().splitlines() == rows
 
 

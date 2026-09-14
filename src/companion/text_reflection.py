@@ -7,13 +7,22 @@ from contextlib import closing
 from dataclasses import asdict
 from datetime import UTC, datetime
 import hashlib
+from io import StringIO
 import json
 from pathlib import Path
 import sqlite3
 import subprocess
+import sys
 from typing import TextIO
 from uuid import uuid4
 
+from companion.fact_extraction import (
+    VERSION,
+    FactExtractionService,
+    FactExtractor,
+    FakeFactExtractor,
+    SqliteFactExtractionRepository,
+)
 from companion.memory import Memory, SqliteMemoryRepository
 from companion.reflection import (
     ConversationHistoryBackfill,
@@ -85,25 +94,78 @@ def activate_before_session(data: Path, stdout: TextIO) -> None:
               file=stdout, flush=True)
 
 
+def notify_before_session(data: Path, stdout: TextIO) -> None:
+    """Retain legacy activation; announce only newly extracted active knowledge."""
+    activate_before_session(data, StringIO())
+    path = data / "memories.sqlite"
+    if not path.exists():
+        return
+    notice = data / "fact_notice.json"
+    last = ""
+    if notice.exists():
+        try:
+            payload = json.loads(notice.read_text(encoding="utf-8"))
+            if isinstance(payload, dict) and isinstance(payload.get("last_notified_at"), str):
+                last = payload["last_notified_at"]
+        except (ValueError, OSError):
+            pass
+    # Serialize the snapshot with fact commits: an in-flight older timestamp must
+    # not disappear behind the notice watermark. No memory rows are changed here.
+    with closing(sqlite3.connect(path)) as connection, connection:
+        connection.execute("BEGIN IMMEDIATE")
+        cutoff = datetime.now(UTC).isoformat()
+        rows = connection.execute(
+            "SELECT content FROM memories WHERE source = 'extracted' AND status = 'active' "
+            "AND created_at > ? AND created_at <= ? ORDER BY created_at, rowid",
+            (last, cutoff),
+        ).fetchall()
+    if rows:
+        preview = " / ".join(
+            f'“{row[0][:40]}{"…" if len(row[0]) > 40 else ""}”' for row in rows[:3]
+        )
+        extra = f" 외 {len(rows) - 3}개" if len(rows) > 3 else ""
+        preview = " ".join(preview.splitlines())
+        print(f"지난 대화에서 기억한 것 {len(rows)}개: {preview}{extra}", file=stdout, flush=True)
+    temporary = notice.with_suffix(".tmp")
+    temporary.write_text(json.dumps({"last_notified_at": cutoff}) + "\n", encoding="utf-8")
+    temporary.replace(notice)
+
+
 def pending_count(data: Path, *, limit: int = 40) -> int:
-    """Read-only equivalent of has_extraction; failed extractions remain eligible."""
+    """Read-only count based on P5 completion; missing tables and failures are pending."""
     history = data / "conversations.sqlite"
     if not history.exists():
         return 0
     with closing(_readonly(history)) as connection:
-        reflection = data / "reflection.sqlite"
+        memories = data / "memories.sqlite"
         condition = ""
-        if reflection.exists():
-            connection.execute("ATTACH DATABASE ? AS reflection",
-                               (reflection.resolve().as_uri() + "?mode=ro",))
-            condition = """AND NOT EXISTS (
-                SELECT 1 FROM reflection.reflection_extractions AS extraction
-                WHERE extraction.message_id = message.id AND extraction.status = 'completed'
-            )"""
+        if memories.exists():
+            connection.execute("ATTACH DATABASE ? AS memory",
+                               (memories.resolve().as_uri() + "?mode=ro",))
+            if connection.execute(
+                "SELECT 1 FROM memory.sqlite_master WHERE type = 'table' "
+                "AND name = 'fact_extractions'",
+            ).fetchone():
+                condition = f"""AND NOT EXISTS (
+                    SELECT 1 FROM memory.fact_extractions AS extraction
+                    WHERE extraction.message_id = message.id AND extraction.status = 'completed'
+                    AND extraction.version = {VERSION}
+                )"""
         return len(connection.execute(
             f"SELECT id FROM conversation_messages AS message WHERE role = 'user' {condition} "
-            "ORDER BY id DESC LIMIT ?", (limit,),
+            "ORDER BY id LIMIT ?", (min(40, max(0, limit)),),
         ).fetchall())
+
+
+def record_fact_run(data: Path, started_at: str, *, error: str | None = None,
+                    counts: dict[str, int] | None = None) -> None:
+    result: dict[str, object] = dict.fromkeys(("processed", "stored", "rejected", "failed"), 0)
+    if counts is not None:
+        result.update(counts)
+    result.update(started_at=started_at, ended_at=datetime.now(UTC).isoformat(), error=error)
+    data.mkdir(parents=True, exist_ok=True)
+    with (data / "fact_runs.jsonl").open("a", encoding="utf-8") as output:
+        output.write(json.dumps(result, ensure_ascii=False) + "\n")
 
 
 def record_run(data: Path, started_at: str, *, error: str | None = None,
@@ -136,7 +198,7 @@ def detached_command(child_command: list[str], *, label: str, limit: int) -> lis
     args = build_parser().parse_args(child_command[module + 1:])
     return [*prefix[:2], "-d", "--label", label, *prefix[2:],
             "python", "-m", "companion.user_cli", "--model-url", args.model_url,
-            "--reflect-history", "--analysis-limit", str(limit), "--reflection-run-log"]
+            "--extract-facts", "--limit", str(limit), "--run-log"]
 
 
 def start_after_session(data: Path, child_command: list[str], stdout: TextIO) -> None:
@@ -162,7 +224,7 @@ def start_after_session(data: Path, child_command: list[str], stdout: TextIO) ->
         if isinstance(error, subprocess.CalledProcessError) and error.stderr:
             detail += f": {error.stderr.strip()}"
         try:
-            record_run(data, started_at, error=detail)
+            record_fact_run(data, started_at, error=detail)
         except OSError:
             # Even an unwritable audit destination must not turn /exit into a failure.
             print("기억 정리 시작 오류를 기록하지 못했어.", file=stdout, flush=True)
@@ -199,3 +261,38 @@ def run_logged_reflection(data: Path, args: argparse.Namespace) -> int:
         return 1
     finally:
         record_run(data, started_at, error=error, counts=counts)
+
+
+def run_fact_extraction(data: Path, args: argparse.Namespace) -> int:
+    """Internal post-session/backfill entry, without dialogue or maintenance bootstrap."""
+    from companion.adapters.fact_extractor import StructuredChatFactExtractor
+    from companion.cli.__main__ import build_chat_model
+
+    started_at = datetime.now(UTC).isoformat()
+    counts = None
+    error = None
+    try:
+        if not (data / "identity.json").exists():
+            raise ValueError("Winter Identity is missing")
+        if not (data / "conversations.sqlite").exists():
+            raise ValueError("Winter conversation history is missing")
+        if args.limit < 1:
+            raise ValueError("fact extraction limit must be at least 1")
+        interpreter: FactExtractor = (FakeFactExtractor() if args.backend == "fake"
+                       else StructuredChatFactExtractor(build_chat_model(args)))
+        result = FactExtractionService(
+            SqliteConversationHistoryReader(data / "conversations.sqlite"),
+            SqliteFactExtractionRepository(data / "memories.sqlite"), interpreter,
+        ).process_pending(
+            limit=None if args.all else args.limit,
+            progress=lambda i, n: print(f"기억 정리 진행: {i}/{n}", flush=True),
+        )
+        counts = asdict(result)
+        return 1 if result.failed else 0
+    except Exception as failure:  # noqa: BLE001 - preserve detached failure status
+        error = f"{type(failure).__name__}: {failure}"
+        print(f"기억 정리 실패: {error}", file=sys.stderr, flush=True)
+        return 1
+    finally:
+        if args.run_log:
+            record_fact_run(data, started_at, error=error, counts=counts)
