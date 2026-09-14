@@ -94,10 +94,14 @@ def validate_fact(fact: Fact) -> None:
         raise FactExtractionError("invalid fact temporal scope")
 
 
-_SEMANTIC_EXCLUDED = re.compile(r"느낀다|느끼|생각한다|불만|의도|말한다|원한다|바란다")
+_SEMANTIC_EXCLUDED = re.compile(r"느낀다|느끼|생각한다|불만|의도|말한다|원한다|바란다|싶어|싶다")
 _WINTER_TOPIC = re.compile(r"communication|conversation|reply|style|winter|겨울", re.I)
-_QUESTION = re.compile(r"[?？]\s*$|(?:가능해|있어|알아|뭐야)(?:요)?[.!\s]*$|(?:^|\s)왜(?:\s|$)")
-_NEGATED_INTENT = re.compile(r"아니|않|의도|(?:^|\s)(?:안|못)\s|없")
+# 2026-09-14 dry-run 2: a bare "?" or "왜" also dropped "…알고 있지 않았어?" facts; keep only
+# the interrogative endings that mark a question about Winter.
+_QUESTION = re.compile(r"(?:가능해|있어|알아|뭐야)(?:요)?[?？.!\s]*$")
+# Bare 아니/않/없 also dropped "…아니라 감정 있는 AI를 만들려고" style facts;
+# match intent negation only.
+_NEGATED_INTENT = re.compile(r"(?:하려는|할)\s*(?:게|것이|건)\s*아니|의도(?:가|는)?\s*없|않는다$")
 _WINTER_FEEDBACK = re.compile(
     r"말투|태도|성의|대화\s*방식|응답\s*방식|답변\s*방식|(?:그만|계속)\s*반복|반복하라고"
 )
@@ -105,6 +109,7 @@ _WINTER_REQUEST = re.compile(
     r"(?:말해|말하|물어|질문해|답해|대답해|답변해|영어\s*선생|친구가?\s*되|친구이길)"
     r".*(?:줘|주라|주세요|원해|원한다|바라|바란다|되길|이길)"
 )
+_HANGUL = re.compile(r"[가-힣]")
 _KIND_PRIORITY = {kind: rank for rank, kind in enumerate((
     "semantic", "project", "relationship", "preference", "decision", "procedural", "episodic",
 ))}
@@ -124,9 +129,7 @@ def _kind_policy(fact: Fact) -> Fact | None:
         return None
     if fact.kind.startswith("current_state:") and _WINTER_TOPIC.search(fact.kind.split(":", 1)[1]):
         return None
-    if _QUESTION.search(fact.evidence.strip()) or any(
-        _NEGATED_INTENT.search(text) for text in (fact.evidence, fact.content)
-    ):
+    if _QUESTION.search(fact.evidence.strip()) or _NEGATED_INTENT.search(fact.content):
         return None
     if _WINTER_REQUEST.search(fact.evidence):
         return replace(fact, kind="preference")
@@ -160,10 +163,11 @@ def _unsupported_tokens(fact: Fact, request: FactExtractionRequest) -> set[str]:
     content_tokens = _lexical_tokens(fact.content)
     # 최합 has no shared two-character prefix with 최종 or 합격: a single explicit alias.
     abbreviation_support: set[str] = set()
-    if "최합" in evidence_tokens and "최종 합격" in fact.content:
+    if any(t.startswith("최합") for t in evidence_tokens) and "최종 합격" in fact.content:
         abbreviation_support.update(("최종", "합격"))
     return {token for token in content_tokens
-            if token not in source and token not in abbreviation_support
+            if token not in source
+            and not any(token.startswith(alias) for alias in abbreviation_support)
             and not any(token[:2] == evidence[:2] for evidence in evidence_tokens)}
 
 
@@ -325,7 +329,12 @@ class FactExtractionService:
                         if checked is None:
                             continue
                         fact = checked
-                        unsupported = len(_unsupported_tokens(fact, request))
+                        # A non-Korean evidence clause (e.g. English) cannot be grounded
+                        # lexically against a Korean fact sentence; the verifier decides.
+                        # Non-Korean evidence (e.g. English) cannot be grounded lexically
+                        # against a Korean fact sentence: demote it to a candidate instead.
+                        unsupported = (1 if not _HANGUL.search(fact.evidence)
+                                       else len(_unsupported_tokens(fact, request)))
                         if unsupported >= 2:
                             count_lexical_rejected += 1
                             continue

@@ -276,6 +276,8 @@ def test_at_most_five_and_existing_memory_table_schema_is_unchanged(tmp_path):
      "current_state:communication_style"),
     ("겨울이를 감정 쓰레기통으로 사용하려는 게 아니다",  # Synthetic negative-intent clause.
      "천우는 겨울이를 자신의 감정 쓰레기통으로 사용하려는 의도가 없다고 말한다.", "semantic"),
+    ("응 맞아 그렇게 말했어",  # Korean evidence with two invented content nouns.
+     "천우는 데이터베이스 개발자다.", "semantic"),
 ])
 def test_p51_dry_run_failure_shapes_never_reach_verifier(tmp_path, text, content, kind):
     repo, model, service = setup(tmp_path, text, (fact(content, text, kind=kind),))
@@ -283,7 +285,7 @@ def test_p51_dry_run_failure_shapes_never_reach_verifier(tmp_path, text, content
     assert (result.stored, result.rejected, result.failed) == (0, 1, 0)
     assert len(model.requests) == 1 and not repo.memories.list()
     assert audit(tmp_path)["rejected"] == 1
-    if "데이터베이스" in content:
+    if "개발자다" in content:
         assert result.lexical_rejected == 1
 
 
@@ -298,8 +300,8 @@ def test_p51_semantic_evaluation_is_discarded_without_reclassification(tmp_path,
 
 
 @pytest.mark.parametrize("question", [
-    "인터넷 검색?", "인터넷 검색 가능해", "검색 기능 있어", "인터넷 검색 알아", "검색이 뭐야",
-    "왜 검색을 하는 거야", "인터넷 검색 가능해요", "검색 가능해？",
+    "인터넷 검색 가능해?", "인터넷 검색 가능해", "검색 기능 있어", "인터넷 검색 알아",
+    "검색이 뭐야", "인터넷 검색 가능해요", "검색 가능해？",
 ])
 def test_p51_question_evidence_is_rejected(tmp_path, question):
     repo, model, service = setup(tmp_path, question, (
@@ -468,8 +470,8 @@ def test_p51_existing_active_duplicate_is_kind_independent(tmp_path):
 
 
 @pytest.mark.parametrize("old,new,stored", [
-    ("alpha beta gamma delta", "alpha beta gamma epsilon", 1),  # Jaccard = .6
-    ("alpha beta gamma", "alpha beta delta", 2),  # Jaccard = .5
+    ("사과 바나나 포도 딸기", "사과 바나나 포도 수박", 1),  # Jaccard = .6
+    ("사과 바나나 포도", "사과 바나나 수박", 2),  # Jaccard = .5
 ])
 def test_p51_within_message_jaccard_boundary(tmp_path, old, new, stored):
     repo, _, service = setup(tmp_path, f"{old}. {new}", (
@@ -532,3 +534,27 @@ def test_p51_repeated_learning_is_a_life_state_not_winter_feedback(tmp_path):
     result = service.process_pending()
     assert result.stored == 1 and result.lexical_rejected == result.lexical_demoted == 0
     assert repo.memories.list()[0].status == "active"
+
+
+@pytest.mark.parametrize("text, content, kind", [
+    ("나야 뭐 이직 준비하고 있지 알고 있지 않았어?", "천우는 이직 준비를 하고 있다.", "project"),
+    ("나 한양이엔지 최합했지만 지금 연봉협상중이라는거 몰랐어?",
+     "천우는 한양이엔지에 최종 합격했고 연봉 협상 중이다.", "project"),
+    ("감정 쓰레기통이 아니라 감정을 갖는 AI를 만들려고 하는거야",
+     "천우는 감정을 갖는 AI를 만들려고 한다.", "project"),
+])
+def test_p51b_rhetorical_question_and_contrast_keep_the_fact(tmp_path, text, content, kind):
+    repo, model, service = setup(tmp_path, text, (fact(content, text, kind=kind),))
+    result = service.process_pending(limit=1)
+    assert result.stored == 1
+    assert [m.content for m in repo.memories.list_active()] == [content]
+
+
+def test_p51b_english_evidence_skips_lexical_grounding(tmp_path):
+    text = "i want you to be my english teacher too. and be my friend."
+    repo, model, service = setup(tmp_path, text, (
+        fact("천우는 겨울이가 영어 선생이자 친구이길 바란다.", text, kind="relationship"),
+    ))
+    result = service.process_pending(limit=1)
+    assert result.stored == 1 and result.lexical_rejected == 0 and result.lexical_demoted == 1
+    assert [m.status for m in repo.memories.list()] == ["candidate"]
