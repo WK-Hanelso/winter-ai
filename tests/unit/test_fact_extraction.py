@@ -542,6 +542,8 @@ def test_p51_repeated_learning_is_a_life_state_not_winter_feedback(tmp_path):
      "천우는 한양이엔지에 최종 합격했고 연봉 협상 중이다.", "project"),
     ("감정 쓰레기통이 아니라 감정을 갖는 AI를 만들려고 하는거야",
      "천우는 감정을 갖는 AI를 만들려고 한다.", "project"),
+    ("나는 AI개발자를 위해 더욱 노력중이지 그런데 너는 내가 원하는걸 알고 싶은 이유가 뭐야?",
+     "천우는 AI 개발자를 위해 노력 중이다.", "project"),
 ])
 def test_p51b_rhetorical_question_and_contrast_keep_the_fact(tmp_path, text, content, kind):
     repo, model, service = setup(tmp_path, text, (fact(content, text, kind=kind),))

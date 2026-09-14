@@ -110,6 +110,7 @@ _WINTER_REQUEST = re.compile(
     r".*(?:줘|주라|주세요|원해|원한다|바라|바란다|되길|이길)"
 )
 _HANGUL = re.compile(r"[가-힣]")
+_ABOUT_WINTER = re.compile(r"겨울이|묻고|있는지|가능한지|검색|기능")
 _KIND_PRIORITY = {kind: rank for rank, kind in enumerate((
     "semantic", "project", "relationship", "preference", "decision", "procedural", "episodic",
 ))}
@@ -129,7 +130,11 @@ def _kind_policy(fact: Fact) -> Fact | None:
         return None
     if fact.kind.startswith("current_state:") and _WINTER_TOPIC.search(fact.kind.split(":", 1)[1]):
         return None
-    if _QUESTION.search(fact.evidence.strip()) or _NEGATED_INTENT.search(fact.content):
+    # A question ending discards the fact only when the fact itself is about Winter's
+    # abilities; "…노력중이지 그런데 …이유가 뭐야?" still carries a fact about the user.
+    if _QUESTION.search(fact.evidence.strip()) and _ABOUT_WINTER.search(fact.content):
+        return None
+    if _NEGATED_INTENT.search(fact.content):
         return None
     if _WINTER_REQUEST.search(fact.evidence):
         return replace(fact, kind="preference")
