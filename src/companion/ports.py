@@ -163,6 +163,10 @@ class WinterEventRepository(Protocol):
 class MemoryCandidateRepository(Protocol):
     """Port for reviewed candidates and direct user-statement memories."""
 
+    def list_active(self) -> tuple[Memory, ...]: ...
+
+    def forget_explicit(self, content: str) -> Memory | None: ...
+
     def add_candidate(
         self,
         *,

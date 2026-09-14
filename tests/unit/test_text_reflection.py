@@ -96,7 +96,7 @@ def test_detached_launch_copies_exact_child_configuration_once(tmp_path, monkeyp
         "--reflect-history", "--analysis-limit", "3", "--reflection-run-log",
     ]
     assert output.getvalue() == (
-        "기억 정리를 뒤에서 시작했어 (발화 3개). 다음 대화 시작 때 후보를 보여줄게.\n"
+        "기억 정리를 뒤에서 시작했어 (발화 3개). 다음 대화 시작 때 기억한 걸 알려줄게.\n"
     )
     assert command(tmp_path) == original
 
@@ -167,13 +167,24 @@ def host_main(tmp_path, monkeypatch, inputs, *, child_check=None, child_exit=0,
     return text_host.main(), output, events
 
 
-def test_host_review_precedes_real_child_runtime_memory_read(tmp_path, monkeypatch):
+def test_host_activation_and_notice_precede_real_child_runtime_memory_read(tmp_path, monkeypatch):
+    import fcntl
+
     identity(tmp_path)
     refs = candidate(tmp_path, 1)
     candidate(tmp_path, 2)
     ordered = refs.list(status="candidate")
     calls = fake_docker(monkeypatch)
     monkeypatch.setattr(user_cli, "DATA", tmp_path)
+    original_activate = text_host.activate_before_session
+
+    def activate(data, stdout):
+        with (data / "worker_sessions" / "terminal.lock").open("a") as lock:
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        original_activate(data, stdout)
+
+    monkeypatch.setattr(text_host, "activate_before_session", activate)
 
     def child_check(output):
         from companion import text_child
@@ -190,29 +201,29 @@ def test_host_review_precedes_real_child_runtime_memory_read(tmp_path, monkeypat
         monkeypatch.setattr(text_child, "build_text_runtime", build)
         # No generation: construct the real child's runtime, then immediately close.
         assert text_child.run([], StringIO('{"kind":"close"}\n'), StringIO()) == 0
-        assert [item.content for item in observed] == [ordered[0].content]
-        assert "승인 1, 보관 0, 제외 1, 미룸 0" in output.getvalue()
+        assert {item.content for item in observed} == {item.content for item in ordered}
+        assert all(item.source == "reflection_auto" for item in observed)
+        assert "지난 대화에서 기억한 것 2개:" in output.getvalue()
 
-    code, output, events = host_main(tmp_path, monkeypatch, "a\nn\n/exit\n",
+    code, output, events = host_main(tmp_path, monkeypatch, "/exit\n",
                                      child_check=child_check)
     assert code == 0
     assert events == ["child_started", "child_exited"]
     assert refs.get(ordered[0].id).status == "active"
-    assert refs.get(ordered[1].id).status == "rejected"
+    assert refs.get(ordered[1].id).status == "active"
     text = output.getvalue()
-    assert text.index("2. [") < text.index("후보 1:")
-    assert text.count("후보 1:") == text.count("후보 2:") == 1
+    assert "후보" not in text and "승인" not in text
+    assert text.count("지난 대화에서 기억한 것") == 1
     assert not calls
 
 
 @pytest.mark.parametrize("answer", ["q", "", "s"])
-def test_host_defer_all_preserves_candidates_and_starts_child(tmp_path, monkeypatch, answer):
+def test_manual_review_defer_all_preserves_candidates(tmp_path, answer):
     refs = candidate(tmp_path, 1)
     candidate(tmp_path, 2)
     before = refs.list()
-    fake_docker(monkeypatch)
-    code, output, events = host_main(tmp_path, monkeypatch, answer + "\n/exit\n")
-    assert code == 0 and events[0] == "child_started"
+    output = StringIO()
+    text_reflection.review_before_session(tmp_path, StringIO(answer + "\n"), output)
     assert refs.list() == before
     assert "승인 0, 보관 0, 제외 0, 미룸 2" in output.getvalue()
     assert "후보 2:" not in output.getvalue()

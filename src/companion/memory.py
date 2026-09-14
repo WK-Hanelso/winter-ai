@@ -14,6 +14,8 @@ from companion.dialogue.claim_language import has_question_form
 
 _EXPLICIT_MEMORY_REQUEST = re.compile(r"^\s*기억해(?:\s*줘)?[.!,:]?\s+(.+?)\s*$")
 _SUFFIX_MEMORY_REQUEST = re.compile(r"^\s*(.+?)\s+기억해(?:\s*줘)?[.!]?\s*$")
+_EXPLICIT_FORGET_REQUEST = re.compile(r"^\s*잊어\s*줘[.!,:]?\s+(.+?)\s*$")
+_SUFFIX_FORGET_REQUEST = re.compile(r"^\s*(.+?)\s+잊어(?:\s*줘)?[.!]?\s*$")
 _RECALL_REQUEST = re.compile(
     r"기억(?:나|해)|내가\s*(?:전에|예전에|뭐|뭘|어떤)|"
     r"나에\s*대해|내\s*(?:취향|선호)|뭐였|뭐라고\s*했"
@@ -267,33 +269,43 @@ class SqliteMemoryRepository:
         self.transition(candidate.id, "approved")
         return self.transition(candidate.id, "active")
 
-    def remember_reviewed(self, *, kind: str, content: str) -> Memory:
-        """Activate only a candidate the user explicitly approved in review."""
+    def remember_reviewed(
+        self, *, kind: str, content: str, source: str = "reflection_reviewed",
+    ) -> Memory:
+        """Activate a reviewed candidate or one selected by the Host's auto policy."""
         normalized = content.strip()
         if not kind.strip() or not normalized:
             raise MemoryRepositoryError("reviewed memory kind and content are required")
-        for memory in self.list():
+        existing = self.list()
+        for memory in existing:
+            if memory.kind == kind and memory.content == normalized and memory.status == "active":
+                return memory
+        for memory in existing:
             if memory.kind != kind or memory.content != normalized:
                 continue
-            if memory.status == "active":
-                return memory
             if memory.status == "candidate":
+                if source == "reflection_auto":
+                    self._write("UPDATE memories SET source = ? WHERE id = ?", (source, memory.id))
                 self.transition(memory.id, "approved")
                 return self.transition(memory.id, "active")
             if memory.status == "approved":
+                if source == "reflection_auto":
+                    self._write("UPDATE memories SET source = ? WHERE id = ?", (source, memory.id))
                 return self.transition(memory.id, "active")
         candidate = self.add_candidate(
             kind=kind,
             content=normalized,
-            source="reflection_reviewed",
+            source=source,
             importance=5,
             confidence=1.0,
         )
         self.transition(candidate.id, "approved")
         return self.transition(candidate.id, "active")
 
-    def remember_current_state(self, *, topic: str, content: str) -> Memory:
-        """Keep only the newest user-confirmed state for one topic."""
+    def remember_current_state(
+        self, *, topic: str, content: str, source: str = "user_current_state",
+    ) -> Memory:
+        """Keep only the newest accepted state for one topic."""
         normalized_topic = topic.strip().lower()
         normalized_content = content.strip()
         if not _CURRENT_STATE_TOPIC.fullmatch(normalized_topic):
@@ -316,7 +328,7 @@ class SqliteMemoryRepository:
         candidate = self.add_candidate(
             kind=kind,
             content=normalized_content,
-            source="user_current_state",
+            source=source,
             importance=7,
             confidence=1.0,
             temporal_scope="episodic",
@@ -328,6 +340,19 @@ class SqliteMemoryRepository:
             )
         self.transition(candidate.id, "approved")
         return self.transition(candidate.id, "active")
+
+    def forget_explicit(self, content: str) -> Memory | None:
+        """Deprecate one active memory using whitespace tokens, without stemming."""
+        terms = {term for term in content.split() if len(term) >= 2}
+        scored = []
+        for memory in self.list_active():
+            words = {word for word in memory.content.split() if len(word) >= 2}
+            score = sum(any(term in word or word in term for word in words) for term in terms)
+            if score:
+                scored.append((score, memory.created_at, memory.id))
+        if not scored:
+            return None
+        return self.transition(max(scored)[2], "deprecated")
 
     def transition(self, memory_id: str, status: str) -> Memory:
         if status not in self._STATUSES:
@@ -586,7 +611,9 @@ def memory_context(memories: tuple[Memory, ...]) -> str:
     background: list[str] = []
     states: list[str] = []
     for memory in memories:
-        if memory.kind.startswith(_CURRENT_STATE_PREFIX):
+        if memory.source == "reflection_auto":
+            background.append(f'천우가 말하길 “{memory.content}”.')
+        elif memory.kind.startswith(_CURRENT_STATE_PREFIX):
             states.append(memory.content)
         else:
             background.append(_memory_sentence(memory.content))
@@ -629,6 +656,12 @@ def current_state_history_context(memories: tuple[Memory, ...]) -> str:
             f"{memory.content}"
         )
     return "\n".join(lines)
+
+
+def extract_explicit_forget_content(text: str) -> str | None:
+    """Recognize explicit prefix/suffix forget commands without a model."""
+    match = _EXPLICIT_FORGET_REQUEST.match(text) or _SUFFIX_FORGET_REQUEST.match(text)
+    return match.group(1).strip() if match else None
 
 
 def extract_explicit_memory_content(text: str) -> str | None:

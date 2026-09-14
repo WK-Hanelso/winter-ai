@@ -526,6 +526,7 @@ class SqliteReflectionRepository:
         memories: SqliteMemoryRepository,
         *,
         edited_content: str | None = None,
+        source: str = "reflection_reviewed",
     ) -> ReflectionCandidate:
         candidate = self.get(candidate_id)
         if candidate.status != "candidate":
@@ -545,12 +546,14 @@ class SqliteReflectionRepository:
             memory = memories.remember_current_state(
                 topic=candidate.state_topic,
                 content=content,
+                source="reflection_auto" if source == "reflection_auto" else "user_current_state",
             )
             target_status = "active"
         elif candidate.can_activate_as_memory:
             memory = memories.remember_reviewed(
                 kind=candidate.kind,
                 content=content,
+                source=source,
             )
             target_status = "active"
         self._transition(

@@ -42,6 +42,7 @@ from companion.memory import (
     ActiveMemoryRetriever,
     classify_explicit_memory_kind,
     extract_direct_memory_statements,
+    extract_explicit_forget_content,
     extract_explicit_memory_content,
 )
 from companion.open_loops import (
@@ -228,6 +229,9 @@ class CompanionCore:
         return update.text
 
     def respond_to_text(self, text: str) -> CompanionResponse:
+        forgotten = self._respond_to_forget(text)
+        if forgotten is not None:
+            return forgotten
         turn = self._prepare(text)
         if turn.worker_request is not None:
             return self._respond_with_worker(turn)
@@ -252,6 +256,10 @@ class CompanionCore:
         a safe place to cut content. Callbacks wait for full-response review and
         finalization, including when the model has no streaming implementation.
         """
+        forgotten = self._respond_to_forget(text)
+        if forgotten is not None:
+            on_sentence(forgotten.text)
+            return forgotten
         turn = self._prepare(text)
         if turn.worker_request is not None:
             if on_status is not None:
@@ -503,6 +511,53 @@ class CompanionCore:
             if fallback is not None:
                 return fallback
         return repaired
+
+    def _respond_to_forget(self, text: str) -> CompanionResponse | None:
+        content = extract_explicit_forget_content(text)
+        if content is None:
+            return None
+        self._conversation_repository.append(ConversationMessage("user", text))
+        repository = self._memory_repository
+        memory = repository.forget_explicit(content) if repository is not None else None
+        if memory is not None:
+            answer = f'알겠어, 잊었어: “{memory.content[:60]}”'
+        else:
+            active = repository.list_active() if repository is not None else ()
+            latest = sorted(active, key=lambda item: item.created_at, reverse=True)[:3]
+            answer = "어떤 걸 잊을지 못 찾았어. 지금 기억하는 건 이런 거야: " + " / ".join(
+                f'“{item.content[:60]}”' for item in latest
+            )
+        route = self._maintenance_policy.route()
+        shadow_turn_id = None
+        if route.enqueue_turn_analysis and self._turn_understanding_repository is not None:
+            event = self._turn_understanding_repository.enqueue(
+                TurnInterpretationRequest(
+                    user_text=text, context=(ConversationMessage("user", text),),
+                ),
+                source=self._turn_source,
+            )
+            shadow_turn_id = event.id
+            if self._outcome_repository is not None:
+                self._outcome_repository.observe_turn(event.id, source=self._turn_source,
+                                                      user_text=text, memory_claims=())
+        self._conversation_repository.append(ConversationMessage("assistant", answer))
+        if self._outcome_repository is not None and shadow_turn_id is not None:
+            self._outcome_repository.record_response(shadow_turn_id, answer)
+        if self._winter_event_repository is not None and self._clock is not None:
+            self._winter_event_repository.record(
+                event_key=f"conversation-turn:{uuid4()}", kind="conversation_turn",
+                subject="conversation:acknowledge_forget", source=self._turn_source,
+                source_ref=shadow_turn_id, occurred_at=self._clock.now(),
+                metadata={"dialogue_act": "memory", "dialogue_behavior": "acknowledge_forget",
+                          "has_response": True, "maintenance_mode": route.mode.value,
+                          "worker_name": None, "worker_error": False},
+            )
+        return CompanionResponse(
+            text=answer, dialogue_act="memory", prosody=self._prosody_planner.plan("memory"),
+            verbal_style=self._verbal_style_planner.plan("memory"),
+            dialogue_behavior="acknowledge_forget", shadow_turn_id=shadow_turn_id,
+            maintenance_mode=route.mode,
+        )
 
     def _prepare(self, text: str) -> _Turn:
         maintenance_route = self._maintenance_policy.route()

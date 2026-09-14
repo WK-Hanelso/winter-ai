@@ -14,7 +14,7 @@ import subprocess
 from typing import TextIO
 from uuid import uuid4
 
-from companion.memory import SqliteMemoryRepository
+from companion.memory import Memory, SqliteMemoryRepository
 from companion.reflection import (
     ConversationHistoryBackfill,
     ConversationReflectionService,
@@ -48,6 +48,41 @@ def review_before_session(data: Path, stdin: TextIO, stdout: TextIO) -> None:
             SqliteMemoryRepository(data / "memories.sqlite"),
             limit=count, stdin=stdin, stdout=stdout, session_start=True,
         )
+
+
+def activate_before_session(data: Path, stdout: TextIO) -> None:
+    """Activate under the Host lock, then notify without input.
+
+    Durable reflection candidates use the existing stable/candidate_stable scopes.
+    """
+    if not candidate_count(data):
+        return
+    reflections = SqliteReflectionRepository(data / "reflection.sqlite")
+    eligible = tuple(
+        candidate for candidate in reflections.list(status="candidate")
+        if (candidate.is_current_state and candidate.confidence >= 0.9)
+        or (not candidate.is_current_state and candidate.can_activate_as_memory
+            and candidate.confidence >= 0.85)
+    )
+    if not eligible:
+        return
+    memories = SqliteMemoryRepository(data / "memories.sqlite")
+    known_ids = {memory.id for memory in memories.list_active()}
+    activated: list[Memory] = []
+    for candidate in eligible:
+        accepted = reflections.approve(candidate.id, memories, source="reflection_auto")
+        if accepted.memory_id is not None and accepted.memory_id not in known_ids:
+            activated.append(memories.get(accepted.memory_id))
+            known_ids.add(accepted.memory_id)
+    if activated:
+        preview = " / ".join(
+            f'“{memory.content[:40]}{"…" if len(memory.content) > 40 else ""}”'
+            for memory in activated[:3]
+        )
+        extra = f" 외 {len(activated) - 3}개" if len(activated) > 3 else ""
+        preview = " ".join(preview.splitlines())
+        print(f"지난 대화에서 기억한 것 {len(activated)}개: {preview}{extra}",
+              file=stdout, flush=True)
 
 
 def pending_count(data: Path, *, limit: int = 40) -> int:
@@ -132,7 +167,7 @@ def start_after_session(data: Path, child_command: list[str], stdout: TextIO) ->
             # Even an unwritable audit destination must not turn /exit into a failure.
             print("기억 정리 시작 오류를 기록하지 못했어.", file=stdout, flush=True)
         return
-    print(f"기억 정리를 뒤에서 시작했어 (발화 {count}개). 다음 대화 시작 때 후보를 보여줄게.",
+    print(f"기억 정리를 뒤에서 시작했어 (발화 {count}개). 다음 대화 시작 때 기억한 걸 알려줄게.",
           file=stdout, flush=True)
 
 
