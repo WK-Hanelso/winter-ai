@@ -375,25 +375,26 @@ def test_p51_lexical_zero_one_two_and_audit_counts(tmp_path):
     assert asdict(result) == dict(processed=1, stored=2, rejected=1, failed=0,
                                  lexical_rejected=1, lexical_demoted=1)
     rows = repo.memories.list()
-    assert [(m.confidence, m.status) for m in rows] == [(.95, "active"), (.55, "candidate")]
-    assert rows[1] not in ActiveMemoryRetriever(repo.memories).retrieve("선임 연구원")
+    assert [(m.confidence, m.status) for m in rows] == [(.95, "active"), (.75, "active")]
+    # A single unsupported token now demotes to 0.75, which still counts as active.
+    assert rows[1] in ActiveMemoryRetriever(repo.memories).retrieve("선임 연구원")
     assert len(model.requests) == 2
     payload = json.loads(model.requests[1].messages[-1].content)
-    assert len(payload["facts"]) == 2 and payload["facts"][1]["confidence"] == .55
+    assert len(payload["facts"]) == 2 and payload["facts"][1]["confidence"] == .75
     assert audit(tmp_path)["rejected"] == 1
     assert set(audit(tmp_path)) == {
         "message_id", "version", "status", "facts", "stored", "rejected", "error", "created_at",
     }
 
 
-@pytest.mark.parametrize("confidence", [.4, .55, .6, .95])
+@pytest.mark.parametrize("confidence", [.4, .55, .75, .95])
 def test_p51_lexical_demotion_never_increases_confidence(tmp_path, confidence):
     repo, _, service = setup(tmp_path, "개발자", (
         fact("천우는 선임 개발자다.", "개발자", confidence=confidence),
     ))
     assert service.process_pending().lexical_demoted == 1
-    assert repo.memories.list()[0].confidence == min(.55, confidence)
-    assert repo.memories.list()[0].status == "candidate"
+    assert repo.memories.list()[0].confidence == min(.75, confidence)
+    assert repo.memories.list()[0].status == ("active" if min(.75, confidence) >= .6 else "candidate")
 
 
 @pytest.mark.parametrize("evidence,content", [
@@ -559,4 +560,4 @@ def test_p51b_english_evidence_skips_lexical_grounding(tmp_path):
     ))
     result = service.process_pending(limit=1)
     assert result.stored == 1 and result.lexical_rejected == 0 and result.lexical_demoted == 1
-    assert [m.status for m in repo.memories.list()] == ["candidate"]
+    assert [m.status for m in repo.memories.list()] == ["active"]

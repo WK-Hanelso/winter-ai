@@ -344,8 +344,10 @@ class FactExtractionService:
                             count_lexical_rejected += 1
                             continue
                         if unsupported == 1:
+                            # Backfill 2026-09-14: a 0.55 cap parked 23 grounded paraphrases as
+                            # candidates; 0.75 keeps them active while still marking the doubt.
                             count_lexical_demoted += 1
-                            fact = replace(fact, confidence=min(.55, fact.confidence))
+                            fact = replace(fact, confidence=min(.75, fact.confidence))
                         if _UNCERTAIN_WORDING.search(fact.evidence):
                             fact = replace(fact, confidence=min(0.8, fact.confidence))
                         grounded.append(fact)

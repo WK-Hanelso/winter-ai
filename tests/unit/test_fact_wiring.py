@@ -173,7 +173,7 @@ def test_p51_run_log_counts_lexical_rejections_and_demotions(tmp_path, monkeypat
             )
 
         def verify(self, request, facts):
-            assert len(facts) == 2 and facts[1].confidence == .55
+            assert len(facts) == 2 and facts[1].confidence == .75
             return (True, True)
 
     monkeypatch.setattr(text_reflection, "FakeFactExtractor", Extractor)
