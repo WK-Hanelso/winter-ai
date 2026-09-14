@@ -6,6 +6,7 @@ from collections.abc import Callable
 from contextlib import closing
 from dataclasses import dataclass, replace
 from pathlib import Path
+import re
 import sqlite3
 from typing import Protocol
 from uuid import uuid4
@@ -74,6 +75,8 @@ class FactProcessingResult:
     stored: int = 0
     rejected: int = 0
     failed: int = 0
+    lexical_rejected: int = 0
+    lexical_demoted: int = 0
 
 
 def validate_fact(fact: Fact) -> None:
@@ -91,14 +94,104 @@ def validate_fact(fact: Fact) -> None:
         raise FactExtractionError("invalid fact temporal scope")
 
 
-def _duplicate(fact: Fact, memory: Memory) -> bool:
-    if fact.kind != memory.kind:
-        return False
-    if fact.content == memory.content:
+_SEMANTIC_EXCLUDED = re.compile(r"느낀다|느끼|생각한다|불만|의도|말한다|원한다|바란다")
+_WINTER_TOPIC = re.compile(r"communication|conversation|reply|style|winter|겨울", re.I)
+_QUESTION = re.compile(r"[?？]\s*$|(?:가능해|있어|알아|뭐야)(?:요)?[.!\s]*$|(?:^|\s)왜(?:\s|$)")
+_NEGATED_INTENT = re.compile(r"아니|않|의도|(?:^|\s)(?:안|못)\s|없")
+_WINTER_FEEDBACK = re.compile(
+    r"말투|태도|성의|대화\s*방식|응답\s*방식|답변\s*방식|(?:그만|계속)\s*반복|반복하라고"
+)
+_WINTER_REQUEST = re.compile(
+    r"(?:말해|말하|물어|질문해|답해|대답해|답변해|영어\s*선생|친구가?\s*되|친구이길)"
+    r".*(?:줘|주라|주세요|원해|원한다|바라|바란다|되길|이길)"
+)
+_KIND_PRIORITY = {kind: rank for rank, kind in enumerate((
+    "semantic", "project", "relationship", "preference", "decision", "procedural", "episodic",
+))}
+_LEXICAL_SUFFIXES = (
+    "에서", "으로", "이다", "했다", "한다", "은", "는", "이", "가", "을", "를",
+    "의", "에", "로", "와", "과", "도", "다",
+)
+_LEXICAL_STOP = frozenset(
+    "천우 겨울이 겨울 현재 요즘 지금 오늘 매우 더욱 조금 있다 없다 하다 되다 중이다 "
+    "위해 대해 관한 통해 같은 것을 것이 수 및".split()
+)
+
+
+def _kind_policy(fact: Fact) -> Fact | None:
+    """Discard transient feedback and questions even when the verifier would accept them."""
+    if fact.kind == "semantic" and _SEMANTIC_EXCLUDED.search(fact.content):
+        return None
+    if fact.kind.startswith("current_state:") and _WINTER_TOPIC.search(fact.kind.split(":", 1)[1]):
+        return None
+    if _QUESTION.search(fact.evidence.strip()) or any(
+        _NEGATED_INTENT.search(text) for text in (fact.evidence, fact.content)
+    ):
+        return None
+    if _WINTER_REQUEST.search(fact.evidence):
+        return replace(fact, kind="preference")
+    if any(_WINTER_FEEDBACK.search(text) for text in (fact.evidence, fact.content)):
+        return None
+    if fact.kind.startswith("current_state:") and "겨울" in fact.content:
+        return None
+    return fact
+
+
+def _lexical_tokens(text: str) -> set[str]:
+    """Whitespace tokens with one approximate suffix removed; no morphology dependency."""
+    tokens = set()
+    for raw in text.split():
+        token = raw.strip(".,!?;:'\"()[]{}<>“”‘’…。，！？")
+        if token in _LEXICAL_STOP:
+            continue
+        for suffix in _LEXICAL_SUFFIXES:
+            if token.endswith(suffix):
+                token = token[:-len(suffix)]
+                break
+        if len(token) >= 2 and token not in _LEXICAL_STOP:
+            tokens.add(token)
+    return tokens
+
+
+def _unsupported_tokens(fact: Fact, request: FactExtractionRequest) -> set[str]:
+    # The rest of the current utterance and active memories are deliberately not evidence.
+    source = "\n".join((fact.evidence, *(m.content for m in request.recent_context[-6:])))
+    evidence_tokens = _lexical_tokens(fact.evidence)
+    content_tokens = _lexical_tokens(fact.content)
+    # 최합 has no shared two-character prefix with 최종 or 합격: a single explicit alias.
+    abbreviation_support: set[str] = set()
+    if "최합" in evidence_tokens and "최종 합격" in fact.content:
+        abbreviation_support.update(("최종", "합격"))
+    return {token for token in content_tokens
+            if token not in source and token not in abbreviation_support
+            and not any(token[:2] == evidence[:2] for evidence in evidence_tokens)}
+
+
+def _similar(left_text: str, right_text: str, threshold: float) -> bool:
+    if left_text == right_text:
         return True
-    left, right = _terms(fact.content), _terms(memory.content)
+    left, right = _terms(left_text), _terms(right_text)
     union = left | right
-    return bool(union) and len(left & right) / len(union) >= 0.8
+    return bool(union) and len(left & right) / len(union) >= threshold
+
+
+def _deduplicate(facts: tuple[Fact, ...]) -> tuple[Fact, ...]:
+    # Choose by adjusted confidence, then kind; retain original order for unrelated facts.
+    selected: list[int] = []
+    for index in sorted(range(len(facts)), key=lambda i: (
+        -facts[i].confidence, _KIND_PRIORITY.get(facts[i].kind, len(_KIND_PRIORITY)), i,
+    )):
+        fact = facts[index]
+        if any(_similar(fact.content, facts[i].content, .6) or (
+            _WINTER_REQUEST.search(fact.evidence) and _WINTER_REQUEST.search(facts[i].evidence)
+        ) for i in selected):
+            continue
+        selected.append(index)
+    return tuple(facts[i] for i in sorted(selected))
+
+
+def _duplicate(fact: Fact, memory: Memory) -> bool:
+    return _similar(fact.content, memory.content, .8)
 
 
 class SqliteFactExtractionRepository:
@@ -147,7 +240,7 @@ class SqliteFactExtractionRepository:
             ).fetchone():
                 return 0
             stored = 0
-            for fact in facts:
+            for fact in _deduplicate(facts):
                 validate_fact(fact)
                 if fact.evidence not in request.user_text:
                     raise FactExtractionError("fact evidence must occur in user text")
@@ -204,7 +297,7 @@ class FactExtractionService:
         completed = self._repository.completed_ids()
         pending = [(i, record) for i, record in enumerate(records)
                    if record.role == "user" and record.id not in completed][:limit]
-        stored = rejected = failed = 0
+        stored = rejected = failed = lexical_rejected = lexical_demoted = 0
         for index, (position, record) in enumerate(pending, start=1):
             try:
                 active = sorted(self._repository.memories.list_active(),
@@ -223,10 +316,22 @@ class FactExtractionService:
                     if len(raw) > 5:
                         raise FactExtractionError("at most five facts are allowed")
                     grounded = []
+                    count_lexical_rejected = count_lexical_demoted = 0
                     for fact in raw:
                         validate_fact(fact)
                         if fact.evidence not in request.user_text:
                             continue
+                        checked = _kind_policy(fact)
+                        if checked is None:
+                            continue
+                        fact = checked
+                        unsupported = len(_unsupported_tokens(fact, request))
+                        if unsupported >= 2:
+                            count_lexical_rejected += 1
+                            continue
+                        if unsupported == 1:
+                            count_lexical_demoted += 1
+                            fact = replace(fact, confidence=min(.55, fact.confidence))
                         if _UNCERTAIN_WORDING.search(fact.evidence):
                             fact = replace(fact, confidence=min(0.8, fact.confidence))
                         grounded.append(fact)
@@ -240,6 +345,9 @@ class FactExtractionService:
                         request, accepted, total=len(raw), rejected=count_rejected,
                     )
                     rejected += count_rejected
+                    # Like stored/rejected, counters describe completed message decisions.
+                    lexical_rejected += count_lexical_rejected
+                    lexical_demoted += count_lexical_demoted
             except Exception as error:  # noqa: BLE001 - persist failure and continue backfill
                 # Model/provider exceptions may contain private payloads; never copy them to logs.
                 detail = (str(error) if isinstance(error, FactExtractionError)
@@ -248,4 +356,5 @@ class FactExtractionService:
                 failed += 1
             if progress is not None:
                 progress(index, len(pending))
-        return FactProcessingResult(len(pending), stored, rejected, failed)
+        return FactProcessingResult(len(pending), stored, rejected, failed,
+                                    lexical_rejected, lexical_demoted)

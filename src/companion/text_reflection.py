@@ -159,7 +159,9 @@ def pending_count(data: Path, *, limit: int = 40) -> int:
 
 def record_fact_run(data: Path, started_at: str, *, error: str | None = None,
                     counts: dict[str, int] | None = None) -> None:
-    result: dict[str, object] = dict.fromkeys(("processed", "stored", "rejected", "failed"), 0)
+    result: dict[str, object] = dict.fromkeys(
+        ("processed", "stored", "rejected", "failed", "lexical_rejected", "lexical_demoted"), 0,
+    )
     if counts is not None:
         result.update(counts)
     result.update(started_at=started_at, ended_at=datetime.now(UTC).isoformat(), error=error)

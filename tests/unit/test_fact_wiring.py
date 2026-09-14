@@ -153,7 +153,40 @@ def test_cli_logs_missing_identity_without_creating_memory_db(tmp_path, monkeypa
     assert user_cli.main(["--extract-facts", "--all", "--run-log"]) == 1
     row = json.loads((tmp_path / "fact_runs.jsonl").read_text())
     assert "Identity" in row["error"] and row["processed"] == 0
+    assert row["lexical_rejected"] == row["lexical_demoted"] == 0
     assert not (tmp_path / "memories.sqlite").exists()
+
+
+def test_p51_run_log_counts_lexical_rejections_and_demotions(tmp_path, monkeypatch):
+    history(tmp_path, 0)
+    SqliteConversationRepository(tmp_path / "conversations.sqlite").append(
+        ConversationMessage("user", "6년차 개발자. 연구원"),
+    )
+    monkeypatch.setattr(user_cli, "DATA", tmp_path)
+
+    class Extractor:
+        def extract(self, request):
+            return (
+                Fact("semantic", "천우는 6년차 개발자다.", .95, "durable", "6년차 개발자"),
+                Fact("semantic", "천우는 선임 연구원이다.", .95, "durable", "연구원"),
+                Fact("semantic", "천우는 선임 데이터베이스 연구원이다.", .95, "durable", "연구원"),
+            )
+
+        def verify(self, request, facts):
+            assert len(facts) == 2 and facts[1].confidence == .55
+            return (True, True)
+
+    monkeypatch.setattr(text_reflection, "FakeFactExtractor", Extractor)
+    args = ["--backend", "fake", "--extract-facts", "--all", "--run-log"]
+    assert user_cli.main(args) == 0
+    row = json.loads((tmp_path / "fact_runs.jsonl").read_text())
+    assert {key: row[key] for key in (
+        "processed", "stored", "rejected", "failed", "lexical_rejected", "lexical_demoted",
+    )} == dict(processed=1, stored=2, rejected=1, failed=0, lexical_rejected=1, lexical_demoted=1)
+    # A completed-message rerun has fresh zero counters and no duplicate work.
+    assert user_cli.main(args) == 0
+    rerun = json.loads((tmp_path / "fact_runs.jsonl").read_text().splitlines()[-1])
+    assert rerun["processed"] == rerun["lexical_rejected"] == rerun["lexical_demoted"] == 0
 
 
 def test_cli_invalid_limit_and_conflicting_scope_do_not_extract(tmp_path, monkeypatch):
