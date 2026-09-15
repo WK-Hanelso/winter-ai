@@ -57,6 +57,8 @@ if ! docker container inspect "$NAME" >/dev/null 2>&1; then
   [[ "$MODEL" == /* ]] || MODEL="$ROOT_DIR/$MODEL"
   image_id=$(docker image inspect --format '{{.Id}}' "$IMAGE" 2>/dev/null) || fail "텍스트 모델 실행 이미지가 없습니다: $IMAGE"
   echo "Host RTX2060 + RAM에서 겨울이 모델을 준비합니다. Orin은 사용하지 않습니다."
+  # 2026-09-15 P3-4 벤치(5,747토큰 프롬프트, CPU MoE 44층): ubatch 32 → 46 tok/s, 128 → 122, 256 → 218, 512 → 365.
+  # 생성 속도·VRAM(3.4GB)은 불변. 스레드 4→6은 효과 없음. 그래서 batch 1024 / ubatch 512.
   docker run -d --name "$NAME" --pull never --gpus all --network host --read-only \
     --label "io.winter.text-runtime=$PROFILE" --label "io.winter.project-root=$ROOT_DIR" \
     --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 \
@@ -66,7 +68,7 @@ if ! docker container inspect "$NAME" >/dev/null 2>&1; then
     "$image_id" --model /model.gguf --n-gpu-layers 99 --n-cpu-moe 44 \
     --ctx-size "$CTX_SIZE" --parallel 1 --threads 4 --threads-batch 4 \
     --reasoning-budget 0 \
-    --batch-size 128 --ubatch-size 32 --host 127.0.0.1 --port 18081 >/dev/null
+    --batch-size 1024 --ubatch-size 512 --host 127.0.0.1 --port 18081 >/dev/null
 fi
 
 for ((attempt=0; attempt<60; attempt++)); do
