@@ -153,12 +153,14 @@ def test_requests_match_p05_baseline(case):
     baseline = json.loads(FIXTURE.read_text())
     requests = capture(case)
     if case in ("full", "explain", "streaming"):
-        # P3-1b changes only memory rendering. Restore the historical block
+        # P3-1b/P5.2 change memory rendering. Restore the historical block
         # for the hash, checking all other bytes and order unchanged.
         current = (
             "아래는 네가 이미 아는 천우의 배경이야. 물어보면 지금 대화에 맞는 한두 가지만 "
             "골라 네 말로 짧게 말하고, 목록처럼 읊거나 전부 말하지 마. "
-            "안 물어보면 굳이 꺼내지 마.\nPython config를 선호해."
+            "안 물어보면 굳이 꺼내지 마. "
+            "괄호 날짜는 그 말을 한 때다. 오래된 상태는 지금과 다를 수 있으니 "
+            "단정하지 말고 필요하면 물어봐.\nPython config를 선호해."
         )
         old = (
             "천우가 직접 말해 활성화된 관련 기억이야. "

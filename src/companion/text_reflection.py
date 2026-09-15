@@ -116,7 +116,7 @@ def notify_before_session(data: Path, stdout: TextIO) -> None:
         cutoff = datetime.now(UTC).isoformat()
         rows = connection.execute(
             "SELECT content FROM memories WHERE source = 'extracted' AND status = 'active' "
-            "AND created_at > ? AND created_at <= ? ORDER BY created_at, rowid",
+            "AND updated_at > ? AND updated_at <= ? ORDER BY updated_at, rowid",
             (last, cutoff),
         ).fetchall()
     if rows:

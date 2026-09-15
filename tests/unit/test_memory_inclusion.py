@@ -1,6 +1,7 @@
 """P5 selection and inherited prose checks; synthetic stores and fake responses."""
 
 from dataclasses import replace
+from datetime import UTC, datetime
 
 import pytest
 
@@ -15,6 +16,13 @@ from companion.memory import (
 )
 
 STAMP = "2026-09-13T00:00:00+00:00"
+
+
+class FixedClock:
+    def now(self):
+        return datetime(2026, 9, 14, tzinfo=UTC)
+
+
 # Same shape as the reported ten-memory store; these are synthetic facts/questions.
 FACTS = (
     ("semantic", "1990년생, AI 모델 선행팀 선임연구원"),
@@ -59,6 +67,7 @@ def test_small_store_profiles_and_fallback_in_real_core_prompt(question):
     items = memories()
     model = Capture()
     core = CompanionCore(model, InMemoryConversationRepository(),
+                         clock=FixedClock(),
                          memory_retriever=ActiveMemoryRetriever(Store(items)))
     core.respond_to_text(question)
     blocks = [m.content for m in model.requests[0].messages if m.role == "system"]
@@ -80,8 +89,8 @@ def test_overlap_confidence_recency_rank_after_profiles():
                            ("procedural", "Python config 설명"),
                            ("episodic", "Python 경험"),
                            ("episodic", "전시회 경험"))))
-    items[2] = replace(items[2], confidence=.8, updated_at="2026-09-14")
-    items[3] = replace(items[3], confidence=.9, updated_at="2026-09-13")
+    items[2] = replace(items[2], confidence=.8, created_at="2026-09-14")
+    items[3] = replace(items[3], confidence=.9, created_at="2026-09-13")
     selected = ActiveMemoryRetriever(Store(items)).retrieve("Python config")
     assert {m.kind for m in selected[:2]} == {"semantic", "relationship"}
     assert selected[2:] == (items[3], items[2], items[4])
@@ -93,7 +102,7 @@ def test_overlap_confidence_recency_rank_after_profiles():
 def test_fallback_latest_three_and_recall_all_within_budget():
     items = list(memories(tuple(("preference" if i % 2 else "project", f"관심사 {i}")
                                 for i in range(8))))
-    items = [replace(m, updated_at=f"2026-09-{i + 1:02}", confidence=1 - i / 20)
+    items = [replace(m, created_at=f"2026-09-{i + 1:02}", confidence=1 - i / 20)
              for i, m in enumerate(items)]
     retriever = ActiveMemoryRetriever(Store(items))
     assert retriever.retrieve("안녕") == tuple(reversed(items[-3:]))
@@ -103,7 +112,7 @@ def test_fallback_latest_three_and_recall_all_within_budget():
 def test_profiles_confidence_then_recency_cut_whole_sentences_to_budget():
     items = list(memories((("semantic", "프로필가"), ("relationship", "프로필나"),
                            ("semantic", "프로필다"), ("semantic", "프로필라"))))
-    items = [replace(m, confidence=c, updated_at=t) for m, c, t in zip(
+    items = [replace(m, confidence=c, created_at=t) for m, c, t in zip(
         items, (.7, .9, .9, .9), ("2026-09-14", "2026-09-12", "2026-09-13", "2026-09-14"),
         strict=True,
     )]
@@ -126,32 +135,33 @@ def test_2200_budget_no_ranked_three_cap_and_episodic_requires_overlap():
 def test_prose_preserves_exact_source_even_with_whitespace_and_unknown_kind():
     items = memories((("semantic", "  원문\n줄바꿈  "), ("project", "다른 종류"),
                       ("semantic", "두 번째 사실"), ("custom", "알 수 없는 종류")))
-    block = memory_context(items)
+    block = memory_context(items, clock=FixedClock())
     assert all(m.content in block for m in items)
     assert block.endswith("  원문\n줄바꿈  . 다른 종류. 두 번째 사실. 알 수 없는 종류.")
     assert "[custom]" not in block and "[사실]" not in block
 
 
-def test_interleaved_states_move_to_one_final_sentence_without_changing_selection():
+def test_interleaved_states_keep_individual_dates_without_changing_selection():
     items = memories((("current_state:one", "공부가 버겁다"),
                       ("semantic", "1990년생이다."),
                       ("current_state:two", "운동을 시작했다"),
                       ("semantic", "예시 연구소 선임연구원이다")))
     selected = ActiveMemoryRetriever(Store(items)).retrieve("do you know about me?")
     assert set(selected) == set(items)
-    assert memory_context(items) == (
-        MEMORY_BACKGROUND_INSTRUCTION + "\n1990년생이다. 예시 연구소 선임연구원이다. "
-        "요즘은 공부가 버겁다, 운동을 시작했다."
+    assert memory_context(items, clock=FixedClock()) == (
+        MEMORY_BACKGROUND_INSTRUCTION + "\n(9월 13일) 공부가 버겁다. 1990년생이다. "
+        "(9월 13일) 운동을 시작했다. 예시 연구소 선임연구원이다."
     )
 
 
 @pytest.mark.parametrize("facts,ending", [
     ((("semantic", "예시 연구원이다"),), "예시 연구원이다."),
-    ((("current_state:one", "잠깐 쉬는 중"),), "요즘은 잠깐 쉬는 중."),
-    ((("current_state:one", "첫 문장. 다음 문장!"),), "요즘은 첫 문장. 다음 문장!"),
+    ((("current_state:one", "잠깐 쉬는 중"),), "(9월 13일) 잠깐 쉬는 중."),
+    ((("current_state:one", "첫 문장. 다음 문장!"),), "(9월 13일) 첫 문장. 다음 문장!"),
 ])
 def test_background_or_state_only_does_not_add_empty_sections(facts, ending):
-    assert memory_context(memories(facts)) == MEMORY_BACKGROUND_INSTRUCTION + "\n" + ending
+    assert (memory_context(memories(facts), clock=FixedClock())
+            == MEMORY_BACKGROUND_INSTRUCTION + "\n" + ending)
 
 
 def test_small_store_current_states_have_two_slots():
@@ -168,7 +178,7 @@ def test_empty_and_zero_budget():
                                     "user_direct", "reflection_auto"])
 def test_fact_sources_use_prose_only_legacy_auto_is_quoted(source):
     item = replace(memories((("semantic", "천우는 6년차 개발자다."),))[0], source=source)
-    rendered = memory_context((item,))
+    rendered = memory_context((item,), clock=FixedClock())
     expected = f'천우가 말하길 “{item.content}”.' if source == "reflection_auto" else item.content
     assert rendered == MEMORY_BACKGROUND_INSTRUCTION + "\n" + expected
 
@@ -176,7 +186,8 @@ def test_fact_sources_use_prose_only_legacy_auto_is_quoted(source):
 def test_extracted_state_is_already_third_person_prose():
     item = replace(memories((("current_state:work", "천우는 업무로 피곤하다."),))[0],
                    source="extracted")
-    assert memory_context((item,)) == MEMORY_BACKGROUND_INSTRUCTION + "\n" + item.content
+    assert (memory_context((item,), clock=FixedClock())
+            == MEMORY_BACKGROUND_INSTRUCTION + "\n(9월 13일) " + item.content)
 
 
 def test_recall_overview_precedes_other_matching_facts_when_budget_is_tight():

@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 import re
 import sqlite3
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from configs.dialogue.memory import CURRENT_STATE_SLOTS, MAX_CHARACTERS, RANKED_MEMORY_SLOTS
+
+from companion.ports import Clock
 
 _EXPLICIT_MEMORY_REQUEST = re.compile(r"^\s*기억해(?:\s*줘)?[.!,:]?\s+(.+?)\s*$")
 _SUFFIX_MEMORY_REQUEST = re.compile(r"^\s*(.+?)\s+기억해(?:\s*줘)?[.!]?\s*$")
@@ -305,6 +308,7 @@ class SqliteMemoryRepository:
         importance: int = 7, confidence: float = 1.0,
         evidence_ref: str | None = None, temporal_scope: str = "episodic",
         connection: sqlite3.Connection | None = None,
+        created_at: str | None = None,
     ) -> Memory:
         """Keep state History; optionally join an extraction's atomic transaction."""
         normalized_topic = topic.strip().lower()
@@ -323,7 +327,7 @@ class SqliteMemoryRepository:
                     return self.remember_current_state(
                         topic=normalized_topic, content=normalized_content, source=source,
                         importance=importance, confidence=confidence, evidence_ref=evidence_ref,
-                        temporal_scope=temporal_scope, connection=own,
+                        temporal_scope=temporal_scope, connection=own, created_at=created_at,
                     )
             except sqlite3.Error as error:
                 raise MemoryRepositoryError(f"could not save current state: {error}") from error
@@ -338,7 +342,8 @@ class SqliteMemoryRepository:
         now = _now()
         memory = Memory(
             str(uuid4()), kind, normalized_content, importance, confidence, "active", source,
-            now, now, None, current.id if current else None, evidence_ref, temporal_scope,
+            created_at if created_at is not None else now, now, None,
+            current.id if current else None, evidence_ref, temporal_scope,
         )
         connection.execute(
             "INSERT INTO memories (id, kind, content, importance, confidence, status, source, "
@@ -551,7 +556,7 @@ class ActiveMemoryRetriever:
         recall = bool(_RECALL_REQUEST.search(query))
 
         def latest(memory: Memory) -> tuple[float, str, str]:
-            return memory.confidence, memory.updated_at, memory.id
+            return memory.confidence, memory.created_at, memory.id
 
         def rank(memory: Memory) -> tuple[int, float, str, str]:
             return (len(query_terms & _terms(memory.content)), *latest(memory))
@@ -573,7 +578,7 @@ class ActiveMemoryRetriever:
         fallback = sorted(
             (m for m in remaining if m.kind in {"preference", "project"}
              and not query_terms & _terms(m.content)),
-            key=lambda m: (m.updated_at, m.confidence, m.id), reverse=True,
+            key=lambda m: (m.created_at, m.confidence, m.id), reverse=True,
         )
         if not recall:
             fallback = fallback[:RANKED_MEMORY_SLOTS]
@@ -626,25 +631,41 @@ class ActiveMemoryRetriever:
         return selected[-10:]
 
 
-def memory_context(memories: tuple[Memory, ...]) -> str:
+def memory_context(memories: tuple[Memory, ...], *, clock: Clock | None = None) -> str:
+    now = clock.now() if clock is not None else datetime.now(UTC)
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("memory context Clock must be timezone-aware")
+    today = now.astimezone(ZoneInfo("Asia/Seoul")).date()
     background: list[str] = []
-    states: list[str] = []
     for memory in memories:
+        prefix = _memory_date_prefix(memory, today)
         if memory.source == "reflection_auto":
-            background.append(f'천우가 말하길 “{memory.content}”.')
-        elif memory.kind.startswith(_CURRENT_STATE_PREFIX) and memory.source != "extracted":
-            states.append(memory.content)
+            background.append(prefix + f'천우가 말하길 “{memory.content}”.')
         else:
-            background.append(_memory_sentence(memory.content))
-    if states:
-        background.append(_memory_sentence("요즘은 " + ", ".join(states)))
+            background.append(prefix + _memory_sentence(memory.content))
     return MEMORY_BACKGROUND_INSTRUCTION + "\n" + " ".join(background)
+
+
+def _memory_date_prefix(memory: Memory, today: date) -> str:
+    spoken = datetime.fromisoformat(memory.created_at)
+    if spoken.tzinfo is None:
+        spoken = spoken.replace(tzinfo=UTC)
+    spoken_date = spoken.astimezone(ZoneInfo("Asia/Seoul")).date()
+    age = (today - spoken_date).days
+    label = f"{spoken_date.month}월 {spoken_date.day}일"
+    if memory.kind.startswith(_CURRENT_STATE_PREFIX):
+        return f"({label} 기준, 지금은 다를 수 있음) " if age > 14 else f"({label}) "
+    if memory.kind == "episodic":
+        return f"({label}) "
+    return f"({label} 기준) " if age > 30 else ""
 
 
 MEMORY_BACKGROUND_INSTRUCTION = (
     "아래는 네가 이미 아는 천우의 배경이야. 물어보면 지금 대화에 맞는 한두 가지만 "
     "골라 네 말로 짧게 말하고, 목록처럼 읊거나 전부 말하지 마. "
-    "안 물어보면 굳이 꺼내지 마."
+    "안 물어보면 굳이 꺼내지 마. "
+    "괄호 날짜는 그 말을 한 때다. 오래된 상태는 지금과 다를 수 있으니 "
+    "단정하지 말고 필요하면 물어봐."
 )
 
 

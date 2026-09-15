@@ -137,7 +137,8 @@ def test_state_history_and_low_confidence_preserve_active_state(tmp_path):
     assert new.evidence_ref == "conversation:1" and new.confidence == .95 and new.importance == 5
     assert new.source == "extracted"
     assert len(repo.memories.list_current_state_history(topic="workload")) == 2
-    assert repo.memories.list()[-1].status == "candidate"
+    candidates = [m for m in repo.memories.list() if m.status == "candidate"]
+    assert len(candidates) == 1 and candidates[0].content == states[1].content
 
 
 def test_completed_restart_skips_model_and_failed_retries(tmp_path):
@@ -394,7 +395,9 @@ def test_p51_lexical_demotion_never_increases_confidence(tmp_path, confidence):
     ))
     assert service.process_pending().lexical_demoted == 1
     assert repo.memories.list()[0].confidence == min(.75, confidence)
-    assert repo.memories.list()[0].status == ("active" if min(.75, confidence) >= .6 else "candidate")
+    assert repo.memories.list()[0].status == (
+        ("active" if min(.75, confidence) >= .6 else "candidate")
+    )
 
 
 @pytest.mark.parametrize("evidence,content", [

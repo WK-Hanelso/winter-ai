@@ -11,6 +11,7 @@ from companion.dialogue.character_snapshot import CharacterSnapshot
 from companion.dialogue.schedule_dialogue import response_format
 from companion.memory import Memory, current_state_history_context, memory_context
 from companion.open_loops import open_loop_context
+from companion.ports import Clock
 
 
 class ContextAssembler:
@@ -48,6 +49,7 @@ class ContextAssembler:
         max_tokens: int,
         schedule_instruction: str | None = None,
         schedule_context: tuple[ConversationMessage, ...] = (),
+        clock: Clock | None = None,
     ) -> ChatRequest:
         # Keep reusable identity/examples/instructions ahead of turn-specific evidence.
         system_messages: list[ConversationMessage] = []
@@ -77,7 +79,9 @@ class ContextAssembler:
                 ConversationMessage("system", day_reflection_context(snapshot.prior_days))
             )
         if memories:
-            system_messages.append(ConversationMessage("system", memory_context(memories)))
+            system_messages.append(
+                ConversationMessage("system", memory_context(memories, clock=clock))
+            )
         if current_state_history:
             system_messages.append(
                 ConversationMessage("system", current_state_history_context(current_state_history))

@@ -1,5 +1,6 @@
 """P4.1: automatic activation and reversible commands, using only temporary state."""
 
+from datetime import UTC, datetime
 from io import StringIO
 import sqlite3
 
@@ -307,7 +308,12 @@ def test_current_state_threshold_and_exact_repeat_are_idempotent(tmp_path):
     assert memories.get(old.id).status == "deprecated"
 
 
-def test_render_only_auto_source_as_unchanged_quote(tmp_path):
+def test_render_only_auto_source_as_unchanged_quote(tmp_path, monkeypatch):
+    class FixedClock:
+        def now(self):
+            return datetime(2026, 9, 14, tzinfo=UTC)
+
+    monkeypatch.setattr("companion.memory._now", lambda: "2026-09-13T00:00:00+00:00")
     memories = SqliteMemoryRepository(tmp_path / "memories.sqlite")
     raw = "나는 원문이야?\n줄바꿈과 ‘인용’도 그대로!"
     auto = memories.remember_reviewed(kind="semantic", content=raw, source="reflection_auto")
@@ -318,7 +324,7 @@ def test_render_only_auto_source_as_unchanged_quote(tmp_path):
     direct_state = memories.remember_current_state(topic="rest", content="쉬고 있어")
     assert manual.source == "reflection_reviewed"
     assert direct_state.source == "user_current_state"
-    assert memory_context((auto, manual, state, direct_state)) == (
+    assert memory_context((auto, manual, state, direct_state), clock=FixedClock()) == (
         MEMORY_BACKGROUND_INSTRUCTION + f'\n천우가 말하길 “{raw}”. '
-        '나는 짧은 설명을 좋아해. 천우가 말하길 “합성 상태 원문”. 요즘은 쉬고 있어.'
+        '나는 짧은 설명을 좋아해. (9월 13일) 천우가 말하길 “합성 상태 원문”. (9월 13일) 쉬고 있어.'
     )

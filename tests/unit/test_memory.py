@@ -245,7 +245,7 @@ def test_current_state_replaces_previous_value_and_is_always_available(
     assert previous.temporal_scope == "episodic"
     assert current.temporal_scope == "episodic"
     assert ActiveMemoryRetriever(repo).retrieve("오늘 뭐 할까?") == (current,)
-    assert memory_context((current,)).endswith("요즘은 " + current.content)
+    assert memory_context((current,)).endswith(") " + current.content)
 
 
 def test_current_states_take_priority_over_multiple_matching_stable_memories(

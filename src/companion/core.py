@@ -707,6 +707,7 @@ class CompanionCore:
             grounding_instruction=self._grounding_policy.instruction(),
             dialogue_instruction=dialogue_plan.instruction,
             max_tokens=224 if dialogue_act == "explain" else 120,
+            clock=self._clock,
             schedule_instruction=SCHEDULE_INSTRUCTION if schedule_turn is not None else None,
             schedule_context=(self._schedule_dialogue.variable_messages(schedule_turn)
                               if self._schedule_dialogue is not None

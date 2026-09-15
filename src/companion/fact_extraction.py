@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import closing
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path
 import re
 import sqlite3
 from typing import Protocol
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from companion.contracts import ConversationMessage
 from companion.memory import (
@@ -52,6 +54,20 @@ class FactExtractionRequest:
     recent_context: tuple[ConversationMessage, ...] = ()
     active_memories: tuple[str, ...] = ()
     current_state_topics: tuple[str, ...] = ()
+    spoken_at: str = field(default_factory=_now)
+
+    def __post_init__(self) -> None:
+        # Conversation SQLite timestamps are naive UTC, never host-local time.
+        spoken = datetime.fromisoformat(self.spoken_at)
+        if spoken.tzinfo is None:
+            spoken = spoken.replace(tzinfo=UTC)
+        object.__setattr__(self, "spoken_at", spoken.astimezone(UTC).isoformat())
+
+    @property
+    def spoken_date_kst(self) -> str:
+        return datetime.fromisoformat(self.spoken_at).astimezone(
+            ZoneInfo("Asia/Seoul")
+        ).date().isoformat()
 
 
 class FactExtractor(Protocol):
@@ -122,6 +138,7 @@ _LEXICAL_STOP = frozenset(
     "천우 겨울이 겨울 현재 요즘 지금 오늘 매우 더욱 조금 있다 없다 하다 되다 중이다 "
     "위해 대해 관한 통해 같은 것을 것이 수 및".split()
 )
+_DATE_TOKEN = re.compile(r"(?:\d+월|\d+일|\d{4}년|[월화수목금토일](?:요일)?)")
 
 
 def _kind_policy(fact: Fact) -> Fact | None:
@@ -156,7 +173,7 @@ def _lexical_tokens(text: str) -> set[str]:
             if token.endswith(suffix):
                 token = token[:-len(suffix)]
                 break
-        if len(token) >= 2 and token not in _LEXICAL_STOP:
+        if len(token) >= 2 and token not in _LEXICAL_STOP and not _DATE_TOKEN.fullmatch(token):
             tokens.add(token)
     return tokens
 
@@ -265,14 +282,14 @@ class SqliteFactExtractionRepository:
                         topic=fact.kind.removeprefix("current_state:"), content=fact.content,
                         source="extracted", confidence=fact.confidence, importance=5,
                         evidence_ref=evidence_ref, temporal_scope=fact.temporal_scope,
-                        connection=connection,
+                        connection=connection, created_at=request.spoken_at,
                     )
                 else:
                     now = _now()
                     memory = Memory(
                         str(uuid4()), fact.kind, fact.content, 5, fact.confidence,
                         "active" if fact.confidence >= 0.6 else "candidate", "extracted",
-                        now, now, None, None, evidence_ref, fact.temporal_scope,
+                        request.spoken_at, now, None, None, evidence_ref, fact.temporal_scope,
                     )
                     connection.execute(
                         "INSERT INTO memories (id, kind, content, importance, confidence, status, "
@@ -318,6 +335,7 @@ class FactExtractionService:
                     tuple(m.content for m in active[:30]),
                     tuple(sorted({m.kind.removeprefix("current_state:") for m in active
                                   if m.kind.startswith("current_state:")})),
+                    spoken_at=record.created_at,
                 )
                 # Recheck before calling the model if another run completed this message.
                 if record.id not in self._repository.completed_ids():
