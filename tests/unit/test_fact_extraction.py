@@ -395,9 +395,8 @@ def test_p51_lexical_demotion_never_increases_confidence(tmp_path, confidence):
     ))
     assert service.process_pending().lexical_demoted == 1
     assert repo.memories.list()[0].confidence == min(.75, confidence)
-    assert repo.memories.list()[0].status == (
-        ("active" if min(.75, confidence) >= .6 else "candidate")
-    )
+    expected_status = "active" if min(.75, confidence) >= .6 else "candidate"
+    assert repo.memories.list()[0].status == expected_status
 
 
 @pytest.mark.parametrize("evidence,content", [
