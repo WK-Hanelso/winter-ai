@@ -1,5 +1,6 @@
-"""Bounded schedule dialogue: unpublished JSON, one execution, receipt before display."""
+"""Bounded schedule dialogue: live draft, one execution, receipt before final display."""
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta
 import json
@@ -10,6 +11,7 @@ from typing import cast
 
 from companion.contracts import ChatRequest, ConversationMessage
 from companion.dialogue.claim_language import has_question_form
+from companion.dialogue.json_reply_stream import ReplyDraftExtractor
 from companion.dialogue.schedule_draft import (
     correct_context_relative_date,
     draft_conflicts,
@@ -38,7 +40,7 @@ class ScheduleOutputError(RuntimeError):
 
 
 INSTRUCTION = (
-    'JSON 객체 하나만 출력해: {"reply_draft": "대답 초안", "schedule_proposal": null}. '
+    'JSON 객체 하나만 출력해: {"schedule_proposal": null, "reply_draft": "대답 초안"}. '
     '일정 요청이면 schedule_proposal은 {"operation": "create|update|cancel|query", '
     '"target": {}, "fields": {}, "cue": "현재 사용자 원문에서 복사한 구절"}야. '
     '다른 키·코드 펜스·JSON 밖 문장은 금지야. cue는 선택이며 쓰면 현재 원문을 복사해. '
@@ -107,9 +109,8 @@ def claims_new_completion(text: str, rows: tuple[Schedule, ...], now: datetime) 
 # Keep the grammar structural; operation semantics remain with ScheduleService.
 OUTPUT_SCHEMA: dict[str, object] = {
     'type': 'object', 'additionalProperties': False,
-    'required': ['reply_draft', 'schedule_proposal'],
+    'required': ['schedule_proposal', 'reply_draft'],
     'properties': {
-        'reply_draft': {'type': 'string', 'minLength': 1},
         'schedule_proposal': {'anyOf': [
             {'type': 'null'},
             {'type': 'object', 'additionalProperties': False,
@@ -138,6 +139,7 @@ OUTPUT_SCHEMA: dict[str, object] = {
                  'cue': {'type': 'string'},
              }},
         ]},
+        'reply_draft': {'type': 'string', 'minLength': 1},
     },
 }
 
@@ -301,6 +303,8 @@ class ScheduleTurn:
     validation_errors: list[str] = field(default_factory=list)
     cue_mode: str | None = None
     source_text: str = ""
+    first_partial_seconds: float | None = None
+    streamed_matches_final: bool = False
 
 
 class ScheduleDialogue:
@@ -350,12 +354,32 @@ class ScheduleDialogue:
 
     def generate(
         self, turn: ScheduleTurn, model: ChatModel, request: ChatRequest,
-        *, draft_only: bool = False,
+        *, draft_only: bool = False, on_partial: Callable[[str], None] | None = None,
     ) -> str:
         while turn.calls < 2:
             turn.calls += 1
             try:
-                raw = model.generate(request).text
+                stream = getattr(model, 'generate_stream', None)
+                if stream is None:
+                    raw = model.generate(request).text
+                else:
+                    pieces: list[str] = []
+                    extractor = ReplyDraftExtractor()
+                    iterator = iter(stream(request))
+                    try:
+                        for piece in iterator:
+                            pieces.append(piece)
+                            # Only the first attempt is visible. Retries and repairs
+                            # replace it via the final reply, never append a second draft.
+                            if on_partial is not None and turn.calls == 1:
+                                delta = extractor.feed(piece)
+                                if delta:
+                                    on_partial(delta)
+                    finally:
+                        close = getattr(iterator, 'close', None)
+                        if close is not None:
+                            close()
+                    raw = ''.join(pieces)
             except AdapterUnavailableError as error:
                 # Shared turn budget covers transport/JSON retries AND receipt repair.
                 if not any(reason in str(error) for reason in (

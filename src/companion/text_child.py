@@ -44,8 +44,18 @@ def run(argv: list[str], stdin: TextIO, stdout: TextIO) -> int:
             turn_id = string(frame["id"], limit=80)
             text = string(frame["text"])
             worker.turn_id, worker.used = turn_id, False
+
+            def partial(delta: str, *, current_turn_id: str = turn_id) -> None:
+                # A delta may consist solely of a space or newline. Split large
+                # pieces to retain the existing string and frame size bounds.
+                for offset in range(0, len(delta), 8192):
+                    part = string(delta[offset:offset + 8192], allow_whitespace=True)
+                    send(stdout, {"kind": "partial", "id": current_turn_id, "text": part})
+
             try:
-                response = runtime.core.respond_to_text(text)
+                response = runtime.core.respond_to_text_streaming(
+                    text, on_sentence=lambda _: None, on_partial=partial,
+                )
                 send(stdout, {"kind": "reply", "id": turn_id, "text": response.text})
             except (AdapterUnavailableError, ScheduleOutputError):
                 send(stdout, {

@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from time import perf_counter
 from uuid import uuid4
 
 from companion.capabilities import SelfModelProvider
@@ -249,13 +250,16 @@ class CompanionCore:
         text: str,
         on_sentence: Callable[[str], None],
         on_status: Callable[[str], None] | None = None,
+        on_partial: Callable[[str], None] | None = None,
     ) -> CompanionResponse:
-        """Collect generation, then deliver only the reviewed final response.
+        """Deliver reviewed sentences and optional live schedule draft deltas.
 
         Token budgets bound generation; sentence counts are style guidance, not
-        a safe place to cut content. Callbacks wait for full-response review and
+        a safe place to cut content. Sentence callbacks wait for full-response review and
         finalization, including when the model has no streaming implementation.
+        on_partial is separate from sentence/TTS delivery and may need correction.
         """
+        started = perf_counter()
         forgotten = self._respond_to_forget(text)
         if forgotten is not None:
             on_sentence(forgotten.text)
@@ -282,7 +286,7 @@ class CompanionCore:
                 on_sentence(sentence)
             return response
         if turn.schedule_turn is not None:
-            response = self._respond_with_schedules(turn)
+            response = self._respond_with_schedules(turn, on_partial=on_partial, started=started)
             for sentence in split_sentences(response.text):
                 on_sentence(sentence)
             return response
@@ -404,13 +408,26 @@ class CompanionCore:
             worker_result=result,
         )
 
-    def _respond_with_schedules(self, turn: _Turn) -> CompanionResponse:
+    def _respond_with_schedules(
+        self, turn: _Turn, *, on_partial: Callable[[str], None] | None = None,
+        started: float | None = None,
+    ) -> CompanionResponse:
         dialogue, state = self._schedule_dialogue, turn.schedule_turn
         assert dialogue is not None and state is not None
         final = None
         error = None
+        streamed: list[str] = []
+
+        def partial(delta: str) -> None:
+            assert on_partial is not None and started is not None
+            if state.first_partial_seconds is None:
+                state.first_partial_seconds = perf_counter() - started
+            on_partial(delta)
+            streamed.append(delta)
+
         try:
-            draft = dialogue.generate(state, self._chat_model, turn.request)
+            draft = dialogue.generate(state, self._chat_model, turn.request,
+                                      on_partial=partial if on_partial is not None else None)
             receipt = dialogue.execute(state, turn.request.prompt)
             if dialogue.needs_followup(state, draft):
                 if state.calls < 2:
@@ -445,6 +462,9 @@ class CompanionCore:
                 turn, draft, repeat_generate=regenerate if state.calls < 2 else None,
             )
             final = response.text
+            state.streamed_matches_final = bool(streamed) and ''.join(streamed) == final
+            if streamed and not state.streamed_matches_final:
+                response = replace(response, streamed_text=''.join(streamed))
             return response
         except Exception as exc:
             error = type(exc).__name__ + ": " + str(exc)

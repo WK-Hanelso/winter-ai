@@ -33,7 +33,8 @@ def send(stream: TextIO, value: dict[str, object]) -> None:
     stream.flush()
 
 
-def string(value: object, *, limit: int = 8192) -> str:
-    if not isinstance(value, str) or not value.strip() or len(value) > limit:
+def string(value: object, *, limit: int = 8192, allow_whitespace: bool = False) -> str:
+    if (not isinstance(value, str) or not value or len(value) > limit
+            or not allow_whitespace and not value.strip()):
         raise SessionProtocolError("invalid session text")
     return value

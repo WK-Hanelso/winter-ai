@@ -47,3 +47,5 @@ class CompanionResponse:
     worker_evidence: tuple[str, ...] = ()
     worker_limitations: tuple[str, ...] = ()
     worker_error: bool = False
+    # Present only when a displayed draft differs from the persisted final reply.
+    streamed_text: str | None = None

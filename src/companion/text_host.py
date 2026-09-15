@@ -177,16 +177,37 @@ def session(
         turn_id = uuid4().hex
         send(child_in, {"kind": "turn", "id": turn_id, "text": task})
         requested = False
+        partials: list[str] = []
+        partial_length = 0
         while True:
             frame = receive(child_out)
             if frame is None or frame.get("id") != turn_id:
                 raise SessionProtocolError("Core response does not match current turn")
             kind = frame.get("kind")
+            if kind == "partial" and set(frame) == {"kind", "id", "text"}:
+                if requested:
+                    raise SessionProtocolError("partial after Worker request")
+                delta = string(frame['text'], allow_whitespace=True)
+                partial_length += len(delta)
+                if partial_length > 64_000:
+                    raise SessionProtocolError("partial reply exceeds text limit")
+                if not partials:
+                    print(f"{name}> ", end="", file=terminal_out, flush=True)
+                print(delta, end="", file=terminal_out, flush=True)
+                partials.append(delta)
+                continue
             if kind in {"reply", "error"} and set(frame) == {"kind", "id", "text"}:
-                display(f"{name}> {string(frame['text'], limit=64_000)}")
+                final = string(frame['text'], limit=64_000)
+                if partials:
+                    display("")
+                    if kind == "error" or ''.join(partials) != final:
+                        marker = "(정정) " if kind == "reply" else ""
+                        display(f"{name}> {marker}{final}")
+                else:
+                    display(f"{name}> {final}")
                 break
             if (kind != "worker_request" or set(frame) != {"kind", "id", "task"}
-                    or frame["task"] != task or requested):
+                    or frame["task"] != task or requested or partials):
                 raise SessionProtocolError("unbound or duplicate Worker request")
             requested = True
             display(f"[외부 Codex / 읽기 전용]\n보낼 요청: {task}\n읽기 범위: {scope}")
