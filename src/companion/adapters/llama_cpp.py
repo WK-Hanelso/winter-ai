@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from dataclasses import dataclass
 import json
+import math
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from companion.adapters.fake import AdapterUnavailableError
-from companion.contracts import ChatRequest, ChatResult
+from companion.contracts import ChatRequest, ChatResult, ChatTimings
 
 # Sending no sampling left llama.cpp's own defaults in charge — temperature 0.8,
 # top_p 0.95, top_k 40 — which are not the ones Qwen3 asks for. Its instruct card
@@ -77,7 +78,7 @@ class LlamaCppHttpChatModel:
             payload["seed"] = request.seed
         return json.dumps(payload).encode("utf-8")
 
-    def generate_stream(self, request: ChatRequest) -> Iterator[str]:
+    def generate_stream(self, request: ChatRequest) -> Generator[str, None, ChatTimings | None]:
         """Yield the answer in pieces, as the model writes it.
 
         Nothing downstream can start until a sentence exists, and a whole answer
@@ -95,10 +96,19 @@ class LlamaCppHttpChatModel:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
+        timings = None
         try:
             with urlopen(http_request, timeout=self.timeout_seconds) as response:
                 for line in response:
                     piece = _stream_piece(line)
+                    raw = line.strip()
+                    if raw.startswith(b"data:"):
+                        try:
+                            measured = _extract_timings(json.loads(raw[len(b"data:"):].strip()))
+                            if measured is not None:
+                                timings = measured
+                        except (ValueError, TypeError):
+                            pass
                     if piece:
                         yield piece
         except HTTPError as error:
@@ -117,6 +127,7 @@ class LlamaCppHttpChatModel:
             raise AdapterUnavailableError(
                 f"local llama.cpp server disconnected at {endpoint}: {error}"
             ) from error
+        return timings
 
     def generate(self, request: ChatRequest) -> ChatResult:
         endpoint = self._endpoint()
@@ -146,7 +157,30 @@ class LlamaCppHttpChatModel:
                 f"local llama.cpp server disconnected at {endpoint}: {error}"
             ) from error
 
-        return ChatResult(text=_extract_text(raw_response, endpoint))
+        text = _extract_text(raw_response, endpoint)
+        return ChatResult(text=text, timings=_extract_timings(json.loads(raw_response)))
+
+
+def _extract_timings(response: object) -> ChatTimings | None:
+    if not isinstance(response, dict) or not isinstance(response.get("timings"), dict):
+        return None
+    values = response["timings"]
+
+    def count(key: str) -> int | None:
+        value = values.get(key)
+        return value if type(value) is int and value >= 0 else None
+
+    def duration(key: str) -> float | None:
+        value = values.get(key)
+        try:
+            if type(value) in (int, float) and value >= 0 and math.isfinite(value):
+                return float(value)
+        except OverflowError:
+            pass
+        return None
+
+    return ChatTimings(count("prompt_n"), count("cache_n"),
+                       duration("prompt_ms"), duration("predicted_ms"))
 
 
 def _stream_piece(line: bytes) -> str:

@@ -9,7 +9,7 @@ import re
 import sqlite3
 from typing import cast
 
-from companion.contracts import ChatRequest, ConversationMessage
+from companion.contracts import ChatRequest, ChatTimings, ConversationMessage
 from companion.dialogue.claim_language import has_question_form
 from companion.dialogue.json_reply_stream import ReplyDraftExtractor
 from companion.dialogue.schedule_draft import (
@@ -305,6 +305,11 @@ class ScheduleTurn:
     source_text: str = ""
     first_partial_seconds: float | None = None
     streamed_matches_final: bool = False
+    # First generation only: repairs must not overwrite the normal-turn cache measurement.
+    prompt_tokens: int | None = None
+    cached_tokens: int | None = None
+    prompt_ms: float | None = None
+    predicted_ms: float | None = None
 
 
 class ScheduleDialogue:
@@ -334,8 +339,10 @@ class ScheduleDialogue:
         return ScheduleTurn(source_message_id, now, ContextBundle(rows))
 
     def variable_messages(self, turn: ScheduleTurn) -> tuple[ConversationMessage, ...]:
+        local = turn.received_at.astimezone(KST)
         messages = [ConversationMessage('system', '일정 날짜 기준(KST): '
-                                        + turn.received_at.astimezone(KST).isoformat())]
+                                        + f'{local:%Y-%m-%d} ({"월화수목금토일"[local.weekday()]}) '
+                                        + f'{local.hour}시')]
         if turn.context.schedules:
             messages.append(turn.context.message())
         if self.pending:
@@ -358,16 +365,24 @@ class ScheduleDialogue:
     ) -> str:
         while turn.calls < 2:
             turn.calls += 1
+            timings = None
             try:
                 stream = getattr(model, 'generate_stream', None)
                 if stream is None:
-                    raw = model.generate(request).text
+                    result = model.generate(request)
+                    raw, timings = result.text, result.timings
                 else:
                     pieces: list[str] = []
                     extractor = ReplyDraftExtractor()
                     iterator = iter(stream(request))
                     try:
-                        for piece in iterator:
+                        while True:
+                            try:
+                                piece = next(iterator)
+                            except StopIteration as completed:
+                                if isinstance(completed.value, ChatTimings):
+                                    timings = completed.value
+                                break
                             pieces.append(piece)
                             # Only the first attempt is visible. Retries and repairs
                             # replace it via the final reply, never append a second draft.
@@ -391,6 +406,11 @@ class ScheduleDialogue:
                 if turn.calls >= 2:
                     raise
                 continue  # Identical request; never execute a partial proposal.
+            if turn.calls == 1 and timings is not None:
+                turn.prompt_tokens = timings.prompt_n
+                turn.cached_tokens = timings.cache_n
+                turn.prompt_ms = timings.prompt_ms
+                turn.predicted_ms = timings.predicted_ms
             turn.raw.append(raw)
             try:
                 draft, proposal = parse_output(raw, warnings=turn.warnings)

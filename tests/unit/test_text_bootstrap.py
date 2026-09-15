@@ -6,6 +6,7 @@ from io import StringIO
 import subprocess
 import sys
 
+from configs.dialogue.context import HIGH_MESSAGES
 import pytest
 
 from companion.adapters.fake import AdapterUnavailableError, FakeChatModel
@@ -249,12 +250,25 @@ def test_context_message_environment_override_reaches_core(monkeypatch):
     monkeypatch.delenv("WINTER_CONTEXT_MAX_MESSAGES", raising=False)
     assert TextRuntimeConfig().context_max_messages == 12
     assert TextRuntimeConfig(context_max_messages=7).context_max_messages == 7
-    monkeypatch.setenv("WINTER_CONTEXT_MAX_MESSAGES", "30")
-    config = TextRuntimeConfig(backend="fake", context_max_messages=12)
-    assert config.context_max_messages == 30
-    runtime = build_text_runtime(config)
-    assert runtime.core._context_builder.message_limit == 30
-    assert runtime.close()
+    for low in (7, HIGH_MESSAGES, 30):
+        monkeypatch.setenv("WINTER_CONTEXT_MAX_MESSAGES", str(low))
+        config = TextRuntimeConfig(backend="fake", context_max_messages=12)
+        assert config.context_max_messages == low
+        runtime = build_text_runtime(config)
+        try:
+            builder = runtime.core._context_builder
+            high = max(low, HIGH_MESSAGES)
+            assert builder.message_limit == high + 1  # overflow sentinel
+            history = tuple(ConversationMessage("user", f"turn-{i}") for i in range(high * 2 + 1))
+            # Fresh runtime starts at low, grows to high, then collapses to low.
+            assert builder.build(history[:high + 1]) == history[high + 1 - low:high + 1]
+            start = high + 1 - low
+            for end in range(high + 2, start + high + 1):
+                assert builder.build(history[:end][-builder.message_limit:]) == history[start:end]
+            end = start + high + 1
+            assert builder.build(history[:end][-builder.message_limit:]) == history[end - low:end]
+        finally:
+            assert runtime.close()
     monkeypatch.setenv("WINTER_CONTEXT_MAX_MESSAGES", "0")
     with pytest.raises(ValueError, match="must be positive"):
         TextRuntimeConfig()

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from companion.adapters.fake import FakeChatModel, InMemoryConversationRepository
-from companion.contracts import ChatRequest, ChatResult
+from companion.context import ConversationContextBuilder
+from companion.contracts import ChatRequest, ChatResult, ConversationMessage
 from companion.core import CompanionCore
 from companion.grounding import GroundingPolicy
 from companion.verbal_style import VerbalStylePlanner, load_verbal_style
@@ -72,12 +73,26 @@ def test_grounding_is_applied_under_every_verbal_style_profile() -> None:
         assert any("지어내지 마" in content for content in _system_contents(model))
 
 
-def test_grounding_message_is_last_so_it_is_least_likely_to_be_dropped() -> None:
+def test_grounding_precedes_history_act_is_in_variable_tail_and_current_user_is_last() -> None:
     model = CapturingChatModel()
+    repository = InMemoryConversationRepository()
+    history = (ConversationMessage("user", "나 왔어"), ConversationMessage("assistant", "어서 와"))
+    for message in history:
+        repository.append(message)
 
-    CompanionCore(model, InMemoryConversationRepository()).respond_to_text("안녕")
+    CompanionCore(model, repository, ConversationContextBuilder()).respond_to_text("안녕")
 
-    assert "지어내지 마" in _system_contents(model)[-1]
+    messages = model.requests[0].messages
+    instruction = GroundingPolicy().instruction()
+    assert instruction is not None
+    grounding = ConversationMessage("system", instruction)
+    history_at = messages.index(history[0])
+    assert messages.index(grounding) < history_at
+    assert messages[history_at:history_at + len(history)] == history
+    tail = messages[history_at + len(history):-1]
+    assert len(tail) == 1 and tail[0].role == "system"
+    assert tail[0].content.startswith("천우가 말한 내용 중 정서나 의도가 실린 부분에 반응해.")
+    assert messages[-1] == ConversationMessage("user", "안녕")
 
 
 def test_core_still_answers_normally_with_grounding_enabled() -> None:

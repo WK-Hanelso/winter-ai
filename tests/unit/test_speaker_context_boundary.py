@@ -29,7 +29,9 @@ def test_provenance_boundary_precedes_exact_real_turns_and_is_not_saved() -> Non
         runtime.core.respond_to_text(query.content)
         assert len(model.requests) == 1
         messages = model.requests[0].messages
-        assert messages[-3:] == history + (query,)
+        start = messages.index(history[0])
+        assert messages[start:start + 2] == history
+        assert messages[-1] == query
         boundary = ConversationMessage(
             "system", companion_examples.REAL_DIALOGUE_INSTRUCTION,
         )

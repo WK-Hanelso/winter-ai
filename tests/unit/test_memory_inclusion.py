@@ -75,7 +75,7 @@ def test_small_store_profiles_and_fallback_in_real_core_prompt(question):
     assert all(m.content in block for m in items if m.kind in {
         "semantic", "relationship", "preference", "project",
     })
-    assert items[5].content not in block  # unrelated decision, even in a small store
+    assert all(m.content in block for m in items)  # P3-3 restores all small-store facts
     instruction, paragraph = block.split("\n", 1)
     assert instruction == MEMORY_BACKGROUND_INSTRUCTION
     assert "[" not in paragraph and "\n" not in paragraph
@@ -89,6 +89,7 @@ def test_overlap_confidence_recency_rank_after_profiles():
                            ("procedural", "Python config 설명"),
                            ("episodic", "Python 경험"),
                            ("episodic", "전시회 경험"))))
+    items[5] = replace(items[5], content="무관 " * 1000)
     items[2] = replace(items[2], confidence=.8, created_at="2026-09-14")
     items[3] = replace(items[3], confidence=.9, created_at="2026-09-13")
     selected = ActiveMemoryRetriever(Store(items)).retrieve("Python config")
@@ -104,7 +105,8 @@ def test_fallback_latest_three_and_recall_all_within_budget():
                                 for i in range(8))))
     items = [replace(m, created_at=f"2026-09-{i + 1:02}", confidence=1 - i / 20)
              for i, m in enumerate(items)]
-    retriever = ActiveMemoryRetriever(Store(items))
+    overflow = replace(items[0], id="oversize", content="무관 " * 1000)
+    retriever = ActiveMemoryRetriever(Store(items + [overflow]))
     assert retriever.retrieve("안녕") == tuple(reversed(items[-3:]))
     assert retriever.retrieve("나에 대해 말해줘") == tuple(reversed(items))
 
@@ -128,7 +130,9 @@ def test_2200_budget_no_ranked_three_cap_and_episodic_requires_overlap():
     selected = ActiveMemoryRetriever(Store(items)).retrieve("안녕")
     assert len(selected) == 7 and sum(len(m.content) for m in selected) == 2100
     episodic = memories((("episodic", "전시회에 갔다"),))
-    assert ActiveMemoryRetriever(Store(episodic)).retrieve("나에 대해 말해줘") == ()
+    assert ActiveMemoryRetriever(Store(episodic)).retrieve("나에 대해 말해줘") == episodic
+    overflow = replace(episodic[0], id="oversize", content="무관 " * 1000)
+    assert ActiveMemoryRetriever(Store((*episodic, overflow))).retrieve("나에 대해 말해줘") == ()
     assert ActiveMemoryRetriever(Store(episodic)).retrieve("전시회 기억나?") == episodic
 
 
@@ -137,7 +141,7 @@ def test_prose_preserves_exact_source_even_with_whitespace_and_unknown_kind():
                       ("semantic", "두 번째 사실"), ("custom", "알 수 없는 종류")))
     block = memory_context(items, clock=FixedClock())
     assert all(m.content in block for m in items)
-    assert block.endswith("  원문\n줄바꿈  . 다른 종류. 두 번째 사실. 알 수 없는 종류.")
+    assert block.endswith("  원문\n줄바꿈  . 두 번째 사실. 다른 종류. 알 수 없는 종류.")
     assert "[custom]" not in block and "[사실]" not in block
 
 
@@ -149,8 +153,8 @@ def test_interleaved_states_keep_individual_dates_without_changing_selection():
     selected = ActiveMemoryRetriever(Store(items)).retrieve("do you know about me?")
     assert set(selected) == set(items)
     assert memory_context(items, clock=FixedClock()) == (
-        MEMORY_BACKGROUND_INSTRUCTION + "\n(9월 13일) 공부가 버겁다. 1990년생이다. "
-        "(9월 13일) 운동을 시작했다. 예시 연구소 선임연구원이다."
+        MEMORY_BACKGROUND_INSTRUCTION + "\n1990년생이다. 예시 연구소 선임연구원이다. "
+        "(9월 13일) 공부가 버겁다. (9월 13일) 운동을 시작했다."
     )
 
 
@@ -164,9 +168,11 @@ def test_background_or_state_only_does_not_add_empty_sections(facts, ending):
             == MEMORY_BACKGROUND_INSTRUCTION + "\n" + ending)
 
 
-def test_small_store_current_states_have_two_slots():
+def test_small_store_includes_all_states_but_overflow_keeps_two_slots():
     items = memories(tuple((f"current_state:{i}", f"상태 {i}") for i in range(4)))
-    assert ActiveMemoryRetriever(Store(items)).retrieve("안녕") == (items[3], items[2])
+    assert ActiveMemoryRetriever(Store(items)).retrieve("안녕") == items
+    overflow = replace(items[0], id="oversize", content="무관 " * 1000)
+    assert ActiveMemoryRetriever(Store((*items, overflow))).retrieve("안녕") == (items[3], items[2])
 
 
 def test_empty_and_zero_budget():

@@ -13,8 +13,19 @@ class ChatRequest:
 
 
 @dataclass(frozen=True)
+class ChatTimings:
+    """Optional per-generation server measurements, without inferred cache counts."""
+
+    prompt_n: int | None = None
+    cache_n: int | None = None
+    prompt_ms: float | None = None
+    predicted_ms: float | None = None
+
+
+@dataclass(frozen=True)
 class ChatResult:
     text: str
+    timings: ChatTimings | None = None
 
 
 @dataclass(frozen=True)

@@ -275,8 +275,8 @@ def test_every_selection_pool_uses_spoken_recency(tmp_path, kind, query):
                 "INSERT INTO memories VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 memory._values(fact),
             )
-    selected = ActiveMemoryRetriever(repo).retrieve(query)
-    assert [m.id for m in selected] == ["new", "old"]
+    selected = ActiveMemoryRetriever(repo, max_characters=len("공통 new")).retrieve(query)
+    assert [m.id for m in selected] == ["new"]
 
 
 def test_core_passes_clock_into_memory_rendering(tmp_path):

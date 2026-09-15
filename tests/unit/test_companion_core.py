@@ -406,7 +406,7 @@ def test_core_injects_state_timeline_only_for_a_change_question(tmp_path) -> Non
     assert "현재 상태 Timeline" in comparison_system
     assert previous.content in comparison_system
     assert current.content in comparison_system
-    assert comparison_system.count(current.content) == 1
+    assert comparison_system.count(current.content) == 2  # stable memory + variable timeline
     assert "원인을 천우가 직접 말하지 않았다면 추측하지 마" in comparison_system
 
 
@@ -445,16 +445,16 @@ def test_system_messages_are_ordered_identity_style_instructions_memory_belief(
     system_messages = [
         message for message in model.requests[0].messages if message.role == "system"
     ]
-    assert len(system_messages) == 5
+    assert len(system_messages) == 6
     # Reusable instructions precede retrieved evidence.
     assert "너는 Winter야." in system_messages[0].content
     assert memory.content in system_messages[3].content
-    assert belief.id in system_messages[4].content
+    assert belief.id in system_messages[5].content
     # Not "반말": the register is drawn per turn, so asserting on it would fail
     # whenever the polite draw came up. The length rule is in every style block.
     assert "문장 이내로" in system_messages[1].content
     assert "지어내지 마" in system_messages[2].content
-    assert "질문에 먼저 직접 답해" in system_messages[2].content
+    assert "질문에 먼저 직접 답해" in system_messages[4].content
 
 
 def test_core_remembers_and_recalls_an_explicit_unfinished_thread(tmp_path) -> None:

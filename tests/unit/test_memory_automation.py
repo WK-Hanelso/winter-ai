@@ -309,6 +309,8 @@ def test_current_state_threshold_and_exact_repeat_are_idempotent(tmp_path):
 
 
 def test_render_only_auto_source_as_unchanged_quote(tmp_path, monkeypatch):
+    from dataclasses import replace
+
     class FixedClock:
         def now(self):
             return datetime(2026, 9, 14, tzinfo=UTC)
@@ -322,6 +324,9 @@ def test_render_only_auto_source_as_unchanged_quote(tmp_path, monkeypatch):
         topic="work", content="합성 상태 원문", source="reflection_auto",
     )
     direct_state = memories.remember_current_state(topic="rest", content="쉬고 있어")
+    # Equal timestamps now use id order, independent of randomly generated UUIDs.
+    state = replace(state, id="state-a")
+    direct_state = replace(direct_state, id="state-b")
     assert manual.source == "reflection_reviewed"
     assert direct_state.source == "user_current_state"
     assert memory_context((auto, manual, state, direct_state), clock=FixedClock()) == (

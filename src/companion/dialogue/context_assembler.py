@@ -60,9 +60,7 @@ class ContextAssembler:
         system_messages.extend(self._examples)
         if style_instruction is not None and self._fixed_instruction is None:
             system_messages.append(ConversationMessage("system", style_instruction))
-        final_instruction = self._fixed_instruction or "\n\n".join(
-            part for part in (grounding_instruction, dialogue_instruction) if part
-        )
+        final_instruction = self._fixed_instruction or grounding_instruction or ""
         system_messages.append(ConversationMessage("system", final_instruction))
         if schedule_instruction is not None:
             system_messages.append(ConversationMessage("system", schedule_instruction))
@@ -74,13 +72,22 @@ class ContextAssembler:
             system_messages.append(
                 ConversationMessage("system", snapshot.improvements.system_message())
             )
-        if snapshot.prior_days:
-            system_messages.append(
-                ConversationMessage("system", day_reflection_context(snapshot.prior_days))
-            )
         if memories:
             system_messages.append(
                 ConversationMessage("system", memory_context(memories, clock=clock))
+            )
+        # Current user stays last; only actual history joins the stable prefix.
+        current = ConversationMessage("user", text)
+        history = recent_messages
+        if history and history[-1] == current:
+            current = history[-1]
+            history = history[:-1]
+        system_messages.extend(history)
+        if dialogue_instruction and self._fixed_instruction is None:
+            system_messages.append(ConversationMessage("system", dialogue_instruction))
+        if recalled_conversation:
+            system_messages.append(
+                ConversationMessage("system", recall_context(recalled_conversation))
             )
         if current_state_history:
             system_messages.append(
@@ -88,9 +95,9 @@ class ContextAssembler:
             )
         if snapshot.beliefs:
             system_messages.append(ConversationMessage("system", belief_context(snapshot.beliefs)))
-        if recalled_conversation:
+        if snapshot.prior_days:
             system_messages.append(
-                ConversationMessage("system", recall_context(recalled_conversation))
+                ConversationMessage("system", day_reflection_context(snapshot.prior_days))
             )
         if snapshot.open_loops:
             system_messages.append(
@@ -99,7 +106,7 @@ class ContextAssembler:
         system_messages.extend(schedule_context)
         return ChatRequest(
             prompt=text,
-            messages=tuple(system_messages) + recent_messages,
+            messages=tuple(system_messages) + (current,),
             max_tokens=(max(768, self._reply_token_budget or max_tokens)
                         if schedule_instruction else self._reply_token_budget or max_tokens),
             response_format=response_format() if schedule_instruction else None,

@@ -20,7 +20,12 @@ from companion.dialogue.policy import (
 )
 from companion.dialogue_act import classify
 from companion.grounding import ClaimEvidence, ResponseClaimGate
-from companion.memory import Memory
+from companion.memory import (
+    MEMORY_BACKGROUND_INSTRUCTION,
+    ActiveMemoryRetriever,
+    Memory,
+    SqliteMemoryRepository,
+)
 from companion.user_cli import build_parser as user_parser
 from companion.verbal_style import VerbalStylePlanner, load_verbal_style
 
@@ -127,22 +132,35 @@ class SpyModel:
 
 
 @pytest.mark.parametrize("name", [name for name in POLICY_NAMES if name != "interpreted"])
-def test_core_passes_recent_text_and_stores_response_without_extra_model_call(name):
+def test_core_passes_recent_text_and_stores_response_without_extra_model_call(name, tmp_path):
     model = SpyModel()
     repository = InMemoryConversationRepository()
     from companion.context import ConversationContextBuilder
 
+    memories = SqliteMemoryRepository(tmp_path / "memory.sqlite")
+    memory = memories.add_candidate(kind="semantic", content="천우는 Python을 사용한다")
+    memories.transition(memory.id, "approved")
+    memories.transition(memory.id, "active")
     core = CompanionCore(
-        model, repository, ConversationContextBuilder(), dialogue_policy=policy(name)
+        model, repository, ConversationContextBuilder(), dialogue_policy=policy(name),
+        memory_retriever=ActiveMemoryRetriever(memories),
     )
     core.respond_to_text("설정 이야기를 해볼까?")
     core.respond_to_text("응 그 얘기를 계속하자")
     assert len(model.requests) == 2
-    assert model.requests[1].messages[-3:] == (
+    messages = model.requests[1].messages
+    history = (
         ConversationMessage("user", "설정 이야기를 해볼까?"),
         ConversationMessage("assistant", "알겠어."),
-        ConversationMessage("user", "응 그 얘기를 계속하자"),
     )
+    memory_at = next(i for i, m in enumerate(messages)
+                     if m.role == "system" and m.content.startswith(MEMORY_BACKGROUND_INSTRUCTION))
+    assert memory.content in messages[memory_at].content
+    assert messages[memory_at + 1:memory_at + 3] == history
+    tail = messages[memory_at + 3:-1]
+    assert tail and all(m.role == "system" for m in tail)
+    assert messages[-1] == ConversationMessage("user", "응 그 얘기를 계속하자")
+    assert tuple(m for m in messages if m.role != "system") == history + (messages[-1],)
     assert repository.list_messages()[-1] == ConversationMessage("assistant", "알겠어.")
 
 

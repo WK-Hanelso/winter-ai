@@ -95,9 +95,9 @@ def test_core_records_only_memories_actually_selected_for_the_response(
     core.respond_to_text("응, 그 기억이 맞아")
 
     claims = outcomes.list()[0].prior_memory_claims
-    # P5 selection: profile memories (semantic/relationship) are always placed first and
-    # win a tight budget; the related preference follows when the budget allows it.
-    expected = (unrelated, selected) if include_all else (unrelated,)
+    # P3-3 includes the whole active set in repository order when it fits.
+    # Over budget, P5 still selects the profile memory first.
+    expected = (selected, unrelated) if include_all else (unrelated,)
     assert [(claim.id, claim.kind, claim.content) for claim in claims] == [
         (memory.id, memory.kind, memory.content) for memory in expected
     ]

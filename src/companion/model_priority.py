@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 import threading
 import time
 from typing import Literal, cast
 
-from companion.contracts import ChatRequest, ChatResult
+from companion.contracts import ChatRequest, ChatResult, ChatTimings
 from companion.ports import ChatModel
 
 Priority = Literal["foreground", "background"]
@@ -54,14 +54,16 @@ class ForegroundPriorityChatScheduler:
 
     def generate_stream(
         self, priority: Priority, request: ChatRequest
-    ) -> Iterator[str]:
+    ) -> Generator[str, None, ChatTimings | None]:
         self._acquire(priority)
         try:
             stream = getattr(self._model, "generate_stream", None)
             if stream is None:
-                yield self._model.generate(request).text
+                result = self._model.generate(request)
+                yield result.text
+                return result.timings
             else:
-                yield from cast(Iterator[str], stream(request))
+                return (yield from cast(Generator[str, None, ChatTimings | None], stream(request)))
         finally:
             self._release(priority)
 
@@ -119,5 +121,5 @@ class _PrioritizedChatModel:
     def generate(self, request: ChatRequest) -> ChatResult:
         return self._scheduler.generate(self._priority, request)
 
-    def generate_stream(self, request: ChatRequest) -> Iterator[str]:
-        yield from self._scheduler.generate_stream(self._priority, request)
+    def generate_stream(self, request: ChatRequest) -> Generator[str, None, ChatTimings | None]:
+        return (yield from self._scheduler.generate_stream(self._priority, request))

@@ -552,6 +552,8 @@ class ActiveMemoryRetriever:
 
     def retrieve(self, query: str) -> tuple[Memory, ...]:
         active = self._repository.list_active()
+        if sum(len(memory.content) for memory in active) <= self._max_characters:
+            return tuple(active)
         query_terms = _terms(query)
         recall = bool(_RECALL_REQUEST.search(query))
 
@@ -637,13 +639,20 @@ def memory_context(memories: tuple[Memory, ...], *, clock: Clock | None = None) 
         raise ValueError("memory context Clock must be timezone-aware")
     today = now.astimezone(ZoneInfo("Asia/Seoul")).date()
     background: list[str] = []
-    for memory in memories:
+    for memory in sorted(memories, key=_memory_render_order):
         prefix = _memory_date_prefix(memory, today)
         if memory.source == "reflection_auto":
             background.append(prefix + f'천우가 말하길 “{memory.content}”.')
         else:
             background.append(prefix + _memory_sentence(memory.content))
     return MEMORY_BACKGROUND_INSTRUCTION + "\n" + " ".join(background)
+
+
+def _memory_render_order(memory: Memory) -> tuple[int, str, str]:
+    kinds = ("semantic", "relationship", "project", "preference", "decision",
+             "procedural", "episodic", "current_state")
+    kind = "current_state" if memory.kind.startswith(_CURRENT_STATE_PREFIX) else memory.kind
+    return (kinds.index(kind) if kind in kinds else len(kinds), memory.created_at, memory.id)
 
 
 def _memory_date_prefix(memory: Memory, today: date) -> str:

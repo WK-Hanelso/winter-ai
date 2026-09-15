@@ -1,4 +1,4 @@
-"""P0.5 prompt contract; the pre-extraction fixture remains as historical evidence."""
+"""P3-3 prompt contract; the pre-extraction fixture remains as historical evidence."""
 
 from dataclasses import FrozenInstanceError, asdict, replace
 from datetime import UTC, datetime
@@ -173,6 +173,23 @@ def test_requests_match_p05_baseline(case):
         requests = [replace(request, messages=tuple(
             replace(m, content=old) if m.content == current else m for m in request.messages
         )) for request in requests]
+    # Reverse only the authorized P3-3 ordering/split, preserving historical hashes.
+    # Explicit order assertions below independently guard the new wire contract.
+    normalized = []
+    for request in requests:
+        m = request.messages
+        if case in ("full", "explain", "streaming"):
+            joined = replace(m[2], content=m[2].content + "\n\n" + m[7].content)
+            ordered = (m[0], m[1], joined, m[3], m[4], m[11], m[5], m[9],
+                       m[10], m[8], m[12], m[6], m[13])
+        elif case == "minimal":
+            joined = replace(m[1], content=m[1].content + "\n\n" + m[2].content)
+            ordered = (m[0], joined, m[3])
+        else:
+            joined = replace(m[1], content=m[1].content + "\n\n" + m[3].content)
+            ordered = (m[0], joined, m[2], *m[4:])
+        normalized.append(replace(request, messages=ordered))
+    requests = normalized
     actual = [hashlib.sha256(json.dumps(asdict(request), ensure_ascii=False,
                                       sort_keys=True).encode()).hexdigest()
               for request in requests]
@@ -182,17 +199,15 @@ def test_requests_match_p05_baseline(case):
 def test_full_request_preserves_system_block_order_and_evidence():
     request = capture("full")[0]
     blocks = [message.content for message in request.messages if message.role == "system"]
-    assert len(blocks) == 11
+    assert len(blocks) == 12
     markers = ["너는 겨울이야", "문장 이내로", "지어내지 마", "SelfModel", "개선 안건",
-               "지난날 회고", "아래는 네가 이미 아는 천우의 배경", "예전에는 YAML을 썼어",
-               "belief-1",
-               "예전에 설정을 비교했어", "loop-1"]
+               "아래는 네가 이미 아는 천우의 배경", "질문에 먼저 직접 답해",
+               "예전에 설정을 비교했어", "예전에는 YAML을 썼어", "belief-1",
+               "지난날 회고", "loop-1"]
     for block, marker in zip(blocks, markers, strict=True):
         assert marker in block
-    assert request.messages[-2:] == (
-        ConversationMessage("assistant", "이전 답변"),
-        ConversationMessage("user", "설정 이야기를 해볼까?"),
-    )
+    assert request.messages[6] == ConversationMessage("assistant", "이전 답변")
+    assert request.messages[-1] == ConversationMessage("user", "설정 이야기를 해볼까?")
 
 
 class RecordingAssembler(ContextAssembler):
@@ -336,12 +351,11 @@ def test_companion_prefix_is_byte_identical_across_changed_turn_evidence():
                   snapshot=replace(first["snapshot"], self_model=None, improvements=None),
                   recalled_conversation=(ConversationMessage("user", "새 회상"),))
     two = cached.assemble(**second)
-    count = 1 + len(examples) + 2  # identity, examples/boundary, style, grounding/dialogue
+    count = 1 + len(examples) + 2  # identity, examples/boundary, style, fixed grounding
     expected = (ConversationMessage("system", first["snapshot"].identity.system_message()),)
     expected += examples
     expected += (ConversationMessage("system", first["style_instruction"]),
-                 ConversationMessage("system", "\n\n".join((first["grounding_instruction"],
-                                                            first["dialogue_instruction"]))),)
+                 ConversationMessage("system", first["grounding_instruction"]),)
     assert one.messages[:count] == expected
     def encode(messages):
         return json.dumps([asdict(message) for message in messages],

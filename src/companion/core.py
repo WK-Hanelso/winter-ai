@@ -624,11 +624,8 @@ class CompanionCore:
             if self._memory_retriever is not None
             else ()
         )
-        if current_state_history:
-            history_ids = {memory.id for memory in current_state_history}
-            selected_memories = tuple(
-                memory for memory in selected_memories if memory.id not in history_ids
-            )
+        # Keep the selected active set stable even when the variable tail contains
+        # a state timeline. Removing its active entries here invalidates the prefix.
         automatic_memory_ids: tuple[str, ...] = ()
         if not candidate_ids and self._memory_repository is not None:
             automatic_memory_ids_list: list[str] = []
