@@ -47,7 +47,7 @@ def run_host(approval="승인", *, frames=None, execute=None):
 
     session(child_in, wire({"kind": "ready", "name": "겨울이"}, *frames),
             StringIO(task + "\n" + approval + "\n/exit\n"), terminal_out,
-            execute or work, scope="공유 소스")
+            execute or work, scope="README.md, pyproject.toml, src/, tests/")
     return calls, [json.loads(line) for line in child_in.getvalue().splitlines()], terminal_out
 
 
@@ -228,7 +228,8 @@ def test_supervised_child_uses_shared_persistent_core_for_decline_success_and_ch
     assert [frame["kind"] for frame in frames] == [
         "ready", "worker_request", "reply", "worker_request", "reply", "reply",
     ]
-    assert "보내지 않을게" in frames[2]["text"]
+    assert frames[2]["text"].startswith("알겠어, 코덱스엔 안 보낼게.")
+    assert "응, 계속 이야기하자." in frames[2]["text"]
     assert "README.md:1" in frames[4]["text"]
     messages = SqliteConversationRepository(tmp_path / "conversations.sqlite").list_messages()
     assert len(messages) == 6

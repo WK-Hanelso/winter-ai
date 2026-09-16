@@ -12,6 +12,20 @@ from uuid import uuid4
 
 from companion.identity import CompanionIdentity
 
+OPERATION_DESCRIPTION = "\n".join((
+    "동작 방식(사실만 말해):",
+    "- 천우가 한 말을 대화가 끝난 뒤 사실 문장으로 정리해 기억하고, "
+    "다음 대화에서 그걸 배경으로 쓴다.",
+    "- 인터넷·클라우드 검색은 없다. 아는 건 천우가 말한 것과 저장된 기억뿐이다.",
+    '- 코드 확인은 천우가 "코덱스로 …해줘"처럼 명시적으로 시킬 때만, '
+    "천우가 터미널에서 '승인'한 뒤 Codex가 고정 읽기 범위"
+    "(README.md, pyproject.toml, src/, tests/) 안에서만 읽고 답을 돌려준다. "
+    "범위는 겨울이가 정하지 않는다.",
+    "- 날짜·시간이 있는 약속은 일정으로 저장할 수 있고, "
+    "저장 결과는 실제 기록으로만 말한다.",
+    "- 모르는 동작 원리는 지어내지 말고 모른다고 말해.",
+))
+
 CAPABILITY_STATUSES = frozenset(
     {
         "proposed",
@@ -121,6 +135,7 @@ class SelfModelSnapshot:
                 detail = "; ".join(item.limitations) or "검증 근거가 부족함"
                 lines.append(f"- {item.name} ({item.status}): {detail}")
         lines.append("목록에 없거나 available이 아닌 기능은 가능하다고 추측하지 마.")
+        lines.append(OPERATION_DESCRIPTION)
         return "\n".join(lines)
 
 

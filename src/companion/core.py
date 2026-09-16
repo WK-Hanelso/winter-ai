@@ -28,10 +28,12 @@ from companion.dialogue.schedule_dialogue import (
     ScheduleDialogue,
     ScheduleOutputError,
     ScheduleTurn,
+    parse_output,
     schedule_fact,
 )
 from companion.dialogue_act import classify as classify_dialogue_act
 from companion.dialogue_director import DialogueDirector, DialoguePlan
+from companion.errors import AdapterUnavailableError
 from companion.grounding import ClaimEvidence, ClaimViolation, GroundingPolicy, ResponseClaimGate
 from companion.identity import CompanionIdentity
 from companion.improvements import ImprovementSnapshotProvider
@@ -340,13 +342,10 @@ class CompanionCore:
             result = self._read_only_worker.execute(worker_request)
         except WorkerQueued:
             return self._finish(
-                turn, "코덱스에 맡겼어. 끝나면 알려줄게. 우리는 계속 이야기하자.",
+                turn, "코덱스한테 넘겼어. 결과 오면 바로 말해줄게.",
             )
         except WorkerApprovalDeclined:
-            return self._finish(
-                turn, "알겠어. 외부 Worker에는 보내지 않을게.",
-                worker_name="codex", worker_error=True,
-            )
+            return self._respond_after_worker_declined(turn)
         except WorkerUnavailableError:
             return self._finish(
                 turn,
@@ -362,6 +361,48 @@ class CompanionCore:
             answer,
             worker_result=result,
         )
+
+    def _respond_after_worker_declined(self, turn: _Turn) -> CompanionResponse:
+        acknowledgement = "알겠어, 코덱스엔 안 보낼게. 내가 아는 선에서 말해볼게."
+        state, dialogue = turn.schedule_turn, self._schedule_dialogue
+        answer = ""
+        # Use the original context and token allowance, with at most one local call.
+        # Do not re-enter routing, execute a proposal, retry JSON or repair with a model.
+        if ((turn.request.max_tokens is None or turn.request.max_tokens > 0)
+                and (state is None or state.calls < 2)):
+            instruction = ConversationMessage(
+                "system", "천우가 이번 외부 Codex 전송을 취소했어. Codex는 실행되지 않았고 "
+                "결과도 없어. 원래 요청에 지금 대화와 기억에서 아는 범위로만 답해. "
+                "직접 코드를 확인한 척하거나 새 위임·일정 실행을 제안하지 마. "
+                "일정 JSON 형식이면 schedule_proposal은 null로 해.",
+            )
+            messages = turn.request.messages
+            request = replace(turn.request, messages=messages[:-1] + (instruction, messages[-1]))
+            try:
+                if state is not None:
+                    state.calls += 1
+                raw = self._chat_model.generate(request).text
+                if state is not None:
+                    state.raw.append(raw)
+                    answer, proposal = parse_output(raw, warnings=state.warnings)
+                    if proposal is not None:
+                        raise ValueError("cancelled delegation must not propose an operation")
+                    state.drafts.append(answer)
+                    assert dialogue is not None
+                    answer = dialogue.display(state, answer)
+                else:
+                    answer = raw.strip()
+                if answer:
+                    answer = self._review_and_repair(turn, answer, allow_repair=False)
+            except (AdapterUnavailableError, TimeoutError, ValueError, TypeError):
+                answer = ""
+        response = self._finish(
+            turn, acknowledgement + (" " + answer if answer else ""),
+            worker_name="codex", worker_error=True,
+        )
+        if state is not None and dialogue is not None:
+            dialogue.record(state, response.text, None)
+        return response
 
     def _respond_with_owned_work(self, turn: _Turn) -> CompanionResponse:
         request = turn.owned_work_request

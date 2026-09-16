@@ -11,7 +11,7 @@ import pytest
 
 from companion.adapters.fake import FailingChatModel, InMemoryConversationRepository
 from companion.beliefs import Belief
-from companion.capabilities import SelfCapability, SelfModelSnapshot
+from companion.capabilities import OPERATION_DESCRIPTION, SelfCapability, SelfModelSnapshot
 from companion.context import ConversationContextBuilder
 from companion.contracts import ChatResult, ConversationMessage
 from companion.core import CompanionCore
@@ -170,8 +170,14 @@ def test_requests_match_p05_baseline(case):
         )
         for request in requests:
             assert sum(m.content == current for m in request.messages) == 1
+            # P6 appends exactly one separately snapshot-tested operation block.
+            # Remove only that suffix for the historical hash; retain the old fixture.
+            assert sum(m.content.endswith('\n' + OPERATION_DESCRIPTION)
+                       for m in request.messages) == 1
         requests = [replace(request, messages=tuple(
-            replace(m, content=old) if m.content == current else m for m in request.messages
+            replace(m, content=old) if m.content == current else
+            replace(m, content=m.content.removesuffix('\n' + OPERATION_DESCRIPTION))
+            for m in request.messages
         )) for request in requests]
     # Reverse only the authorized P3-3 ordering/split, preserving historical hashes.
     # Explicit order assertions below independently guard the new wire contract.

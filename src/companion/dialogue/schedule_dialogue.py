@@ -65,6 +65,7 @@ INSTRUCTION = (
     '언급한 날짜·시간·장소·참여자는 제안과 일치해야 하고 미정 값은 지어내지 마.'
 )
 # Output diagnostics only: never a keyword classifier for incoming user intent.
+_REPORTED_OR_CONDITIONAL = re.compile(r'다고|라고|했다는|했을\s*때|다면|했으면|했더라면')
 _COMPLETION = re.compile(
     r'바꿔\s*(?:놨|놨어|뒀|두었|놓았)|변경\s*(?:했|됐|해\s*뒀|해\s*놨)|'
     r'(?:저장|등록|추가|수정|취소|반영|처리)\s*(?:했|됐|되었|완료|해\s*(?:뒀|놨|두었))|'
@@ -78,6 +79,10 @@ def claims_completion(text: str) -> bool:
 
 def claims_new_completion(text: str, rows: tuple[Schedule, ...], now: datetime) -> bool:
     for clause in re.split(r'[.!?\n]', text):
+        # Reported or conditional speech ("취소했다고 했을 때", "저장했다면") repeats the
+        # user's words; only a bare first-person completion is a claim. (2026-09-16, turn 557)
+        if _REPORTED_OR_CONDITIONAL.search(clause):
+            continue
         if not claims_completion(clause):
             continue
         # A present state or explicitly historical action can be supported by context.

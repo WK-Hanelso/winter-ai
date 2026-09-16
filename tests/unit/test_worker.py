@@ -16,7 +16,7 @@ def test_explicit_codex_route_requires_an_action_not_a_mention() -> None:
 
     assert policy.route("코덱스로 지금 코드 원인을 분석해줘") is not None
     assert policy.route("코드엑스한테 README를 검토해달라고 해줘") is not None
-    assert policy.route("Codex를 써서 이 프로젝트를 찾아봐") is not None
+    assert policy.route("Codex를 써서 이 프로젝트를 찾아봐줘") is not None
     assert policy.route("코덱스가 뭐야?") is None
     assert policy.route("오늘 운동이 너무 힘들었어") is None
 

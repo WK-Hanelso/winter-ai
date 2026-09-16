@@ -210,8 +210,9 @@ def session(
                     or frame["task"] != task or requested or partials):
                 raise SessionProtocolError("unbound or duplicate Worker request")
             requested = True
-            display(f"[외부 Codex / 읽기 전용]\n보낼 요청: {task}\n읽기 범위: {scope}")
-            display("대화 이력·기억·Identity·Reference·.env는 보내지 않아. 코드 수정도 하지 않아.")
+            display(f"[외부 Codex / 읽기 전용]\n보낼 요청: {task}\n"
+                    f"읽기 범위(고정 허용 목록, 겨울이가 고른 게 아님): {scope}")
+            display("Codex는 이 안에서만 읽고 답만 돌려줘. 파일 변경·인터넷 없음.")
             print("이 요청과 범위의 외부 전송을 승인하려면 '승인' 입력 (나머지는 취소)> ",
                   end="", file=terminal_out, flush=True)
             if input_line(notifications=False).strip() != "승인":
@@ -278,7 +279,7 @@ def main() -> int:
         result = session(cast(TextIO, process.stdin), cast(TextIO, process.stdout),
                          sys.stdin, sys.stdout,
                          lambda task: audited_execution(worker, task, args.audit_dir),
-                         scope=f"{args.project_root}: README.md, pyproject.toml, src/, tests/",
+                         scope="README.md, pyproject.toml, src/, tests/",
                          background=jobs)
         process.stdin.close()
         if process.wait(timeout=10) != 0:

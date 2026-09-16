@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Protocol
 
 
@@ -47,39 +48,36 @@ class ReadOnlyWorker(Protocol):
 
 
 class ExplicitCodexRoutingPolicy:
-    """Require an explicit Codex name and a work verb before data may leave.
+    """Require a named delegation form and an imperative before data may leave.
 
     The initial route is deliberately opt-in per turn.  A mention such as
     "Codex가 뭐야?" is normal conversation, while "Codex로 분석해줘" is an
     unambiguous delegation instruction.
     """
 
-    _worker_names = ("codex", "코덱스", "코드엑스")
-    _action_markers = (
-        "확인",
-        "분석",
-        "검토",
-        "조사",
-        "찾아",
-        "찾아봐",
-        "비교",
-        "진단",
-        "원인",
-        "리뷰",
-        "맡겨",
-        "써서",
-        "사용해서",
-        "read",
-        "review",
-        "analy",
-        "inspect",
-        "investigate",
+    _name = r"(?<!\w)(?:codex|코덱스|코드엑스)"
+    _action = (
+        r"확인|분석|검토|조사|찾아|비교|진단|리뷰|맡기|맡겨|시키|시켜|"
+        r"\b(?:read|review|analy(?:ze|se|sis)?|inspect|investigate)\b"
+    )
+    _delegation = re.compile(
+        _name + r"(?:에게|한테|로|를\s*(?:써서|사용해서|이용해서|통해))\s*.*(?:"
+        + _action + r")|" + _name + r"\s*(?:써서|사용해서|이용해서)"
+    )
+    _request_ending = re.compile(r"(?:줘|줄래|해봐|봐줘|해줘|시켜|맡겨|부탁|해라|해)$")
+    _question = re.compile(
+        r"뭐야|왜|가능해|있어|할\s*수\s*있|되는\s*거야|인\s*거야|"
+        # '실패 이유 조사시켜' names the task; '이유가 뭐야' asks Winter.
+        r"이유(?:가|는|를)?\s*(?:뭐|무엇|궁금|알고)"
     )
 
     def route(self, text: str) -> ReadOnlyWorkerRequest | None:
         normalized = " ".join(text.lower().split())
-        if not any(name in normalized for name in self._worker_names):
+        normalized = normalized.rstrip(".!?。！？,;:~… ")
+        if not self._request_ending.search(normalized) or self._question.search(normalized):
             return None
-        if not any(marker in normalized for marker in self._action_markers):
+        if "이유" in normalized and not re.search(self._action, normalized.rsplit("이유", 1)[1]):
+            return None
+        if not self._delegation.search(normalized):
             return None
         return ReadOnlyWorkerRequest(task=text.strip())
