@@ -316,7 +316,7 @@ def test_schema_ignores_and_records_model_owned_command_fields():
     value = json.loads(output('응', 'create', {'title': '전시', 'date': '내일'}, cue='전시'))
     value['schedule_proposal']['command_id'] = 'model-owned'
     warnings = []
-    _, proposal = parse_output(json.dumps(value), warnings=warnings)
+    _, proposal, _ = parse_output(json.dumps(value), warnings=warnings)
     assert 'command_id' not in proposal
     assert warnings == ['ignored_key:proposal.command_id']
 

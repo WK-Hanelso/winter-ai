@@ -11,6 +11,7 @@ from companion.dialogue.schedule_dialogue import ScheduleOutputError
 from companion.owned_work import OwnedWorkUpdate
 from companion.session_wire import SessionProtocolError, receive, send, string
 from companion.user_cli import build_parser, configure_persistent_args
+from companion.worker import WorkerApprovalDeclined, WorkerQueued, WorkerUnavailableError
 
 
 def run(argv: list[str], stdin: TextIO, stdout: TextIO) -> int:
@@ -56,7 +57,30 @@ def run(argv: list[str], stdin: TextIO, stdout: TextIO) -> int:
                 response = runtime.core.respond_to_text_streaming(
                     text, on_sentence=lambda _: None, on_partial=partial,
                 )
-                send(stdout, {"kind": "reply", "id": turn_id, "text": response.text})
+                reply: dict[str, object] = {"kind": "reply", "id": turn_id, "text": response.text}
+                if response.worker_request is not None:
+                    reply["worker_pending"] = True
+                send(stdout, reply)
+                if response.worker_request is not None:
+                    # The normal answer is already reviewed, displayed and persisted.
+                    # Approval disposition is a notification, never another model answer.
+                    status = "partial"
+                    try:
+                        result = worker.execute(response.worker_request)
+                        notice = f"코덱스 확인 결과가 왔어. {result.answer}"
+                        if result.limitations:
+                            notice += "\n확인 범위: " + " ".join(result.limitations)
+                        status = "partial" if result.limitations else "completed"
+                    except WorkerApprovalDeclined:
+                        notice = "코덱스 요청을 취소했어."
+                    except WorkerQueued:
+                        notice = "코덱스 요청을 접수했어. 결과가 오면 알려줄게."
+                    except WorkerUnavailableError:
+                        status, notice = "failed", "코덱스 요청을 처리하지 못했어."
+                    notice = runtime.core.record_worker_update(OwnedWorkUpdate(
+                        f"{turn_id}:submission", status, notice,
+                    ))
+                    send(stdout, {"kind": "notification", "id": turn_id, "text": notice})
             except (AdapterUnavailableError, ScheduleOutputError):
                 send(stdout, {
                     "kind": "error", "id": turn_id,

@@ -17,6 +17,8 @@ import threading
 from typing import TextIO, cast
 from uuid import uuid4
 
+from configs.dialogue import delegation
+
 from companion.adapters.codex_gateway_worker import CodexTypedProjectWorker
 from companion.session_wire import SessionProtocolError, receive, send, string
 from companion.text_jobs import ProcessWorkerQueue
@@ -55,7 +57,8 @@ def checked_answer(result: GatewayWorkerResult) -> ReadOnlyWorkerResult:
 
 
 def audited_execution(
-    worker: CodexTypedProjectWorker, task: str, audit_dir: Path,
+    worker: CodexTypedProjectWorker, task: str, audit_dir: Path, *,
+    approval_mode: str = "manual",
 ) -> ReadOnlyWorkerResult:
     """Persist approval before execution; never auto-retry an interrupted external task."""
     audit_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -70,7 +73,8 @@ def audited_execution(
             os.fsync(output.fileno())
 
         packet = project_packet(task)
-        record("approved", {"packet": packet.to_dict()})
+        record("approved", {"packet": packet.to_dict(),
+                            **({"mode": "auto"} if approval_mode == "auto" else {})})
         try:
             result = worker.execute(packet)
             answer = checked_answer(result)
@@ -96,7 +100,8 @@ def session(
         raise SessionProtocolError("Core did not become ready")
     name = string(ready["name"], limit=80)
     display(f"{name} 준비됐어. /exit로 종료할 수 있어.")
-    display("Codex에 프로젝트 확인을 부탁하면, 외부로 보낼 내용을 먼저 확인할게.")
+    display("코드 확인이 필요하면, 외부로 보낼 내용을 먼저 확인할게."
+            if delegation.REQUIRE_APPROVAL else "코드 확인이 필요하면 코덱스에 자동으로 물어볼게.")
     lines: Queue[str | BaseException] = Queue(maxsize=16)
 
     def read_terminal() -> None:
@@ -177,6 +182,9 @@ def session(
         turn_id = uuid4().hex
         send(child_in, {"kind": "turn", "id": turn_id, "text": task})
         requested = False
+        replied = False
+        worker_pending = False
+        queued_automatically = False
         partials: list[str] = []
         partial_length = 0
         while True:
@@ -185,8 +193,8 @@ def session(
                 raise SessionProtocolError("Core response does not match current turn")
             kind = frame.get("kind")
             if kind == "partial" and set(frame) == {"kind", "id", "text"}:
-                if requested:
-                    raise SessionProtocolError("partial after Worker request")
+                if replied:
+                    raise SessionProtocolError("partial after final reply")
                 delta = string(frame['text'], allow_whitespace=True)
                 partial_length += len(delta)
                 if partial_length > 64_000:
@@ -196,7 +204,16 @@ def session(
                 print(delta, end="", file=terminal_out, flush=True)
                 partials.append(delta)
                 continue
-            if kind in {"reply", "error"} and set(frame) == {"kind", "id", "text"}:
+            if kind in {"reply", "error"}:
+                if replied or set(frame) not in (
+                    {"kind", "id", "text"}, {"kind", "id", "text", "worker_pending"},
+                ):
+                    raise SessionProtocolError("invalid or duplicate final reply")
+                if "worker_pending" in frame:
+                    if kind != "reply" or frame["worker_pending"] is not True:
+                        raise SessionProtocolError("invalid Worker continuation")
+                    worker_pending = True
+                replied = True
                 final = string(frame['text'], limit=64_000)
                 if partials:
                     display("")
@@ -205,31 +222,46 @@ def session(
                         display(f"{name}> {marker}{final}")
                 else:
                     display(f"{name}> {final}")
+                if worker_pending:
+                    continue
                 break
-            if (kind != "worker_request" or set(frame) != {"kind", "id", "task"}
-                    or frame["task"] != task or requested or partials):
+            if kind == "notification" and set(frame) == {"kind", "id", "text"} and requested:
+                notice = string(frame['text'], limit=64_000)
+                if not queued_automatically:
+                    display(f"[알림] {notice}")
+                break
+            if (kind != "worker_request" or set(frame) != {"kind", "id", "task", "why"}
+                    or not replied or not worker_pending or requested):
                 raise SessionProtocolError("unbound or duplicate Worker request")
             requested = True
-            display(f"[외부 Codex / 읽기 전용]\n보낼 요청: {task}\n"
-                    f"읽기 범위(고정 허용 목록, 겨울이가 고른 게 아님): {scope}")
-            display("Codex는 이 안에서만 읽고 답만 돌려줘. 파일 변경·인터넷 없음.")
-            print("이 요청과 범위의 외부 전송을 승인하려면 '승인' 입력 (나머지는 취소)> ",
-                  end="", file=terminal_out, flush=True)
-            if input_line(notifications=False).strip() != "승인":
-                send(child_in, {"kind": "worker_declined", "id": turn_id})
-                continue
+            worker_task = string(frame["task"], limit=400)
+            why = string(frame["why"], limit=120)
+            if delegation.REQUIRE_APPROVAL:
+                display(f"[외부 Codex / 읽기 전용]\n보낼 요청: {worker_task}\n이유: {why}\n"
+                        f"읽기 범위(고정 허용 목록, 겨울이가 고른 게 아님): {scope}")
+                display("Codex는 이 안에서만 읽고 답만 돌려줘. 파일 변경·인터넷 없음.")
+                print("이 요청과 범위의 외부 전송을 승인하려면 '승인' 입력 (나머지는 취소)> ",
+                      end="", file=terminal_out, flush=True)
+                if input_line(notifications=False).strip() != "승인":
+                    send(child_in, {"kind": "worker_declined", "id": turn_id})
+                    continue
             if background is not None:
                 try:
-                    receipt = background.submit(WorkRequest(task))
+                    receipt = (background.submit(WorkRequest(worker_task))
+                               if delegation.REQUIRE_APPROVAL else background.submit(
+                                   WorkRequest(worker_task), approval_mode="auto"))
+                    if not delegation.REQUIRE_APPROVAL:
+                        queued_automatically = True
+                        display(f"[코덱스에 물어보는 중] {worker_task} — 이유: {why}")
                     send(child_in, {"kind": "worker_queued", "id": turn_id,
                                     "job_id": receipt.id})
                 except (WorkerUnavailableError, OSError, ValueError):
                     display("접수하지 못했어. 진행 중인 작업이나 요청 길이(800자)를 확인해줘.")
                     send(child_in, {"kind": "worker_error", "id": turn_id})
                 continue
-            display("Codex가 읽기 전용으로 확인 중이야. 이 초안은 결과가 올 때까지 기다려.")
+            display("Codex가 읽기 전용으로 확인 중이야.")
             try:
-                result = execute(task)
+                result = execute(worker_task)
                 send(child_in, {"kind": "worker_result", "id": turn_id,
                                 "result": asdict(result)})
             except (WorkerUnavailableError, OSError, ValueError):
@@ -278,7 +310,9 @@ def main() -> int:
         assert process.stdin is not None and process.stdout is not None
         result = session(cast(TextIO, process.stdin), cast(TextIO, process.stdout),
                          sys.stdin, sys.stdout,
-                         lambda task: audited_execution(worker, task, args.audit_dir),
+                         lambda task: audited_execution(
+                             worker, task, args.audit_dir,
+                             approval_mode="manual" if delegation.REQUIRE_APPROVAL else "auto"),
                          scope="README.md, pyproject.toml, src/, tests/",
                          background=jobs)
         process.stdin.close()

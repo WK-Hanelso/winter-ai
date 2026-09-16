@@ -28,12 +28,10 @@ from companion.dialogue.schedule_dialogue import (
     ScheduleDialogue,
     ScheduleOutputError,
     ScheduleTurn,
-    parse_output,
     schedule_fact,
 )
 from companion.dialogue_act import classify as classify_dialogue_act
 from companion.dialogue_director import DialogueDirector, DialoguePlan
-from companion.errors import AdapterUnavailableError
 from companion.grounding import ClaimEvidence, ClaimViolation, GroundingPolicy, ResponseClaimGate
 from companion.identity import CompanionIdentity
 from companion.improvements import ImprovementSnapshotProvider
@@ -78,11 +76,7 @@ from companion.verbal_style import VerbalStylePlanner
 from companion.voice_profile import ProsodyPlanner
 from companion.work_orchestration import WorkOrchestrationError, WorkRequest
 from companion.worker import (
-    ExplicitCodexRoutingPolicy,
-    ReadOnlyWorkerRequest,
     ReadOnlyWorkerResult,
-    WorkerApprovalDeclined,
-    WorkerQueued,
     WorkerUnavailableError,
 )
 
@@ -113,7 +107,6 @@ class _Turn:
     shadow_turn_id: str | None
     maintenance_route: MaintenanceRoute
     experience_id: str
-    worker_request: ReadOnlyWorkerRequest | None
     owned_work_request: WorkRequest | None
     conversation_contents: tuple[str, ...] = ()
     schedule_turn: ScheduleTurn | None = None
@@ -147,7 +140,6 @@ class CompanionCore:
         clock: Clock | None = None,
         day_reflection_retriever: ActiveDayReflectionRetriever | None = None,
         read_only_worker: ReadOnlyWorker | None = None,
-        worker_routing_policy: ExplicitCodexRoutingPolicy | None = None,
         owned_work_executor: OwnedWorkExecutor | None = None,
         owned_work_submitter: OwnedWorkSubmitter | None = None,
         owned_work_routing_policy: ReadOnlyProjectCanaryPolicy | None = None,
@@ -191,9 +183,6 @@ class CompanionCore:
         self._clock = clock
         self._day_reflection_retriever = day_reflection_retriever
         self._read_only_worker = read_only_worker
-        self._worker_routing_policy = (
-            worker_routing_policy or ExplicitCodexRoutingPolicy()
-        )
         self._owned_work_executor = owned_work_executor
         self._owned_work_submitter = owned_work_submitter
         self._owned_work_routing_policy = (
@@ -236,8 +225,6 @@ class CompanionCore:
         if forgotten is not None:
             return forgotten
         turn = self._prepare(text)
-        if turn.worker_request is not None:
-            return self._respond_with_worker(turn)
         if turn.owned_work_request is not None:
             return self._respond_with_owned_work(turn)
         if turn.schedule_turn is not None:
@@ -267,13 +254,6 @@ class CompanionCore:
             on_sentence(forgotten.text)
             return forgotten
         turn = self._prepare(text)
-        if turn.worker_request is not None:
-            if on_status is not None:
-                on_status("코덱스로 확인하고 있어.")
-            response = self._respond_with_worker(turn)
-            for sentence in split_sentences(response.text):
-                on_sentence(sentence)
-            return response
         if turn.owned_work_request is not None:
             if self._owned_work_submitter is not None:
                 response = self._respond_with_owned_work(turn)
@@ -326,83 +306,6 @@ class CompanionCore:
 
         answer = self._review_and_repair(turn, draft, repair_generate=generate)
         return self._finish(turn, answer, repeat_generate=generate if calls < 2 else None)
-
-    def _respond_with_worker(self, turn: _Turn) -> CompanionResponse:
-        if self._read_only_worker is None:
-            return self._finish(
-                turn,
-                "지금은 Codex Worker가 연결되어 있지 않아. 로컬 답변으로 한 척하지 않을게.",
-                worker_name="codex",
-                worker_error=True,
-            )
-        worker_request = turn.worker_request
-        if worker_request is None:
-            raise RuntimeError("worker response requires a routed request")
-        try:
-            result = self._read_only_worker.execute(worker_request)
-        except WorkerQueued:
-            return self._finish(
-                turn, "코덱스한테 넘겼어. 결과 오면 바로 말해줄게.",
-            )
-        except WorkerApprovalDeclined:
-            return self._respond_after_worker_declined(turn)
-        except WorkerUnavailableError:
-            return self._finish(
-                turn,
-                "지금은 Codex Worker를 사용할 수 없어. 로컬 답변으로 한 척하지 않을게.",
-                worker_name="codex",
-                worker_error=True,
-            )
-        answer = f"코덱스로 확인했어. {result.answer.strip()}"
-        if result.limitations:
-            answer += " 다만 " + " ".join(result.limitations)
-        return self._finish(
-            turn,
-            answer,
-            worker_result=result,
-        )
-
-    def _respond_after_worker_declined(self, turn: _Turn) -> CompanionResponse:
-        acknowledgement = "알겠어, 코덱스엔 안 보낼게. 내가 아는 선에서 말해볼게."
-        state, dialogue = turn.schedule_turn, self._schedule_dialogue
-        answer = ""
-        # Use the original context and token allowance, with at most one local call.
-        # Do not re-enter routing, execute a proposal, retry JSON or repair with a model.
-        if ((turn.request.max_tokens is None or turn.request.max_tokens > 0)
-                and (state is None or state.calls < 2)):
-            instruction = ConversationMessage(
-                "system", "천우가 이번 외부 Codex 전송을 취소했어. Codex는 실행되지 않았고 "
-                "결과도 없어. 원래 요청에 지금 대화와 기억에서 아는 범위로만 답해. "
-                "직접 코드를 확인한 척하거나 새 위임·일정 실행을 제안하지 마. "
-                "일정 JSON 형식이면 schedule_proposal은 null로 해.",
-            )
-            messages = turn.request.messages
-            request = replace(turn.request, messages=messages[:-1] + (instruction, messages[-1]))
-            try:
-                if state is not None:
-                    state.calls += 1
-                raw = self._chat_model.generate(request).text
-                if state is not None:
-                    state.raw.append(raw)
-                    answer, proposal = parse_output(raw, warnings=state.warnings)
-                    if proposal is not None:
-                        raise ValueError("cancelled delegation must not propose an operation")
-                    state.drafts.append(answer)
-                    assert dialogue is not None
-                    answer = dialogue.display(state, answer)
-                else:
-                    answer = raw.strip()
-                if answer:
-                    answer = self._review_and_repair(turn, answer, allow_repair=False)
-            except (AdapterUnavailableError, TimeoutError, ValueError, TypeError):
-                answer = ""
-        response = self._finish(
-            turn, acknowledgement + (" " + answer if answer else ""),
-            worker_name="codex", worker_error=True,
-        )
-        if state is not None and dialogue is not None:
-            dialogue.record(state, response.text, None)
-        return response
 
     def _respond_with_owned_work(self, turn: _Turn) -> CompanionResponse:
         request = turn.owned_work_request
@@ -506,7 +409,7 @@ class CompanionCore:
             state.streamed_matches_final = bool(streamed) and ''.join(streamed) == final
             if streamed and not state.streamed_matches_final:
                 response = replace(response, streamed_text=''.join(streamed))
-            return response
+            return replace(response, worker_request=state.codex_request)
         except Exception as exc:
             error = type(exc).__name__ + ": " + str(exc)
             raise
@@ -771,11 +674,9 @@ class CompanionCore:
                               if self._schedule_dialogue is not None
                               and schedule_turn is not None else ()),
         )
-        explicit_worker_request = self._worker_routing_policy.route(text)
         owned_work_request = (
             self._owned_work_routing_policy.route(text)
-            if explicit_worker_request is None
-            and (
+            if schedule_turn is None and (
                 self._owned_work_executor is not None
                 or self._owned_work_submitter is not None
             )
@@ -807,7 +708,6 @@ class CompanionCore:
             shadow_turn_id=shadow_turn_id,
             maintenance_route=maintenance_route,
             experience_id=str(uuid4()),
-            worker_request=explicit_worker_request,
             owned_work_request=owned_work_request,
             schedule_turn=schedule_turn,
         )
@@ -827,7 +727,7 @@ class CompanionCore:
         )
         recent_replies: tuple[str, ...] = ()
         if (self._repeated_reply_guard and len(response_text) >= 20
-                and turn.worker_request is None and turn.owned_work_request is None):
+                and turn.owned_work_request is None):
             recent_replies = self._recent_assistant_replies()
         if is_repeated_reply(response_text, recent_replies):
             if repeat_generate is not None:
@@ -923,7 +823,7 @@ class CompanionCore:
                 },
             )
         if (turn.schedule_turn is not None and self._schedule_dialogue is not None
-                and (turn.worker_request is not None or turn.owned_work_request is not None)):
+                and turn.owned_work_request is not None):
             self._schedule_dialogue.record(turn.schedule_turn, response_text)
         return CompanionResponse(
             text=response_text,

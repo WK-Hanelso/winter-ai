@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from companion.maintenance import MaintenanceMode
+from companion.worker import ReadOnlyWorkerRequest
 
 
 @dataclass(frozen=True)
@@ -49,3 +50,5 @@ class CompanionResponse:
     worker_error: bool = False
     # Present only when a displayed draft differs from the persisted final reply.
     streamed_text: str | None = None
+    # Proposed by the first model call; the Host handles it after displaying the reply.
+    worker_request: ReadOnlyWorkerRequest | None = None

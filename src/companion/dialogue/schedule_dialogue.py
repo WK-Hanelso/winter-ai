@@ -33,6 +33,7 @@ from companion.schedules import (
     source_time,
     ungrounded_create_fields,
 )
+from companion.worker import ReadOnlyWorkerRequest
 
 
 class ScheduleOutputError(RuntimeError):
@@ -40,7 +41,8 @@ class ScheduleOutputError(RuntimeError):
 
 
 INSTRUCTION = (
-    'JSON 객체 하나만 출력해: {"schedule_proposal": null, "reply_draft": "대답 초안"}. '
+    'JSON 객체 하나만 출력해: '
+    '{"schedule_proposal": null, "codex_request": null, "reply_draft": "대답 초안"}. '
     '일정 요청이면 schedule_proposal은 {"operation": "create|update|cancel|query", '
     '"target": {}, "fields": {}, "cue": "현재 사용자 원문에서 복사한 구절"}야. '
     '다른 키·코드 펜스·JSON 밖 문장은 금지야. cue는 선택이며 쓰면 현재 원문을 복사해. '
@@ -64,6 +66,35 @@ INSTRUCTION = (
     '초안은 자연스럽게 쓰고 일정 항목을 전부 나열할 필요는 없어. '
     '언급한 날짜·시간·장소·참여자는 제안과 일치해야 하고 미정 값은 지어내지 마.'
 )
+CODEX_INSTRUCTION = (
+    'codex_request는 "이 저장소의 실제 코드·테스트·설정을 읽어야만 답할 수 있을 때"만 채워. '
+    'task는 코덱스에게 시킬 읽기 작업 한 문장, why는 왜 코드를 봐야 하는지 한 문장. '
+    'task는 1~400자, why는 1~120자이고 공백만 쓰면 안 돼. '
+    '천우가 "코덱스로 …해줘/확인해봐"처럼 직접 시키면 반드시 채워. '
+    '일반 대화, 감정, 기억·일정 질문, 코딩 개념 설명, 겨울이 자신에 대한 질문, '
+    '"codex 쓸 수 있어?" 같은 가능 여부 질문에는 null. '
+    '채웠을 때 reply_draft는 기다리지 말고 지금 아는 선에서 먼저 답하고, '
+    '코덱스 결과는 나중에 온다고 한 마디만 붙여. '
+    '아직 승인·접수·실행된 것은 아니므로 이미 보냈거나 확인했다고 말하지 마. '
+    '예시: '
+    '천우: 코덱스로 README 확인해줘 → '
+    'codex_request={"task":"README에서 프로젝트 실행 방법을 읽어줘.",'
+    '"why":"저장소에 적힌 실제 실행 방법을 확인해야 해."}. '
+    '천우: 코덱스로 테스트 설정 확인해봐 → '
+    'codex_request={"task":"pyproject.toml과 tests에서 테스트 설정을 읽어줘.",'
+    '"why":"현재 저장소의 테스트 구성을 확인해야 해."}. '
+    '천우: winter text 시작할 때 왜 두 번 묻는지 코드로 확인해줘 → '
+    'codex_request={"task":"winter text의 시작과 입력 처리 코드를 읽고 두 번 묻는 원인을 찾아줘.",'
+    '"why":"실제 입력 처리 흐름을 읽어야 원인을 알 수 있어."}. '
+    '천우: 테스트 실패 원인 봐줘 → '
+    'codex_request={"task":"테스트와 관련 코드를 읽어 실패 원인을 조사해줘.",'
+    '"why":"구현과 테스트 기대값을 비교해야 원인을 알 수 있어."}. '
+    '천우: codex 쓸 수 있어? → codex_request=null. '
+    '천우: 파이썬 데코레이터가 뭐야? → codex_request=null. '
+    '천우: 오늘 너무 지쳤어 → codex_request=null.'
+)
+INSTRUCTION += '\n' + CODEX_INSTRUCTION
+
 # Output diagnostics only: never a keyword classifier for incoming user intent.
 _REPORTED_OR_CONDITIONAL = re.compile(r'다고|라고|했다는|했을\s*때|다면|했으면|했더라면')
 _COMPLETION = re.compile(
@@ -114,7 +145,7 @@ def claims_new_completion(text: str, rows: tuple[Schedule, ...], now: datetime) 
 # Keep the grammar structural; operation semantics remain with ScheduleService.
 OUTPUT_SCHEMA: dict[str, object] = {
     'type': 'object', 'additionalProperties': False,
-    'required': ['schedule_proposal', 'reply_draft'],
+    'required': ['schedule_proposal', 'codex_request', 'reply_draft'],
     'properties': {
         'schedule_proposal': {'anyOf': [
             {'type': 'null'},
@@ -144,6 +175,16 @@ OUTPUT_SCHEMA: dict[str, object] = {
                  'cue': {'type': 'string'},
              }},
         ]},
+        'codex_request': {'anyOf': [
+            {'type': 'null'},
+            {'type': 'object', 'additionalProperties': False,
+             'required': ['task', 'why'], 'properties': {
+                 # llama.cpp only accepts anchored patterns; blank-only strings are
+                 # rejected by parse_output instead (real server returned HTTP 400).
+                 'task': {'type': 'string', 'minLength': 1, 'maxLength': 400},
+                 'why': {'type': 'string', 'minLength': 1, 'maxLength': 120},
+             }},
+        ]},
         'reply_draft': {'type': 'string', 'minLength': 1},
     },
 }
@@ -159,7 +200,7 @@ def response_format() -> dict[str, object]:
 
 def parse_output(
     raw: str, *, warnings: list[str] | None = None,
-) -> tuple[str, dict[str, object] | None]:
+) -> tuple[str, dict[str, object] | None, ReadOnlyWorkerRequest | None]:
     observations = warnings if warnings is not None else []
 
     def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -178,15 +219,26 @@ def parse_output(
     payload = json.loads(raw, object_pairs_hook=unique)
     if not isinstance(payload, dict):
         raise ValueError('response: expected object with reply_draft and schedule_proposal')
-    payload = known(payload, {'reply_draft', 'schedule_proposal'}, 'response')
+    payload = known(payload, {'reply_draft', 'schedule_proposal', 'codex_request'}, 'response')
     draft = payload.get('reply_draft')
     if not isinstance(draft, str) or not draft.strip():
         raise ValueError('reply_draft: required nonblank string')
     if 'schedule_proposal' not in payload:
         raise ValueError('schedule_proposal: required null or object')
+    codex = payload.get('codex_request')
+    worker_request = None
+    if codex is not None:
+        if not isinstance(codex, dict) or set(codex) != {'task', 'why'}:
+            raise ValueError('codex_request: expected null or object with only task and why')
+        for key, limit in (('task', 400), ('why', 120)):
+            value = codex[key]
+            if not isinstance(value, str) or not value.strip() or not 1 <= len(value) <= limit:
+                raise ValueError(
+                    f'codex_request.{key}: required nonblank string of 1~{limit} chars')
+        worker_request = ReadOnlyWorkerRequest(codex['task'], codex['why'])
     proposal = payload['schedule_proposal']
     if proposal is None:
-        return draft, None
+        return draft, None, worker_request
     if not isinstance(proposal, dict):
         raise ValueError('schedule_proposal: expected null or object')
     proposal = known(proposal, {'operation', 'target', 'fields', 'cue'}, 'proposal')
@@ -233,7 +285,7 @@ def parse_output(
     if not isinstance(cue, str):
         observations.append('invalid_cue_type')
         cue = ''
-    return draft, dict(operation=operation, target=target, fields=values, cue=cue)
+    return draft, dict(operation=operation, target=target, fields=values, cue=cue), worker_request
 
 
 def schedule_fact(item: Schedule) -> str:
@@ -302,6 +354,7 @@ class ScheduleTurn:
     drafts: list[str] = field(default_factory=list)
     proposal: dict[str, object] | None = None
     receipt: ChangeReceipt | None = None
+    codex_request: ReadOnlyWorkerRequest | None = None
     calls: int = 0
     discard_reason: str | None = None
     warnings: list[str] = field(default_factory=list)
@@ -418,7 +471,7 @@ class ScheduleDialogue:
                 turn.predicted_ms = timings.predicted_ms
             turn.raw.append(raw)
             try:
-                draft, proposal = parse_output(raw, warnings=turn.warnings)
+                draft, proposal, codex_request = parse_output(raw, warnings=turn.warnings)
             except (ValueError, TypeError) as error:
                 reason = str(error).replace("\n", " ")
                 turn.validation_errors.append(reason)
@@ -428,6 +481,8 @@ class ScheduleDialogue:
                     f'앞선 출력 검사 실패: {reason}. 지정 JSON 객체 하나만 다시 써.',
                 ),))
                 continue
+            if turn.calls == 1 and not draft_only:
+                turn.codex_request = codex_request
             turn.drafts.append(draft)
             if draft_only:
                 if proposal is not None:
@@ -576,7 +631,7 @@ class ScheduleDialogue:
         assert receipt is not None
         context = ContextBundle(receipt.schedules, receipt)
         instruction = ('초안은 폐기했어. 아래 receipt만 사실 근거로 삼아 새 reply_draft를 써. '
-                       'schedule_proposal은 반드시 null이며 재실행은 없어. ')
+                       'schedule_proposal과 codex_request는 반드시 null이며 재실행은 없어. ')
         if receipt.status == 'needs_clarification':
             if receipt.reason_code in {'date_mismatch', 'ungrounded_date', 'ambiguous_date',
                                        'past_date', 'missing_date'}:
@@ -712,6 +767,8 @@ class ScheduleDialogue:
         self.observation_path.parent.mkdir(parents=True, exist_ok=True)
         record = asdict(turn)
         record['received_at'] = turn.received_at.isoformat()
-        record.update(final=final, error=error)
+        record.update(final=final, error=error, codex_requested=turn.codex_request is not None)
+        if turn.codex_request is not None:
+            record['codex_task'] = turn.codex_request.task
         with self.observation_path.open('a', encoding='utf-8') as stream:
             stream.write(json.dumps(record, ensure_ascii=False) + '\n')

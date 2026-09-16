@@ -88,7 +88,7 @@ def prepare_pair(root: Path, scene: dict[str, Any]) -> PreparedPair:
     turn = core._prepare(turns[-1])
     if assembler.minimal is None:
         raise RuntimeError("no request captured")
-    if turn.worker_request or turn.owned_work_request:
+    if turn.owned_work_request:
         raise RuntimeError("Worker routing is forbidden in this experiment")
     return PreparedPair(
         minimal=assembler.minimal,

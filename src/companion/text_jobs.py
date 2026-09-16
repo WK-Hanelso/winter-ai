@@ -28,7 +28,9 @@ class ProcessWorkerQueue:
         self._executable, self._model, self._spawn = executable, model, spawn
         self._children: list[tuple[str, object]] = []
 
-    def submit(self, request: WorkRequest) -> OwnedWorkReceipt:
+    def submit(self, request: WorkRequest, *, approval_mode: str = "manual") -> OwnedWorkReceipt:
+        if approval_mode not in {"manual", "auto"}:
+            raise ValueError("invalid approval mode")
         job_id = uuid4().hex
         try:
             self.repository.enqueue(job_id, request)
@@ -41,7 +43,7 @@ class ProcessWorkerQueue:
                 [sys.executable, "-m", "companion.text_jobs", "--database", str(self._database),
                  "--job-id", job_id, "--project-root", str(self._source_root),
                  "--audit-dir", str(self._audit_dir), "--codex-executable", self._executable,
-                 "--codex-model", self._model],
+                 "--codex-model", self._model, "--approval-mode", approval_mode],
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True, close_fds=True, env=environment,
             )
@@ -101,13 +103,15 @@ def main() -> int:
     parser.add_argument("--audit-dir", type=Path, required=True)
     parser.add_argument("--codex-executable", required=True)
     parser.add_argument("--codex-model", required=True)
+    parser.add_argument("--approval-mode", choices=("manual", "auto"), default="manual")
     args = parser.parse_args()
     worker = CodexTypedProjectWorker(
         args.project_root, executable=args.codex_executable, model=args.codex_model,
         allowed_roots=("README.md", "pyproject.toml", "src", "tests"),
     )
     return run_job(SqliteOwnedWorkRepository(args.database, recovery="none"), args.job_id,
-                   lambda task: audited_execution(worker, task, args.audit_dir))
+                   lambda task: audited_execution(worker, task, args.audit_dir,
+                                                  approval_mode=args.approval_mode))
 
 
 if __name__ == "__main__":

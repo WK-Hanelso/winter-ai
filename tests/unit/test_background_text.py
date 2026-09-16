@@ -172,14 +172,17 @@ class FakeCorePipe:
         if kind == "turn":
             self.turns.append(frame["text"])
             if "Codex" in frame["text"]:
+                self.frames.put({"kind": "reply", "id": frame["id"], "text": "먼저 이야기하자.",
+                                 "worker_pending": True})
                 self.frames.put({
                     "kind": "worker_request", "id": frame["id"], "task": frame["text"],
+                    "why": "실제 파일 확인이 필요해.",
                 })
             else:
                 self.frames.put({"kind": "reply", "id": frame["id"], "text": "응, 이야기하자."})
                 self.normal_replied.set()
         elif kind in {"worker_queued", "worker_declined"}:
-            self.frames.put({"kind": "reply", "id": frame["id"], "text": "접수 상태야."})
+            self.frames.put({"kind": "notification", "id": frame["id"], "text": "접수 상태야."})
         elif kind == "worker_update":
             self.frames.put({"kind": "notification", "id": frame["id"], "text": frame["text"]})
 

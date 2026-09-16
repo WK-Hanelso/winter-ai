@@ -184,7 +184,7 @@ def test_memory_acknowledgement_follows_actual_write_not_generation(name, tmp_pa
     runtime.close()
 
 
-def test_candidate_keeps_claim_safety_and_worker_opt_in():
+def test_candidate_keeps_claim_safety_without_regex_worker_routing():
     model = SpyModel("나는 방금 산책을 다녀왔어.")
     observations = []
     core = CompanionCore(
@@ -199,8 +199,8 @@ def test_candidate_keeps_claim_safety_and_worker_opt_in():
     assert len(model.requests) == 1
     model.requests.clear()
     response = core.respond_to_text("코덱스로 README를 확인해줘")
-    assert response.worker_error
-    assert model.requests == []
+    assert response.worker_request is None and not response.worker_error
+    assert len(model.requests) == 1
 
 
 def test_unknown_policy_fails_and_does_not_call_model():

@@ -35,8 +35,9 @@ def run_host(approval="승인", *, frames=None, execute=None):
     task = "Codex로 README 확인해줘"
     if frames is None:
         frames = [
-            {"kind": "worker_request", "id": "turn-1", "task": task},
-            {"kind": "reply", "id": "turn-1", "text": "결과를 확인했어."},
+            {"kind": "reply", "id": "turn-1", "text": "먼저 이야기하자.", "worker_pending": True},
+            {"kind": "worker_request", "id": "turn-1", "task": task, "why": "실제 파일 확인이 필요해."},
+            {"kind": "notification", "id": "turn-1", "text": "접수 상태야."},
         ]
     child_in, terminal_out = StringIO(), StringIO()
     calls = []
@@ -58,7 +59,8 @@ def test_host_asks_approval_sends_only_exact_task_and_returns_result():
                        "result": json.loads(json.dumps(asdict(result())))}
     assert sent[-1] == {"kind": "close"}
     assert "외부 전송을 승인" in output.getvalue()
-    assert "결과를 확인했어" in output.getvalue()
+    assert "먼저 이야기하자" in output.getvalue()
+    assert output.getvalue().index("먼저 이야기하자") < output.getvalue().index("외부 전송을 승인")
 
 
 @pytest.mark.parametrize("approval", ["아니", "", "yes", "승인하지마", "/exit"])
@@ -80,7 +82,8 @@ def test_unbound_worker_request_fails_closed(frame):
 
 
 def test_replayed_worker_request_runs_at_most_once():
-    frame = {"kind": "worker_request", "id": "turn-1", "task": "Codex로 README 확인해줘"}
+    frame = {"kind": "worker_request", "id": "turn-1", "task": "Codex로 README 확인해줘",
+             "why": "실제 파일 확인이 필요해."}
     calls = []
 
     def execute(task):
@@ -88,7 +91,8 @@ def test_replayed_worker_request_runs_at_most_once():
         return result()
 
     with pytest.raises(SessionProtocolError):
-        run_host(frames=[frame, frame], execute=execute)
+        run_host(frames=[{"kind": "reply", "id": "turn-1", "text": "초안",
+                          "worker_pending": True}, frame, frame], execute=execute)
     assert len(calls) == 1
 
 
@@ -212,6 +216,8 @@ def test_supervised_child_uses_shared_persistent_core_for_decline_success_and_ch
         def generate(self, request):
             return ChatResult(json.dumps({
                 "reply_draft": "응, 계속 이야기하자.", "schedule_proposal": None,
+                "codex_request": ({"task": "README 확인해줘", "why": "파일 근거가 필요해."}
+                                  if "Codex" in request.prompt else None),
             }, ensure_ascii=False))
 
     monkeypatch.setattr(bootstrap, "build_chat_model", lambda config: Model())
@@ -226,13 +232,14 @@ def test_supervised_child_uses_shared_persistent_core_for_decline_success_and_ch
     ), output) == 0
     frames = [json.loads(line) for line in output.getvalue().splitlines()]
     assert [frame["kind"] for frame in frames] == [
-        "ready", "worker_request", "reply", "worker_request", "reply", "reply",
+        "ready", "reply", "worker_request", "notification",
+        "reply", "worker_request", "notification", "reply",
     ]
-    assert frames[2]["text"].startswith("알겠어, 코덱스엔 안 보낼게.")
-    assert "응, 계속 이야기하자." in frames[2]["text"]
-    assert "README.md:1" in frames[4]["text"]
+    assert frames[3]["text"] == "코덱스 요청을 취소했어."
+    assert "응, 계속 이야기하자." == frames[1]["text"]
+    assert "README.md:1" in frames[6]["text"]
     messages = SqliteConversationRepository(tmp_path / "conversations.sqlite").list_messages()
-    assert len(messages) == 6
+    assert len(messages) == 8
     assert messages[-1].content == frames[-1]["text"]
     assert "fixture" not in " ".join(message.content for message in messages)
 

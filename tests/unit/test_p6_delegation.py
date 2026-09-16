@@ -1,18 +1,12 @@
-"""P6: explicit requests, honest context and cancellation, all with fake models."""
+"""P6 regressions retained under P7 model-owned delegation."""
 
-from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 from test_schedule_dialogue import Harness, output
 from test_text_session import run_host
 
-from companion.adapters.fake import InMemoryConversationRepository
 from companion.capabilities import SelfModelSnapshot
-from companion.contracts import ChatResult
-from companion.core import CompanionCore
-from companion.errors import AdapterUnavailableError
-from companion.worker import ExplicitCodexRoutingPolicy, WorkerApprovalDeclined, WorkerQueued
 
 QUESTIONS = (
     '그러면 codex를 이용해서 조사한후 그걸 알려줄수는 있는거야?',
@@ -23,52 +17,13 @@ QUESTIONS = (
 )
 
 
-@pytest.mark.parametrize('text', [
-    *QUESTIONS,
-    'Codex가 뭐야?',
-    'codex에게 맡기면 뭐가 좋아?',
-    'codex에게 조사를 맡긴 이유를 알려줘',
-    'codex에게 README를 검토시킨 이유 설명해줘',
-    'codex에게 README.md 해줘',
-    'codex에게 bread 해줘',
-    'codex에게 preview 해줘',
-    'codex로 분석 가능해?',
-    'codex로 분석할 수 있어?',
-    'codex 분석해줘',
-    'mycodex로 분석해줘',
-    'codex로 조사하는 거야?',
-    'Codex를 써서 이 프로젝트를 찾아봐',  # outside the requested ending allowlist
-])
-def test_questions_mentions_and_filename_substrings_do_not_delegate(text):
-    assert ExplicitCodexRoutingPolicy().route(text) is None
-
-
-@pytest.mark.parametrize('text', [
-    'codex로 이 함수 원인 분석해줘',
-    'codex로 분석해',
-    '코덱스에게 테스트 실패 이유 조사시켜',
-    'Codex 써서 README 확인해봐',
-    '코드엑스한테 README 검토해줄래?',
-    'codex를 이용해서 README 조사해줘!',
-    'codex를 통해 README 검토 부탁.',
-    'codex에게 이 함수 분석 맡겨',
-    'codex에게 README read 해줘',
-    'codex에게 README review 해줘',
-    'codex에게 원인 analyze 해줘',
-    'codex에게 원인 inspect 해줘',
-    'codex에게 원인 investigate 해줘',
-])
-def test_explicit_requests_delegate_exact_task(text):
-    request = ExplicitCodexRoutingPolicy().route(text)
-    assert request is not None and request.task == text
-
-
 def test_approval_prompt_snapshot(monkeypatch):
     monkeypatch.setattr('companion.text_host.uuid4', lambda: SimpleNamespace(hex='turn-1'))
     _, _, output_stream = run_host()
     expected = (
         '[외부 Codex / 읽기 전용]\n'
         '보낼 요청: Codex로 README 확인해줘\n'
+        '이유: 실제 파일 확인이 필요해.\n'
         '읽기 범위(고정 허용 목록, 겨울이가 고른 게 아님): '
         'README.md, pyproject.toml, src/, tests/\n'
         'Codex는 이 안에서만 읽고 답만 돌려줘. 파일 변경·인터넷 없음.\n'
@@ -86,8 +41,8 @@ def test_self_model_operation_description_is_six_fixed_lines_before_variable_tai
         '- 천우가 한 말을 대화가 끝난 뒤 사실 문장으로 정리해 기억하고, '
         '다음 대화에서 그걸 배경으로 쓴다.',
         '- 인터넷·클라우드 검색은 없다. 아는 건 천우가 말한 것과 저장된 기억뿐이다.',
-        '- 코드 확인은 천우가 "코덱스로 …해줘"처럼 명시적으로 시킬 때만, '
-        "천우가 터미널에서 '승인'한 뒤 Codex가 고정 읽기 범위"
+        '- 코드 확인이 필요하면 겨울이가 Codex 읽기 작업을 제안하고, '
+        "Host의 승인 설정에 따라(기본은 천우의 터미널 승인) Codex가 고정 읽기 범위"
         '(README.md, pyproject.toml, src/, tests/) 안에서만 읽고 답을 돌려준다. '
         '범위는 겨울이가 정하지 않는다.',
         '- 날짜·시간이 있는 약속은 일정으로 저장할 수 있고, '
@@ -144,108 +99,13 @@ def test_proposal_without_receipt_still_blocks_completion_without_schedule_noun(
     assert turn.discard_reason == 'completion_without_receipt'
 
 
-class DecliningWorker:
-    def __init__(self):
-        self.requests = []
-
-    def execute(self, request):
-        self.requests.append(request)
-        raise WorkerApprovalDeclined('fixture decline')
-
-
-class OneCallModel:
-    def __init__(self, answer):
-        self.answer = answer
-        self.requests = []
-
-    def generate(self, request):
-        self.requests.append(request)
-        assert len(self.requests) == 1
-        if isinstance(self.answer, Exception):
-            raise self.answer
-        return ChatResult(self.answer)
-
-
-ACK = '알겠어, 코덱스엔 안 보낼게. 내가 아는 선에서 말해볼게.'
-
-
-@pytest.mark.parametrize('text', QUESTIONS)
-def test_actual_questions_reach_local_model_without_worker_approval(tmp_path, text):
+@pytest.mark.parametrize('text', [*QUESTIONS, 'codex 쓸 수 있어?',
+                                 '파이썬 데코레이터가 뭐야?', '오늘 너무 지쳤어'])
+def test_questions_and_chat_use_model_reply_without_worker_request(tmp_path, text):
     h = Harness(tmp_path)
-    draft = '읽기 범위는 고정 허용 목록이야. 내가 정하지 않아.'
-    model, worker = OneCallModel(output(draft)), DecliningWorker()
-    h.runtime.core._chat_model, h.runtime.core._read_only_worker = model, worker
-    assert h.runtime.core.respond_to_text(text).text == draft
-    assert worker.requests == [] and len(model.requests) == 1
-
-
-@pytest.mark.parametrize('streaming', [False, True])
-@pytest.mark.parametrize('structured', [False, True])
-def test_decline_answers_original_request_once_and_persists_final(tmp_path, streaming, structured):
-    draft = '읽기 범위는 Host의 고정 허용 목록이야. 내가 고른 범위가 아니야.'
-    model = OneCallModel(output(draft) if structured else draft)
-    worker = DecliningWorker()
-    if structured:
-        h = Harness(tmp_path)
-        core = h.runtime.core
-        core._chat_model, core._read_only_worker = model, worker
-    else:
-        core = CompanionCore(model, InMemoryConversationRepository(), read_only_worker=worker)
-    task = 'codex로 읽기 범위 확인해줘'
-    emitted = []
-    response = (core.respond_to_text_streaming(task, emitted.append) if streaming
-                else core.respond_to_text(task))
-    assert response.text == ACK + ' ' + draft
-    assert len(model.requests) == len(worker.requests) == 1
-    request = model.requests[0]
-    assert request.prompt == task and request.messages[-1].content == task
-    assert 'Codex는 실행되지 않았고' in request.messages[-2].content
-    assert response.worker_error and not response.worker_evidence
-    assert core._conversation_repository.list_messages()[-1].content == response.text
-    if streaming:
-        assert ' '.join(emitted) == response.text
-    if structured:
-        assert h.count_history() == 0
-        assert h.observations()[-1]['calls'] == 1
-
-
-@pytest.mark.parametrize('answer', [
-    '', '{broken', AdapterUnavailableError('incomplete reply'), TimeoutError('budget'),
-    output('저장했어.', 'create', {'title': '약속', 'date': '내일'}),
-])
-def test_decline_bad_or_unavailable_answer_uses_only_ack_without_retry(tmp_path, answer):
-    h = Harness(tmp_path)
-    model = OneCallModel(answer)
-    h.runtime.core._chat_model = model
-    h.runtime.core._read_only_worker = DecliningWorker()
-    response = h.runtime.core.respond_to_text('codex로 읽기 범위 확인해줘')
-    assert response.text == ACK and len(model.requests) == 1
-    assert h.count_history() == 0
-
-
-@pytest.mark.parametrize('budget', ['calls', 'tokens'])
-def test_decline_exhausted_budget_skips_model(tmp_path, budget):
-    h = Harness(tmp_path)
-    core = h.runtime.core
-    model = OneCallModel('must not be called')
-    core._chat_model = model
-    core._read_only_worker = DecliningWorker()
-    turn = core._prepare('codex로 읽기 범위 확인해줘')
-    if budget == 'calls':
-        turn.schedule_turn.calls = 2
-    else:
-        turn = replace(turn, request=replace(turn.request, max_tokens=0))
-    assert core._respond_with_worker(turn).text == ACK
-    assert model.requests == []
-
-
-def test_queued_acknowledgement_does_not_call_local_model():
-    class QueuedWorker:
-        def execute(self, request):
-            raise WorkerQueued('fixture queued')
-
-    model = OneCallModel('must not be called')
-    core = CompanionCore(model, InMemoryConversationRepository(), read_only_worker=QueuedWorker())
-    assert core.respond_to_text('codex로 코드 분석해줘').text == (
-        '코덱스한테 넘겼어. 결과 오면 바로 말해줄게.')
-    assert model.requests == []
+    draft = '지금 이야기부터 이어가자.'
+    h.model.queue.append(output(draft))
+    response = h.runtime.core.respond_to_text(text)
+    assert response.text == draft and response.worker_request is None
+    assert len(h.model.requests) == 1
+    assert h.runtime.close()

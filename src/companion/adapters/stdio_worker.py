@@ -23,7 +23,8 @@ class StdioApprovedWorker:
         if self.used or not self.turn_id:
             raise WorkerUnavailableError("no active approved task channel")
         self.used = True
-        send(self._stdout, {"kind": "worker_request", "id": self.turn_id, "task": request.task})
+        send(self._stdout, {"kind": "worker_request", "id": self.turn_id, "task": request.task,
+                            "why": request.why})
         reply = receive(self._stdin)
         if reply is None or reply.get("id") != self.turn_id:
             raise WorkerUnavailableError("worker result does not match the current turn")

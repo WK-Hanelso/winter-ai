@@ -231,22 +231,23 @@ def test_nonstream_entry_and_old_sentence_signature_stay_final_only(h):
 
 
 def test_schema_and_followup_keep_proposal_first(h):
-    assert list(OUTPUT_SCHEMA['properties']) == ['schedule_proposal', 'reply_draft']
-    assert OUTPUT_SCHEMA['required'] == ['schedule_proposal', 'reply_draft']
+    assert list(OUTPUT_SCHEMA['properties']) == [
+        'schedule_proposal', 'codex_request', 'reply_draft',
+    ]
+    assert OUTPUT_SCHEMA['required'] == ['schedule_proposal', 'codex_request', 'reply_draft']
 
 
-def test_worker_route_never_generates_partial_even_with_streaming_model(h):
-    from companion.worker import ReadOnlyWorkerResult
-
-    h.runtime.core._read_only_worker = SimpleNamespace(execute=lambda request: ReadOnlyWorkerResult(
-        '기반 문서야.', ('README.md:1',), (), 'codex', 'fake',
-    ))
+def test_codex_command_uses_normal_streaming_model_without_regex_route(h):
+    h.runtime.core._read_only_worker = SimpleNamespace(
+        execute=lambda request: pytest.fail('Core must not execute Worker'),
+    )
+    h.model.queue.append(output('실제 코드를 봐야 알 수 있어.'))
     emitted = []
     response = h.runtime.core.respond_to_text_streaming(
         'Codex로 README 확인해줘', lambda _: None, on_partial=emitted.append,
     )
-    assert response.worker_name == 'codex'
-    assert not emitted and h.model.stream_calls == 0
+    assert response.worker_request is None
+    assert ''.join(emitted) == response.text and h.model.stream_calls == 1
 
 
 def host(monkeypatch, frames):
