@@ -192,6 +192,14 @@ def session(
             if frame is None or frame.get("id") != turn_id:
                 raise SessionProtocolError("Core response does not match current turn")
             kind = frame.get("kind")
+            if kind == "status" and set(frame) == {"kind", "id", "text"}:
+                if replied:
+                    raise SessionProtocolError("status after final reply")
+                status_text = string(frame["text"], limit=204)
+                if not status_text.startswith("검색: ") or not status_text[4:].strip():
+                    raise SessionProtocolError("invalid search status")
+                display("[검색] " + ' '.join(status_text[4:].split()))
+                continue
             if kind == "partial" and set(frame) == {"kind", "id", "text"}:
                 if replied:
                     raise SessionProtocolError("partial after final reply")

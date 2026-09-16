@@ -8,7 +8,9 @@ import json
 
 
 class ReplyDraftExtractor:
-    def __init__(self) -> None:
+    def __init__(self, *, ignore_web: bool = False) -> None:
+        self.ignore_web = ignore_web
+        self.prefix = ''
         self.depth = 0
         self.phase = 'root'
         self.key = ''
@@ -24,6 +26,7 @@ class ReplyDraftExtractor:
         for char in piece:
             if self.done:
                 break
+            self.prefix += char
             if self.in_string:
                 if self.escape:
                     self.escape += char
@@ -59,7 +62,7 @@ class ReplyDraftExtractor:
                 self.in_string = True
                 self.is_key = self.depth == 1 and self.phase == 'key'
                 self.capture = (self.depth == 1 and self.phase == 'value'
-                                and self.key == 'reply_draft')
+                                and self.key == 'reply_draft' and self._may_display())
                 if self.is_key:
                     self.key = ''
             elif char in '{[':
@@ -83,6 +86,17 @@ class ReplyDraftExtractor:
                 else:
                     self.phase = 'after'
         return ''.join(output)
+
+    def _may_display(self) -> bool:
+        if self.ignore_web:
+            return True
+        try:
+            # The root prefix ends at the opening reply quote. Parse its completed
+            # preceding values; missing/reordered/non-null web_request stays hidden.
+            values = json.loads(self.prefix[:-1] + 'null}')
+        except ValueError:
+            return False
+        return 'web_request' in values and values['web_request'] is None
 
     def _decoded(self, char: str, output: list[str]) -> None:
         if not (self.is_key or self.capture):

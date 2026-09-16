@@ -34,27 +34,30 @@ DRAFT = '입력 흐름을 봐야 알겠어. 코덱스 결과는 나중에 알려
 def proposed(codex=CODEX, draft=DRAFT, **kwargs):
     payload = json.loads(output(draft, **kwargs))
     return json.dumps(dict(schedule_proposal=payload['schedule_proposal'],
-                           codex_request=codex, reply_draft=draft), ensure_ascii=False)
+                           codex_request=codex, web_request=None, reply_draft=draft),
+                      ensure_ascii=False)
 
 
 def test_schema_order_strict_bounds_and_fixed_instruction():
     assert list(OUTPUT_SCHEMA['properties']) == [
-        'schedule_proposal', 'codex_request', 'reply_draft',
+        'schedule_proposal', 'codex_request', 'web_request', 'reply_draft',
     ]
-    assert OUTPUT_SCHEMA['required'] == ['schedule_proposal', 'codex_request', 'reply_draft']
+    assert OUTPUT_SCHEMA['required'] == [
+        'schedule_proposal', 'codex_request', 'web_request', 'reply_draft',
+    ]
     schema = OUTPUT_SCHEMA['properties']['codex_request']['anyOf'][1]
     assert not schema['additionalProperties'] and schema['required'] == ['task', 'why']
     for key, limit in [('task', 400), ('why', 120)]:
         # No `pattern`: llama.cpp only accepts anchored patterns and returned HTTP 400.
         assert schema['properties'][key] == dict(type='string', minLength=1, maxLength=limit)
-    assert INSTRUCTION.endswith(CODEX_INSTRUCTION)
+    assert '\n' + CODEX_INSTRUCTION + '\n' in INSTRUCTION
     assert CODEX_INSTRUCTION.count('천우:') == 7
     assert delegation.REQUIRE_APPROVAL is True
 
 
 @pytest.mark.parametrize('codex', [None, CODEX, dict(task='가' * 400, why='나' * 120)])
 def test_parser_accepts_null_and_exact_objects(codex):
-    draft, schedule, request = parse_output(proposed(codex))
+    draft, schedule, request, _ = parse_output(proposed(codex))
     assert draft == DRAFT and schedule is None
     assert request == (ReadOnlyWorkerRequest(**codex) if codex else None)
     assert parse_output(output('일반 대화'))[2] is None

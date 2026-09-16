@@ -152,6 +152,17 @@ def fingerprints():
 def test_requests_match_p05_baseline(case):
     baseline = json.loads(FIXTURE.read_text())
     requests = capture(case)
+    # P8 changes only the outside-world rule. Restore its exact previous wording
+    # for the historical hashes; independently assert the new rule below.
+    from companion.grounding import NO_INVENTED_EXPERIENCE
+
+    previous = (
+        "바깥일은 네가 볼 수 없어. 날씨, 뉴스, 천우가 오늘 뭘 했는지는 "
+        "지어내지 말고 물어봐. 대신 네 생각이나 기분은 네 것이니 말해도 돼."
+    )
+    assert all(any(NO_INVENTED_EXPERIENCE in m.content for m in r.messages) for r in requests)
+    requests = [replace(r, messages=tuple(replace(m, content=m.content.replace(
+        NO_INVENTED_EXPERIENCE, previous)) for m in r.messages)) for r in requests]
     if case in ("full", "explain", "streaming"):
         # P3-1b/P5.2 change memory rendering. Restore the historical block
         # for the hash, checking all other bytes and order unchanged.

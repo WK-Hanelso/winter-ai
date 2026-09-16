@@ -29,7 +29,8 @@ def test_extractor_escapes_depth_and_key_order(reply_first, size):
     proposal = {'fields': {'title': 'reply_draft', 'reply_draft': '숨김'},
                 'other': [{'reply_draft': '숨김2'}, '"reply_draft": "가짜"']}
     pairs = [('schedule_proposal', proposal), ('reply_draft', draft)]
-    raw = json.dumps(dict(reversed(pairs) if reply_first else pairs), ensure_ascii=True)
+    raw = json.dumps(dict([('web_request', None), *(reversed(pairs) if reply_first else pairs)]),
+                     ensure_ascii=True)
     extractor = ReplyDraftExtractor()
     deltas = [extractor.feed(raw[i:i + size]) for i in range(0, len(raw), size)]
     assert ''.join(deltas) == draft
@@ -39,7 +40,7 @@ def test_extractor_escapes_depth_and_key_order(reply_first, size):
 
 def test_extractor_emits_before_value_or_document_closes():
     extractor = ReplyDraftExtractor()
-    assert extractor.feed('{"schedule_proposal":null,"reply_draft":"안') == '안'
+    assert extractor.feed('{"schedule_proposal":null,"web_request":null,"reply_draft":"안') == '안'
     assert extractor.feed('녕\\') == '녕'
     assert extractor.feed('uD83D\\u') == ''
     assert extractor.feed('DE00\\') == '😀'
@@ -50,7 +51,7 @@ def test_extractor_emits_before_value_or_document_closes():
 @pytest.mark.parametrize('bad', [r'\uZZZZ', r'\q', r'\uDE00', r'\uD83Dx'])
 def test_invalid_escape_stops_display_without_interrupting_full_validation(bad):
     extractor = ReplyDraftExtractor()
-    assert extractor.feed('{"reply_draft":"앞' + bad + '뒤"}') == '앞'
+    assert extractor.feed('{"web_request":null,"reply_draft":"앞' + bad + '뒤"}') == '앞'
 
 
 class StreamingModel(Model):
@@ -104,7 +105,9 @@ def turn(h, text='안녕'):
 def test_core_partial_is_live_and_timing_includes_preparation(h, monkeypatch, reply_first):
     draft = '안녕! "인용" \\ 경로\n😀'
     pairs = [('schedule_proposal', None), ('reply_draft', draft)]
-    h.model.queue.append(json.dumps(dict(reversed(pairs) if reply_first else pairs)))
+    h.model.queue.append(json.dumps(dict([
+        ('web_request', None), *(reversed(pairs) if reply_first else pairs),
+    ])))
     partials, sentences = [], []
     ticks = iter([100.0, 104.5])
     monkeypatch.setattr('companion.core.perf_counter', lambda: next(ticks))
@@ -232,9 +235,11 @@ def test_nonstream_entry_and_old_sentence_signature_stay_final_only(h):
 
 def test_schema_and_followup_keep_proposal_first(h):
     assert list(OUTPUT_SCHEMA['properties']) == [
-        'schedule_proposal', 'codex_request', 'reply_draft',
+        'schedule_proposal', 'codex_request', 'web_request', 'reply_draft',
     ]
-    assert OUTPUT_SCHEMA['required'] == ['schedule_proposal', 'codex_request', 'reply_draft']
+    assert OUTPUT_SCHEMA['required'] == [
+        'schedule_proposal', 'codex_request', 'web_request', 'reply_draft',
+    ]
 
 
 def test_codex_command_uses_normal_streaming_model_without_regex_route(h):
@@ -321,7 +326,7 @@ def test_child_chunks_large_and_whitespace_deltas(h, monkeypatch):
     h.model.queue.append(output('안녕!'))
     response = h.runtime.core.respond_to_text('안녕')
 
-    def fake_stream(text, on_sentence, on_partial):
+    def fake_stream(text, on_sentence, on_partial, on_status=None):
         on_partial(' ')
         on_partial('x' * 9000)
         return replace(response, text='최종')

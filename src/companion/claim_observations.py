@@ -16,6 +16,7 @@ class ClaimObservation:
     text: str
     checked_text: str
     violations: tuple[ClaimViolation, ...]
+    web_grounded: bool = False
 
 
 class JsonlClaimObservationRecorder:
@@ -26,7 +27,9 @@ class JsonlClaimObservationRecorder:
         record = asdict(observation)
         blocking = ResponseClaimGate.blocking_violations(observation.violations)
         record["violations"] = [
-            {**asdict(item), "action": "block" if item in blocking else "observe"}
+            {**asdict(item), "action": "block" if item in blocking else "observe",
+             **({"web_grounded": observation.web_grounded}
+                if item.kind == "outside_event" else {})}
             for item in observation.violations
         ]
         self.path.parent.mkdir(parents=True, exist_ok=True)

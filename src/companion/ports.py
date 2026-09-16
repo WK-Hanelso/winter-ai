@@ -24,6 +24,7 @@ if TYPE_CHECKING:
         ShadowTurnEvent,
         TurnInterpretationRequest,
     )
+    from companion.web_search import WebSearchResult
     from companion.winter_events import EventValue, WinterEvent
     from companion.work_orchestration import (
         EvidenceReport,
@@ -44,6 +45,10 @@ if TYPE_CHECKING:
 
 class ChatModel(Protocol):
     def generate(self, request: ChatRequest) -> ChatResult: ...
+
+
+class WebSearchPort(Protocol):
+    def search(self, query: str) -> WebSearchResult: ...
 
 
 class ReadOnlyWorker(Protocol):

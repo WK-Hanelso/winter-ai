@@ -268,7 +268,8 @@ class CompanionCore:
                 on_sentence(sentence)
             return response
         if turn.schedule_turn is not None:
-            response = self._respond_with_schedules(turn, on_partial=on_partial, started=started)
+            response = self._respond_with_schedules(
+                turn, on_partial=on_partial, on_status=on_status, started=started)
             for sentence in split_sentences(response.text):
                 on_sentence(sentence)
             return response
@@ -354,7 +355,7 @@ class CompanionCore:
 
     def _respond_with_schedules(
         self, turn: _Turn, *, on_partial: Callable[[str], None] | None = None,
-        started: float | None = None,
+        started: float | None = None, on_status: Callable[[str], None] | None = None,
     ) -> CompanionResponse:
         dialogue, state = self._schedule_dialogue, turn.schedule_turn
         assert dialogue is not None and state is not None
@@ -373,7 +374,25 @@ class CompanionCore:
             draft = dialogue.generate(state, self._chat_model, turn.request,
                                       on_partial=partial if on_partial is not None else None)
             receipt = dialogue.execute(state, turn.request.prompt)
-            if dialogue.needs_followup(state, draft):
+            web_failed = False
+            if state.web_request is not None:
+                base_request = (dialogue.followup_request(state, turn.request)
+                                if receipt is not None else turn.request)
+                search_request, fallback = dialogue.search(state, base_request, on_status)
+                if search_request is None:
+                    draft, web_failed = fallback, True
+                elif state.calls < 2:
+                    try:
+                        draft = dialogue.generate(
+                            state, self._chat_model, search_request, draft_only=True,
+                            on_partial=partial if on_partial is not None else None,
+                        )
+                    except ScheduleOutputError:
+                        draft = '검색 결과로 답변을 완성하지 못했어.'
+                else:
+                    draft = '검색 결과로 답변을 완성하지 못했어.'
+                    state.discard_reason = 'call_budget_exhausted'
+            if not web_failed and dialogue.needs_followup(state, draft):
                 if state.calls < 2:
                     try:
                         draft = dialogue.generate(
@@ -385,8 +404,9 @@ class CompanionCore:
                 else:
                     draft = ""
                     state.discard_reason = "call_budget_exhausted"
-            draft = dialogue.display(state, draft)
-            if receipt is None:
+            if not web_failed:
+                draft = dialogue.display(state, draft)
+            if receipt is None and not web_failed:
                 def repair(request: ChatRequest) -> str:
                     revised = dialogue.generate(state, self._chat_model, request, draft_only=True)
                     return dialogue.display(state, revised)
@@ -403,7 +423,8 @@ class CompanionCore:
                 return dialogue.display(state, revised)
 
             response = self._finish(
-                turn, draft, repeat_generate=regenerate if state.calls < 2 else None,
+                turn, draft,
+                repeat_generate=regenerate if state.calls < 2 and not web_failed else None,
             )
             final = response.text
             state.streamed_matches_final = bool(streamed) and ''.join(streamed) == final
@@ -856,6 +877,7 @@ class CompanionCore:
             self._claim_observation_recorder(ClaimObservation(
                 turn.experience_id, turn.shadow_turn_id, self._turn_source,
                 stage, text, checked_text, violations,
+                web_grounded=bool(turn.schedule_turn and turn.schedule_turn.web_grounded),
             ))
 
     @staticmethod

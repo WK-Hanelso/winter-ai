@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 import os
 from pathlib import Path
 
+from configs.dialogue import web
+
 from companion.adapters.codex_gateway_worker import CodexTypedProjectWorker
 from companion.adapters.codex_worker import CodexReadOnlyWorker
 from companion.adapters.fake import (
@@ -17,6 +19,7 @@ from companion.adapters.sqlite_repository import (
     ConversationRepositoryError,
     SqliteConversationRepository,
 )
+from companion.adapters.web_search import SearXNGWebSearch
 from companion.adapters.work_orchestration import (
     BoundedProjectInspectionExecutive,
 )
@@ -462,6 +465,7 @@ def build_text_runtime(
         schedule_dialogue = ScheduleDialogue(
             ScheduleService(ScheduleRepository(config.knowledge_db), SystemClock()),
             config.conversation_db.parent / "schedule_observations.jsonl",
+            web_search=SearXNGWebSearch() if web.ENABLED else None,
         )
     core = CompanionCore(
         chat_model,

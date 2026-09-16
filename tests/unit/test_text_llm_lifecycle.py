@@ -20,6 +20,8 @@ def runtime(tmp_path: Path) -> Launcher:
     (tmp_path / "scripts").mkdir()
     for relative in ("winter", "scripts/text-llm.sh"):
         (tmp_path / relative).write_text((root / relative).read_text())
+    # Search lifecycle is covered separately; never start the real search container.
+    (tmp_path / "scripts/web-search.sh").write_text("exit 0\n")
     model = tmp_path / "model.gguf"
     model.write_bytes(b"synthetic")
     (tmp_path / "docker").write_text(

@@ -39,12 +39,14 @@ from companion.dialogue.claim_language import (
 # having a self, which for a companion is the wrong thing to prevent.
 #
 # So the line is drawn where it belongs — around the world outside, which she
-# cannot see and must not guess at. What she thought about and how she feels are
+# can consult through search evidence and must not guess at.
+# What she thought about and how she feels are
 # not claims about the world; they are hers, and a companion that cannot say
 # them is a search box.
 NO_INVENTED_EXPERIENCE = (
-    "바깥일은 네가 볼 수 없어. 날씨, 뉴스, 천우가 오늘 뭘 했는지는 "
-    "지어내지 말고 물어봐. 대신 네 생각이나 기분은 네 것이니 말해도 돼."
+    "바깥일(날씨·뉴스·시세·회사 정보)은 검색 결과가 있을 때만, 출처를 붙여 말해. "
+    "결과가 없으면 지어내지 말고 없다고 해. 천우가 오늘 뭘 했는지는 물어봐. "
+    "대신 네 생각이나 기분은 네 것이니 말해도 돼."
 )
 NO_INVENTED_MEMORY = (
     "기억은 위에 주어진 기억 내용에만 근거해서 말해. "

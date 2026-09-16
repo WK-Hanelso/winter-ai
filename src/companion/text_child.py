@@ -53,9 +53,12 @@ def run(argv: list[str], stdin: TextIO, stdout: TextIO) -> int:
                     part = string(delta[offset:offset + 8192], allow_whitespace=True)
                     send(stdout, {"kind": "partial", "id": current_turn_id, "text": part})
 
+            def search_status(text: str, *, current_turn_id: str = turn_id) -> None:
+                send(stdout, {"kind": "status", "id": current_turn_id, "text": text})
+
             try:
                 response = runtime.core.respond_to_text_streaming(
-                    text, on_sentence=lambda _: None, on_partial=partial,
+                    text, on_sentence=lambda _: None, on_partial=partial, on_status=search_status,
                 )
                 reply: dict[str, object] = {"kind": "reply", "id": turn_id, "text": response.text}
                 if response.worker_request is not None:

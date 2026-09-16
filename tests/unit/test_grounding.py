@@ -34,7 +34,9 @@ def test_default_policy_forbids_inventing_the_world_but_not_a_self() -> None:
     instruction = GroundingPolicy().instruction()
 
     assert instruction is not None
-    assert "지어내지 말고 물어봐" in instruction
+    assert ("바깥일(날씨·뉴스·시세·회사 정보)은 검색 결과가 있을 때만, 출처를 붙여 말해."
+            in instruction)
+    assert "결과가 없으면 지어내지 말고 없다고 해. 천우가 오늘 뭘 했는지는 물어봐." in instruction
     assert "네 생각이나 기분은 네 것" in instruction
     assert "기억한다고 하지 마" in instruction
 

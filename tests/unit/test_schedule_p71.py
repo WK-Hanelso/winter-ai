@@ -196,4 +196,4 @@ def test_time_only_claim_requires_matching_time_and_title(h):
 
 def test_self_model_wording_hash():
     assert hashlib.sha256(OPERATION_DESCRIPTION.encode()).hexdigest() == (
-        '3733d6a3381071f3df6c5ed8a93fced586fa023a907661d4659f5c9784c93b0d')
+        'c094e947ee89882f84774f94c9f62e6f881499282de7703eee1d7c9fd04faa9f')

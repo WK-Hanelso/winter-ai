@@ -11,10 +11,16 @@ import pytest
 
 def launch(
     tmp_path: Path, *arguments: str, connection: str = "ready",
+    action: str = "text", search_exit: int = 0,
 ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
     source = Path(__file__).resolve().parents[2] / "winter"
     launcher = tmp_path / "winter"
     launcher.write_text(source.read_text())
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "web-search.sh").write_text(
+        'echo "$1" >> "search-calls"\nexit "${SEARCH_EXIT:-0}"\n')
+    (scripts / "text-llm.sh").write_text('exit 0\n')
     stub = tmp_path / "docker"
     stub.write_text(
         f"#!{sys.executable}\n"
@@ -44,9 +50,9 @@ def launch(
     ssh.chmod(0o755)
     capture = tmp_path / "args.jsonl"
     result = subprocess.run(
-        ["bash", str(launcher), "text", *arguments],
+        ["bash", str(launcher), action, *arguments],
         env=dict(os.environ, PATH=str(tmp_path) + ":" + os.environ["PATH"],
-                 DOCKER_ARGS=str(capture), TEST_CONNECTION=connection,
+                 DOCKER_ARGS=str(capture), TEST_CONNECTION=connection, SEARCH_EXIT=str(search_exit),
                  WINTER_LLM_URL="http://127.0.0.1:18080"),
         text=True, capture_output=True, check=False,
     )
@@ -100,3 +106,22 @@ def test_tunnel_failure_does_not_start_core_or_fake_backend(tmp_path: Path) -> N
     result, calls = launch(tmp_path, connection="failed")
     assert result.returncode == 1
     assert all(call[0] != "run" for call in calls)
+
+
+def test_text_starts_search_server(tmp_path: Path) -> None:
+    result, calls = launch(tmp_path, "--prompt", "hello")
+    assert result.returncode == 0 and calls[-1][0] == "run"
+    assert (tmp_path / "search-calls").read_text().splitlines() == ["start"]
+
+
+def test_search_start_failure_does_not_stop_dialogue(tmp_path: Path) -> None:
+    result, calls = launch(tmp_path, "--prompt", "hello", search_exit=1)
+    assert result.returncode == 0 and calls[-1][0] == "run"
+    assert "검색 서버 없이 시작합니다." in result.stdout
+
+
+def test_stop_also_stops_search_server(tmp_path: Path) -> None:
+    result, calls = launch(tmp_path, action="stop")
+    assert result.returncode == 0
+    assert (tmp_path / "search-calls").read_text().splitlines() == ["stop"]
+    assert calls[-1][-2:] == ["stop", "llm"]
