@@ -10,6 +10,7 @@ import sqlite3
 from typing import cast
 
 from companion.contracts import ChatRequest, ChatTimings, ConversationMessage
+from companion.conversation_recall import _terms
 from companion.dialogue.claim_language import has_question_form
 from companion.dialogue.json_reply_stream import ReplyDraftExtractor
 from companion.dialogue.schedule_draft import (
@@ -30,6 +31,7 @@ from companion.schedules import (
     ScheduleService,
     cue_matches,
     resolve_date,
+    resolve_date_range,
     source_time,
     ungrounded_create_fields,
 )
@@ -95,13 +97,48 @@ CODEX_INSTRUCTION = (
 )
 INSTRUCTION += '\n' + CODEX_INSTRUCTION
 
-# Output diagnostics only: never a keyword classifier for incoming user intent.
+# Completion diagnostics. The separate P7.1 input check below only permits a query.
 _REPORTED_OR_CONDITIONAL = re.compile(r'다고|라고|했다는|했을\s*때|다면|했으면|했더라면')
 _COMPLETION = re.compile(
     r'바꿔\s*(?:놨|놨어|뒀|두었|놓았)|변경\s*(?:했|됐|해\s*뒀|해\s*놨)|'
     r'(?:저장|등록|추가|수정|취소|반영|처리)\s*(?:했|됐|되었|완료|해\s*(?:뒀|놨|두었))|'
     r'(?:넣어|적어|남겨|옮겨)\s*(?:놨|놨어|뒀|두었|놓았)|기억해둘|예약했|완료했'
 )
+_SCHEDULE_NOUN = re.compile(r'일정|약속|예약|미팅|회의|스케줄|알람|리마인드')
+_SCHEDULE_TIME = re.compile(
+    DATE_EXPRESSIONS.pattern + r'|이번\s*주|다음\s*주|주말|\d+일|\d+시|요일|'
+    r'\d{1,2}:\d{2}'
+)
+
+
+def is_schedule_question(text: str) -> bool:
+    # P7.1 acceptance requires a schedule noun: "내일 뭐 먹지?" is ordinary chat.
+    return bool(_SCHEDULE_NOUN.search(text) and has_question_form(text)
+                and re.search(r'언제|뭐|무엇|있어|없어|몇|어떤|가장', text))
+
+
+def claims_ungrounded_schedule(text: str, rows: tuple[Schedule, ...], now: datetime) -> bool:
+    # Quotes and P6 reported/conditional clauses are not affirmative schedule facts.
+    text = re.sub(r'"[^"\n]*"|\'[^\'\n]*\'|“[^”\n]*”|‘[^’\n]*’', '', text)
+    for clause in re.findall(r'[^.!?;,\n]+[.!?]?', text):
+        if (_REPORTED_OR_CONDITIONAL.search(clause)
+                or has_question_form(clause.rstrip('.!'))
+                or re.search(r'없|않|아니야|아니고|아니다|미정', clause)):
+            continue
+        if not (_SCHEDULE_TIME.search(clause) and _SCHEDULE_NOUN.search(clause)):
+            continue
+        # Single-day/time conflicts are checked below; week/weekend claims need ranges.
+        normalized = re.sub(r'(이번|다음)\s*주', r'\1 주', clause)
+        spans = [resolve_date_range('이번 주말' if m.group() == '주말' else m.group(), now)
+                 for m in re.finditer(r'(?:이번|다음) 주(?:말)?|주말', normalized)]
+        if not any(_terms(row.title, canonical=True) & _terms(clause, canonical=True)
+                   and all(span is not None and span[0].isoformat() <= row.date
+                           <= span[1].isoformat() for span in spans)
+                   and not draft_conflicts(clause, ChangeReceipt(
+                       'applied', 'query', 'context', 1, schedules=(row,)), now)
+                   for row in rows):
+            return True
+    return False
 
 
 def claims_completion(text: str) -> bool:
@@ -356,6 +393,7 @@ class ScheduleTurn:
     receipt: ChangeReceipt | None = None
     codex_request: ReadOnlyWorkerRequest | None = None
     calls: int = 0
+    auto_query: bool = False
     discard_reason: str | None = None
     warnings: list[str] = field(default_factory=list)
     validation_errors: list[str] = field(default_factory=list)
@@ -496,6 +534,12 @@ class ScheduleDialogue:
     def execute(self, turn: ScheduleTurn, source_text: str) -> ChangeReceipt | None:
         turn.source_text = source_text
         proposal = turn.proposal
+        if proposal is None and is_schedule_question(source_text):
+            proposal = dict(operation='query', target={}, fields={}, cue='')
+            turn.proposal = proposal
+            turn.auto_query = True
+            if turn.drafts:
+                turn.discard_reason = 'auto_query_replaced_draft'
         if proposal is None:
             self.pending = None
             return None
@@ -602,6 +646,7 @@ class ScheduleDialogue:
         )
         turn.receipt = self.service.execute(
             command, source_text=execution_source, allow_cue_fallback=True,
+            allow_unfiltered_query=turn.auto_query,
         )
         if turn.receipt.reason_code in {'ungrounded_date', 'ungrounded_fields'}:
             turn.warnings.append(turn.receipt.reason_code)
@@ -666,6 +711,8 @@ class ScheduleDialogue:
 
     def needs_followup(self, turn: ScheduleTurn, draft: str) -> bool:
         receipt = turn.receipt
+        if turn.auto_query and receipt is not None:
+            return True
         if receipt is None or receipt.reason_code == 'no_change':
             return False
         if receipt.status == 'needs_clarification':
@@ -677,17 +724,28 @@ class ScheduleDialogue:
     def display(self, turn: ScheduleTurn, draft: str) -> str:
         receipt = turn.receipt
         if receipt is None:
+            if claims_new_completion(draft, turn.context.schedules, turn.received_at):
+                turn.discard_reason = 'completion_without_receipt'
+                return '이번 대화에서는 일정을 저장하거나 바꾸지 않았어.'
+            if turn.proposal is None and claims_ungrounded_schedule(
+                    draft, turn.context.schedules, turn.received_at):
+                turn.discard_reason = 'ungrounded_schedule_claim'
+                fallback = '저장된 일정에는 그런 게 없어. 내가 아는 일정만 말할게.'
+                if turn.context.schedules:
+                    fallback += ' ' + receipt_text(ChangeReceipt(
+                        'applied', 'query', 'context', turn.source_message_id,
+                        schedules=turn.context.schedules))
+                return fallback
             if has_question_form(turn.source_text):
                 corrected = correct_context_relative_date(
                     draft, turn.context.schedules, turn.received_at)
                 if corrected != draft and 'context_relative_date_corrected' not in turn.warnings:
                     turn.warnings.append('context_relative_date_corrected')
                 draft = corrected
-            if claims_new_completion(draft, turn.context.schedules, turn.received_at):
-                turn.discard_reason = 'completion_without_receipt'
-                return '이번 대화에서는 일정을 저장하거나 바꾸지 않았어.'
             return draft
         fallback = receipt_text(receipt)
+        if turn.auto_query and len(turn.drafts) <= 1:
+            return fallback
         if not draft.strip():
             return fallback
         if receipt.reason_code == 'no_change':
@@ -768,6 +826,10 @@ class ScheduleDialogue:
         record = asdict(turn)
         record['received_at'] = turn.received_at.isoformat()
         record.update(final=final, error=error, codex_requested=turn.codex_request is not None)
+        if turn.auto_query and turn.drafts:
+            if turn.discard_reason != 'auto_query_replaced_draft':
+                record['followup_discard_reason'] = turn.discard_reason
+            record['discard_reason'] = 'auto_query_replaced_draft'
         if turn.codex_request is not None:
             record['codex_task'] = turn.codex_request.task
         with self.observation_path.open('a', encoding='utf-8') as stream:

@@ -484,18 +484,22 @@ class ScheduleService:
     def execute(
         self, command: ScheduleCommand, *, source_text: str, active_only: bool = False,
         allow_cue_fallback: bool = False,
+        allow_unfiltered_query: bool = False,
     ) -> ChangeReceipt:
         """Query is read-only; other operations atomically check, resolve and write.
 
         source_text verifies cue or P2.1 field grounding and is never persisted.
         allow_cue_fallback is selected by Core, never by a model-owned field.
         received_at may be supplied by the future Core, otherwise Clock is sampled once.
+        allow_unfiltered_query is Core's omitted-query fallback: permit an empty filter
+        and use command fields without deriving dates from the user's question.
         """
         receipt = ChangeReceipt(
             "rejected", command.operation, command.command_id, command.source_message_id,
         )
         try:
-            self._validate(command, source_text, active_only, allow_cue_fallback)
+            self._validate(command, source_text, active_only, allow_cue_fallback,
+                           allow_unfiltered_query)
             request: dict[str, object] = {
                 "operation": command.operation, "target": dict(command.target),
                 "fields": dict(command.fields), "expected_revision": command.expected_revision,
@@ -508,7 +512,8 @@ class ScheduleService:
                 request["cue_policy"] = "optional_with_field_grounding"
             if command.operation == "query":
                 now = _aware(command.received_at or self.clock.now())
-                fields = (source_query_dates(source_text, now) if allow_cue_fallback
+                fields = (source_query_dates(source_text, now)
+                          if allow_cue_fallback and not allow_unfiltered_query
                           else command.fields)
                 start, end = self._query_dates(fields, now)
                 hint = command.target.get('title_hint')
@@ -552,6 +557,7 @@ class ScheduleService:
     def _validate(
         command: ScheduleCommand, source_text: str, active_only: bool,
         allow_cue_fallback: bool = False,
+        allow_unfiltered_query: bool = False,
     ) -> None:
         if command.operation not in {"create", "update", "cancel", "query"}:
             raise _Invalid("invalid_operation")
@@ -590,7 +596,7 @@ class ScheduleService:
                 raise _Invalid("invalid_query")
             has_filter = (bool(command.target) or bool(DATE_EXPRESSIONS.search(source_text))
                           if allow_cue_fallback else bool(command.fields or command.target))
-            if not has_filter:
+            if not has_filter and not allow_unfiltered_query:
                 raise _Invalid("missing_query_filter", "needs_clarification", "어떤 일정을 찾을까?")
         else:
             if active_only:
