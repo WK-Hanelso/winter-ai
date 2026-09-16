@@ -10,6 +10,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from configs.dialogue import context
+
 from companion.adapters.fake import AdapterUnavailableError
 from companion.contracts import ChatRequest, ChatResult, ChatTimings
 
@@ -51,6 +53,24 @@ class LlamaCppHttpChatModel:
 
     def _endpoint(self) -> str:
         return f"{self.base_url.rstrip('/')}/v1/chat/completions"
+
+    def read_context_tokens(self) -> int:
+        """Read server capacity once at runtime startup, outside generation calls."""
+        try:
+            request = Request(f"{self.base_url.rstrip('/')}/props", method="GET")
+            with urlopen(request, timeout=min(self.timeout_seconds, 2.0)) as response:
+                props = json.loads(response.read())
+            if isinstance(props, dict):
+                settings = props.get("default_generation_settings")
+                # llama.cpp exposes per-slot context in generation settings.
+                value = settings.get("n_ctx") if isinstance(settings, dict) else None
+                if value is None:
+                    value = props.get("n_ctx")
+                if type(value) is int and value > 0:
+                    return value
+        except (OSError, ValueError):
+            pass
+        return context.CONTEXT_TOKENS
 
     def _payload(self, request: ChatRequest, *, stream: bool) -> bytes:
         payload: dict[str, object] = {

@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
-from configs.dialogue import web
+from configs.dialogue import context, web
 
 
 class WebSearchError(RuntimeError):
@@ -40,16 +40,51 @@ def compact(text: str) -> str:
     return ' '.join(text.split())
 
 
-def render_results(result: WebSearchResult) -> str:
-    """Keep each included URL intact; shorten only labels/excerpts to fit."""
-    block = f'검색 결과 (검색어: {compact(result.query)}, {len(result.results)}건)'
+def render_results(
+    result: WebSearchResult, *, prompt_tokens: int | None = None,
+    context_tokens: int = context.CONTEXT_TOKENS, max_tokens: int | None = None,
+) -> str:
+    """Fit measured headroom; preserve snippets/URLs before adding page bodies.
+
+    No timings means the existing configured cap. Missing output budget cannot
+    arise in the companion runtime, so also keep that cap for standalone callers.
+    An empty block means not even one cited excerpt fits; do not generate from it.
+    """
+    limit = web.BLOCK_CHARS
+    if prompt_tokens is not None and max_tokens is not None:
+        remaining = context_tokens - prompt_tokens - max_tokens - web.RESERVE_TOKENS
+        limit = min(limit, max(0, int(remaining * web.CHARS_PER_TOKEN)))
+    header = f'검색 결과 (검색어: {compact(result.query)}, {len(result.results)}건)'
+    entries = []
     for index, item in enumerate(result.results, 1):
         site = urlsplit(item.url).hostname or item.url
         heading = f'\n[{index}] {compact(item.title)[:200]} — {site}\n'
         footer = f'\nURL: {item.url}'
-        room = web.BLOCK_CHARS - len(block) - len(heading) - len(footer)
-        if room <= 0:
-            break
-        excerpt = compact(item.page or item.content)[:min(web.PAGE_CHARS, room)]
-        block += heading + excerpt + footer
-    return block[:web.BLOCK_CHARS]
+        entries.append((heading, compact(item.content)[:web.PAGE_CHARS],
+                        compact(item.page)[:web.PAGE_CHARS], footer))
+
+    # Reserve at least one excerpt character per source. Drop trailing sources
+    # only if their intact headings/URLs cannot fit even without page bodies.
+    while entries and (len(header) + sum(len(h) + len(f) + 1 for h, _, _, f in entries)
+                       > limit):
+        entries.pop()
+    if not entries:
+        return ''
+    overhead = len(header) + sum(len(h) + len(f) for h, _, _, f in entries)
+    snippet_room = limit - overhead
+    # If snippets alone exceed the budget, shorten them evenly, after all page
+    # bodies have been removed. Never let the first long page crowd out snippets.
+    snippet_cap = web.PAGE_CHARS
+    while sum(min(len(s), snippet_cap) for _, s, _, _ in entries) > snippet_room:
+        snippet_cap -= 1
+    snippets = [s[:snippet_cap] for _, s, _, _ in entries]
+    page_room = snippet_room - sum(map(len, snippets))
+    block = header
+    for (heading, _, page, footer), snippet in zip(entries, snippets, strict=True):
+        body = ''
+        label = '\n본문: '
+        if page and page_room > len(label):
+            body = label + page[:page_room - len(label)]
+            page_room -= len(body)
+        block += heading + snippet + body + footer
+    return block

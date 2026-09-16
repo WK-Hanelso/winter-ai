@@ -10,6 +10,8 @@ import sqlite3
 from typing import Protocol
 from uuid import uuid4
 
+from configs.dialogue.self_model import CAPABILITIES
+
 from companion.identity import CompanionIdentity
 
 OPERATION_DESCRIPTION = "\n".join((
@@ -113,7 +115,14 @@ class SelfModelSnapshot:
             )
         )
 
-    def system_message(self) -> str:
+    def system_message(self, *, companion: bool = False) -> str:
+        if companion:
+            return "\n".join((
+                "[겨울이가 할 수 있는 것 — 사실만 말해]",
+                *(f"{index}. {name}: {description}"
+                  for index, (name, description) in enumerate(CAPABILITIES, 1)),
+                "여기 없는 기능은 할 수 있다고 말하지 마.",
+            ))
         lines = [
             "[검증된 SelfModel — 읽기 전용]",
             f"정체성: {self.identity_name} {self.identity_version}",

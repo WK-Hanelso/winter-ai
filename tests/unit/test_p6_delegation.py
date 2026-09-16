@@ -33,7 +33,7 @@ def test_approval_prompt_snapshot(monkeypatch):
     assert '/home/' not in output_stream.getvalue()
 
 
-def test_self_model_operation_description_is_six_fixed_lines_before_variable_tail(tmp_path):
+def test_legacy_operation_description_and_companion_fixed_head(tmp_path):
     snapshot = SelfModelSnapshot('겨울이', 'fixture', (), ())
     block = snapshot.system_message().split('동작 방식(사실만 말해):', 1)[1]
     assert block.splitlines() == [
@@ -54,12 +54,15 @@ def test_self_model_operation_description_is_six_fixed_lines_before_variable_tai
     first = h.runtime.core._prepare('어떤 방식으로 정보를 처리해?').request
     second = h.runtime.core._prepare('읽기 범위를 왜 그렇게 정했어?').request
     position = next(i for i, m in enumerate(first.messages)
-                    if '동작 방식(사실만 말해)' in m.content)
+                    if m.content.startswith('[겨울이가 할 수 있는 것'))
+    assert first.messages[position].content == snapshot.system_message(companion=True)
+    assert '동작 방식(사실만 말해)' not in first.messages[position].content
     assert first.messages[:position + 1] == second.messages[:position + 1]
     assert position < next(i for i, m in enumerate(first.messages)
                            if m.content.startswith('일정 날짜 기준'))
     assert position < len(first.messages) - 1
     assert first.messages[-1].content == first.prompt
+    h.runtime.close()
 
 
 @pytest.mark.parametrize('draft', [

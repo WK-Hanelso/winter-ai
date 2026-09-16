@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import os
 from pathlib import Path
 
-from configs.dialogue import web
+from configs.dialogue import context, web
 
 from companion.adapters.codex_gateway_worker import CodexTypedProjectWorker
 from companion.adapters.codex_worker import CodexReadOnlyWorker
@@ -456,6 +456,7 @@ def build_text_runtime(
             tuple(example_messages), reply_token_budget=examples.MAX_REPLY_TOKENS,
             isolate_repair_draft=True,
             fixed_instruction=examples.INSTRUCTION if lean else None,
+            companion_self_model=True,
         )
     schedule_dialogue = None
     if config.dialogue_policy == "companion" and config.knowledge_db is not None:
@@ -466,6 +467,9 @@ def build_text_runtime(
             ScheduleService(ScheduleRepository(config.knowledge_db), SystemClock()),
             config.conversation_db.parent / "schedule_observations.jsonl",
             web_search=SearXNGWebSearch() if web.ENABLED else None,
+            context_tokens=(base_chat_model.read_context_tokens()
+                            if isinstance(base_chat_model, LlamaCppHttpChatModel)
+                            else context.CONTEXT_TOKENS),
         )
     core = CompanionCore(
         chat_model,

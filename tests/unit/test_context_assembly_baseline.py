@@ -124,10 +124,11 @@ def synthetic_core(model, *, full=False, bounded=True, **overrides):
     ), repository
 
 
-def capture(case):
+def capture(case, *, companion_self_model=False):
     model = SpyModel()
     core, repository = synthetic_core(model, full=case in ("full", "explain", "streaming"),
-                                      bounded=case != "minimal")
+                                      bounded=case != "minimal", context_assembler=ContextAssembler(
+                                          companion_self_model=companion_self_model))
     text = "원리를 자세히 설명해줘" if case == "explain" else "설정 이야기를 해볼까?"
     if case == "repair":
         core._response_reviewer = RepairOnce()

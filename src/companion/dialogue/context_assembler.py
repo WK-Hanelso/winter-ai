@@ -4,6 +4,7 @@ from dataclasses import replace
 import json
 
 from companion.beliefs import belief_context
+from companion.capabilities import SelfModelSnapshot
 from companion.contracts import ChatRequest, ConversationMessage
 from companion.conversation_recall import recall_context
 from companion.day_reflection import day_reflection_context
@@ -21,16 +22,19 @@ class ContextAssembler:
     _reply_token_budget: int | None = None
     _isolate_repair_draft: bool = False
     _fixed_instruction: str | None = None
+    _companion_self_model: bool = False
 
     def __init__(
         self, examples: tuple[ConversationMessage, ...] = (),
         *, reply_token_budget: int | None = None, isolate_repair_draft: bool = False,
         fixed_instruction: str | None = None,
+        companion_self_model: bool = False,
     ) -> None:
         if reply_token_budget is not None and reply_token_budget < 1:
             raise ValueError("reply token budget must be positive")
         self._examples = examples
         self._fixed_instruction = fixed_instruction
+        self._companion_self_model = companion_self_model
         self._reply_token_budget = reply_token_budget
         self._isolate_repair_draft = isolate_repair_draft
 
@@ -64,9 +68,11 @@ class ContextAssembler:
         system_messages.append(ConversationMessage("system", final_instruction))
         if schedule_instruction is not None:
             system_messages.append(ConversationMessage("system", schedule_instruction))
-        if snapshot.self_model is not None:
+        if snapshot.self_model is not None or self._companion_self_model:
+            self_model = snapshot.self_model or SelfModelSnapshot("", "", (), ())
             system_messages.append(
-                ConversationMessage("system", snapshot.self_model.system_message())
+                ConversationMessage("system", self_model.system_message(
+                    companion=self._companion_self_model))
             )
         if snapshot.improvements is not None:
             system_messages.append(

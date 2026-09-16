@@ -278,7 +278,7 @@ def test_adapter_query_top_n_pages_mime_limits_and_fallback(monkeypatch):
     monkeypatch.setattr('companion.adapters.web_search.urlopen', http)
     result = SearXNGWebSearch().search(QUERY)
     assert len(result.results) == web.MAX_RESULTS == 5 and result.pages == 1
-    assert len(calls) == 1 + web.MAX_PAGES == 4
+    assert len(calls) == 1 + web.MAX_PAGES == 3
     assert calls[0][1] == 8 and all(c[1] == 6 for c in calls[1:])
     assert parse_qs(urlsplit(calls[0][0]).query) == {
         'q': [QUERY], 'format': ['json'], 'language': ['ko-KR'], 'safesearch': ['0']}
@@ -319,7 +319,7 @@ def test_render_total_limit_and_site_urls():
     result = WebSearchResult(QUERY, tuple(WebSearchItem(
         '긴 제목'*100, f'https://site{i}.example', '발췌'*3000) for i in range(5)))
     block = render_results(result)
-    assert len(block) <= 4500 and block.startswith('검색 결과 (검색어: '+QUERY+', 5건)')
+    assert len(block) <= web.BLOCK_CHARS and block.startswith('검색 결과 (검색어: '+QUERY+', 5건)')
     assert '[1]' in block and '— site0.example' in block and 'URL: https://site0.example' in block
 
 
