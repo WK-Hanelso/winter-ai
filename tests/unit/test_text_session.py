@@ -36,7 +36,8 @@ def run_host(approval="승인", *, frames=None, execute=None):
     if frames is None:
         frames = [
             {"kind": "reply", "id": "turn-1", "text": "먼저 이야기하자.", "worker_pending": True},
-            {"kind": "worker_request", "id": "turn-1", "task": task, "why": "실제 파일 확인이 필요해."},
+            {"kind": "worker_request", "id": "turn-1", "task": task,
+             "why": "실제 파일 확인이 필요해."},
             {"kind": "notification", "id": "turn-1", "text": "접수 상태야."},
         ]
     child_in, terminal_out = StringIO(), StringIO()
