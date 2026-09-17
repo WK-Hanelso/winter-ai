@@ -115,8 +115,9 @@ docker compose run --rm dev pytest
 
 ## 6. 측정 결과 (2026-08-09, candidate-001)
 
-> **정정 있음.** 최초 측정은 rolling caption 중복 제거가 부실해 자동 caption 문자 수가
-> 약 37% 과대계상됐다. 아래는 수정 후 값이다. 경위는
+> **정정 있음.** 최초 측정에서는 rolling caption overlap 때문에 기존 parser가 집계한
+> 5,669자 중 37.4%가 중복으로 판명돼 제거됐고, 수정 후 집계는 3,547자가 됐다. 아래는
+> 수정 후 값이다. 경위는
 > [ADR-0003 §E2](adr/0003-reference-transcription-strategy.md)에 있다.
 
 | source | 두 트랙 동일 | 필러 잔존 | 문자비 | 유사도 |
