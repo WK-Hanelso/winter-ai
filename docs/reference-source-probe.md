@@ -18,7 +18,9 @@
 - 사용 가능한 audio format과 sample rate가 존재하는가
 - 한국어 자막 또는 automatic caption이 있는가
 
-답이 부정적이면 다음 단계(실제 수집)로 넘어가지 않는다.
+metadata preflight의 exit status를 확인한 뒤 실제 수집 단계로 진행하도록 운영 절차를
+분리했다. 기준을 만족하지 않으면 운영 절차상 ingest 단계로 넘어가지 않으며, 두 stage를
+자동으로 연결해 차단하는 code-level gate는 아직 없다.
 
 ## 2. 구성 요소
 

@@ -9,8 +9,8 @@
 - Milestone 1: shared Core와 CLI 경로 완료, 실제 Push-to-talk PR은 열려 있음
 - Milestone 2: Identity와 explicit Memory lifecycle 기반 완료
 - Milestone 3: Voice Identity 0.1 기반과 MeloTTS 평가 완료, CosyVoice 비교는 보류
-- Milestone 4: Human Reference 선정 기준·외장 storage·multimodal schema 완료,
-  소규모 실제 수집 probe는 사용자 입력 gate 대기
+- Milestone 4: Human Reference 선정 기준·외장 storage·multimodal schema와 제한된 private
+  source pilot의 metadata, audio, subtitle, STT, diarization, held-out 평가까지 완료
 
 ## Milestone 4 — Human Reference Baseline
 
