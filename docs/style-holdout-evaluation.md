@@ -30,14 +30,15 @@ profile은 전사 **전체**에서 도출됐으므로 같은 구간으로 평가
 
 **결과: 거리 0.0434.** 무시할 수준이며 배포된 profile을 그대로 써도 된다.
 
-### 자기 거리 — 바닥값
+### 자기 거리 — 관측 기준선
 
 같은 사람도 35분 방송 안에서 말투가 변한다. train 구간과 held-out 구간의 거리가
 **0.1617**이다.
 
-**생성된 말투가 이보다 가까워지는 것은 의미가 없다.** 사람 자신도 그만큼 떨어져 있다.
+이는 동일 reference의 train portion과 held-out portion 사이에서 관측한 자기 편차
+기준선이다. source 한 개에서 얻은 값이므로 절대적인 ground truth나 보편적인 하한은 아니다.
 
-## 3. 결과 (source-004, 3회 반복)
+## 3. 초기 결과 (source-004, 3회 반복; historical)
 
 probe 질문 10개를 두 profile로 각각 답하게 하고, 생성된 말의 분포를 held-out
 구간과 비교했다.
@@ -48,8 +49,26 @@ probe 질문 10개를 두 profile로 각각 답하게 하고, 생성된 말의 �
 | `reference_broadcast` | 0.246 | 0.276 | 0.235 | **0.252** |
 | 바닥값 (자기 거리) | | | | 0.162 |
 
-Reference profile이 기존 정책의 **약 40% 거리**까지 좁혔다. 반복 간 편차는 ±0.02
-수준이므로 차이는 잡음이 아니다.
+이 초기 experiment에서는 Reference profile이 기존 정책의 **약 40% 거리**까지 좁혔다.
+당시 세 run 안에서 관측한 편차는 ±0.02였지만, 이후 turn 단위 register 선택을 적용한
+실험에서는 회차 편차가 ±0.08까지 커졌다. 따라서 이 값만으로 바닥값과의 차이를 판정하지
+않으며, 현재 판정에는 아래 10-run pooled 결과를 사용한다.
+
+### 현재 결과 (10-run pooled)
+
+[ADR-0004의 후속 10회 반복](adr/0004-training-decision.md)에서 생성 발화를 합쳐 다시
+계산한 speech-style distribution distance는 다음과 같다.
+
+| 기준 | 10-run pooled distance |
+| --- | ---: |
+| `base` | 0.6388 |
+| `reference_broadcast` | **0.1167** |
+| train portion ↔ held-out portion 자기 편차 기준선 | 0.1617 |
+
+현재 대표값은 이 pooled 결과다. 회차별 거리 평균은 0.2195로 기준선보다 높았고 pooled
+distance와 방향이 달랐다. 작은 run의 비율 지표가 흔들리는 문제 때문에, 같은 표본 규모끼리
+비교하는 pooled 판정을 채택했다. 이 수치들은 모두 내용 품질이나 사람 유사도가 아니라
+존댓말 비율·발화 길이·필러율·종결 어미로 계산한 speech-style distribution distance다.
 
 ### 항목별 (수정 후 1회 기준)
 
@@ -79,6 +98,9 @@ Reference profile이 기존 정책의 **약 40% 거리**까지 좁혔다. 반복
 **결과: 0.583 → 0.252.**
 
 ## 5. 가장 중요한 발견 — 무엇이 프롬프트로 안 되는가
+
+아래는 초기 3-run의 prompt-only profile에서 관찰한 결과다. 후속 실험은 turn 단위
+register 선택을 추가하고 10-run pooled 값으로 다시 판정했다.
 
 수정 후 항목별로 갈렸다.
 
@@ -119,7 +141,8 @@ docker compose -f compose.yaml -f compose.llm.yaml -f compose.gpu.yaml run --rm 
 ## 7. 알려진 한계
 
 - **분포만 잰다.** 내용의 적절성은 평가하지 않는다
-- probe 질문 30개, source 1개, 모델 1개, 3회 반복이다. 통계적 검정을 하지 않았다
+- 초기 결과는 3회, 후속 판정은 10회 반복이지만 source 1개, 모델 1개이며 통계적
+  일반화를 할 수 없다
 - **회차 간 편차가 ±0.08로 크다.** turn 단위 register 선택을 적용한 뒤 비율 지표
   (특히 필러율)가 회차마다 0.17~1.0으로 움직인다. 현재 반복 횟수로는 바닥값과의
   차이를 판정할 수 없다
