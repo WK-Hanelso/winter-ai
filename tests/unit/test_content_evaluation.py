@@ -101,6 +101,38 @@ def test_pairs_split_in_order_so_holdout_is_later_material() -> None:
     assert [pair["prompt"] for pair in holdout] == ["5", "6", "7", "8", "9"]
 
 
+def test_disjoint_exact_pair_keys_pass_split_guard() -> None:
+    from experiments.content_holdout_eval import split_pairs
+
+    pairs = [
+        {"prompt": "synthetic prompt 1", "response": "synthetic reply 1"},
+        {"prompt": "synthetic prompt 2", "response": "synthetic reply 2"},
+        {"prompt": "synthetic prompt 3", "response": "synthetic reply 3"},
+        {"prompt": "synthetic prompt 4", "response": "synthetic reply 4"},
+    ]
+
+    train, holdout = split_pairs(pairs, 0.5)
+
+    assert len(train) == len(holdout) == 2
+
+
+def test_exact_pair_in_both_split_halves_is_refused_without_text() -> None:
+    from experiments.content_holdout_eval import split_pairs
+
+    duplicate = {"prompt": "private synthetic prompt", "response": "synthetic reply"}
+    pairs = [duplicate, {"prompt": "train only", "response": "reply a"}, duplicate]
+
+    with pytest.raises(ContentEvaluationError) as caught:
+        split_pairs(pairs, 2 / 3)
+
+    message = str(caught.value)
+    assert message == (
+        "exact pair overlap count=1; train count=2; held-out count=1; total count=3"
+    )
+    assert duplicate["prompt"] not in message
+    assert duplicate["response"] not in message
+
+
 def test_a_split_that_empties_a_side_is_refused() -> None:
     from experiments.content_holdout_eval import split_pairs
 

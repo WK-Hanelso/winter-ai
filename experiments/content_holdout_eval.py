@@ -42,7 +42,23 @@ def split_pairs(
     cut = int(len(pairs) * train_ratio)
     if cut == 0 or cut >= len(pairs):
         raise ContentEvaluationError("split produced an empty side")
-    return pairs[:cut], pairs[cut:]
+    train, holdout = pairs[:cut], pairs[cut:]
+    train_keys = {
+        (str(pair.get("prompt", "")), str(pair.get("response", "")))
+        for pair in train
+    }
+    holdout_keys = {
+        (str(pair.get("prompt", "")), str(pair.get("response", "")))
+        for pair in holdout
+    }
+    overlap_count = len(train_keys & holdout_keys)
+    if overlap_count:
+        raise ContentEvaluationError(
+            f"exact pair overlap count={overlap_count}; "
+            f"train count={len(train)}; held-out count={len(holdout)}; "
+            f"total count={len(pairs)}"
+        )
+    return train, holdout
 
 
 def answer(profile_name: str, prompts: list[str], *, model_url: str) -> tuple[str, ...]:
