@@ -4,6 +4,153 @@
 기억, 선호와 관계 맥락을 장기간 유지하면서 CLI와 Voice에서 하나의 정체성으로
 동작하는 것을 목표로 합니다.
 
+## Data and evaluation work inside Winter
+
+Local-first Personal AI를 만들면서 실제 사람의 대화·음성 데이터를 private boundary 안에서
+수집하고, 원본과 파생 데이터의 provenance를 남기며, 데이터 품질과 local LLM 응답을
+held-out 방식으로 평가하는 파이프라인도 함께 구축하고 있습니다. 데이터가 믿을 만한지
+먼저 확인하고, 결과가 낮을 때 model·prompt·input·pair construction·metric을 나눠
+살펴보는 것이 이 작업의 기준입니다.
+
+## Pipeline
+
+```mermaid
+flowchart LR
+    A[Approved source in private manifest] --> B[Metadata-only preflight]
+    B -->|manual go/no-go| C[Subtitle ingest and quality/dedup]
+    B -->|manual go/no-go| D[Audio-only ingest and provenance]
+    C --> E[Service-caption evidence]
+    D --> F[Segmented local STT]
+    E --> F
+    F --> G[Sortformer diarization and speaker identification]
+    G --> H[Pair construction and short-gap bridge]
+    H --> I[Exact pair dedup and merge]
+    I --> J[Chronological 50/50 held-out split]
+    J --> K[Local LLM: base/reference_broadcast]
+    J --> L[Held-out recorded responses]
+    K --> M[Content evaluation]
+    L --> M
+    C --> N[Chronological 70/30 style split]
+    N --> O[Style distribution evaluation]
+    M --> P[Failure analysis]
+    O --> P
+    P --> Q[Training decision]
+```
+
+`metadata preflight`와 ingest는 code-level automatic gate로 연결돼 있지 않습니다.
+preflight exit status를 확인한 뒤 운영 절차에서 진행 여부를 결정합니다. 현재 content
+평가는 merged pair JSON을 기록 순서대로 memory에서 나누며, 별도 split artifact를 만들지는
+않습니다.
+
+## Key evidence
+
+| 관찰 | 확인한 결과 | 근거 |
+| --- | --- | --- |
+| Data quality | rolling caption overlap 때문에 기존 parser가 집계한 5,669자 중 37.4%가 중복으로 판명돼 제거됐고, 수정 후 3,547자가 됐습니다. | [case study](docs/data-quality-case-study.md), [`parse_webvtt()`](src/companion/reference_subtitle_probe.py) |
+| Held-out content | 평가용 대화쌍은 전체 11→40→42개, held-out은 6→20→21개였고 `reference_broadcast`의 chance-relative position은 0.021→0.105→0.157이었습니다. | [evaluation case study](docs/llm-evaluation-case-study.md), [experiment](experiments/content_holdout_eval.py) |
+| Style evaluation | 현재 10-run pooled speech-style distribution distance는 `base` 0.6388, `reference_broadcast` 0.1167, 자기 편차 기준선 0.1617입니다. | [ADR-0004](docs/adr/0004-training-decision.md), [style evaluation](docs/style-holdout-evaluation.md) |
+| Provenance | audio ingest가 SHA-256, byte size, format, codec, sample rate, bitrate와 storage-relative path를 함께 기록합니다. | [audio ingest](src/companion/reference_audio_ingest.py), [ingest test](tests/unit/test_reference_audio_ingest.py) |
+| Privacy boundary | private manifest, repository/storage overlap 거부, managed path 검증, mode 0600과 public/private report 분리를 적용했습니다. | [storage contract](docs/reference-data-storage.md), [storage tests](tests/unit/test_reference_storage.py) |
+
+## What went wrong
+
+### 1. rolling caption overlap
+
+첫 자막 품질 측정은 틀렸습니다. 처음에는 사람이 만든 자막이 automatic caption보다 짧다고
+판단했지만, automatic caption의 직전 cue 꼬리가 다음 cue 머리에 반복되는 구조를 parser가
+충분히 제거하지 못하고 있었습니다. 기존 parser count 5,669자 중 37.4%가 중복으로 판명돼
+제거됐고 수정 후 3,547자가 됐습니다. 재측정 뒤 사람 자막이 더 길다는 쪽으로 결론이
+바뀌었습니다. 이 비율은 한 관측의 기존 parser count에서 제거된 몫이지, 전체 dataset의
+중복률이나 모델 성능 변화가 아닙니다.
+
+### 2. fragmented evaluation input
+
+응답 점수가 낮았을 때 모델부터 바꾸지 않고 질문 pair가 어떻게 만들어졌는지 먼저
+확인했습니다. 짧은 미배정 gap이 같은 화자의 transcript turn을 잘라 마지막 조각만 질문이
+되는 경우가 있었습니다. 같은 화자의 짧은 gap을 이어 붙인 뒤 전체 pair는 40→42개,
+held-out은 20→21개, 질문 평균 길이는 6.67→8.88단어가 됐고 chance-relative position은
+0.105→0.157로 바뀌었습니다. pair 수도 함께 변했으므로 단일 인과 실험은 아니지만,
+input fragmentation이 평가에 영향을 준 요인 중 하나임을 확인했습니다.
+
+## How I evaluate the local LLM
+
+Content 평가는 generated response와 한 개의 held-out recorded response를 비교합니다.
+`similarity`는 정규화된 두 문자열의 순서 기반 유사도이고, `token_overlap`은 recorded
+response의 고유 token 중 generated response에도 나타난 비율입니다. chance baseline은
+각 held-out 답을 바로 다음 held-out 답과 비교한 평균입니다. chance-relative position은
+generated similarity가 이 baseline에서 exact-match upper bound 1.0 쪽으로 얼마나
+이동했는지를 나타냅니다. lower clamp가 없어 chance보다 낮으면 음수가 될 수 있으며,
+accuracy나 response quality가 아닙니다.
+
+Style 평가는 존댓말 비율, 발화 길이, 필러율과 종결 어미 구성의 speech-style distribution
+distance만 측정합니다. 동일 reference의 앞 70%에서 profile을 다시 만들고 뒤 30%와
+비교해, 전체 transcript로 profile을 만들고 같은 데이터로 평가하는 문제를 피했습니다.
+자기 편차 0.1617은 이 source의 train portion과 held-out portion에서 관측한 기준선이지
+사람 유사도의 절대 ground truth가 아닙니다.
+
+제품 응답 경로에는 겪지 않은 경험과 없는 기억을 말하지 않도록 하는
+[prompt-level grounding policy](src/companion/grounding.py)가 있습니다. 숫자·인용·부정
+보존과 retry/fallback을 확인하는 `StyleRenderer`는
+[offline/experimental preservation guard](docs/style-rendering.md)이며 아직
+`CompanionCore`에 연결되지 않았습니다.
+
+## Data boundary and provenance
+
+실제 identity, source URI, raw media와 transcript는 repository 밖의 private external
+storage에 둡니다. storage contract는 repository와 storage의 경로 중첩, unsafe relative
+path, 알려지지 않은 top-level과 중복 ID를 거부하고 sentinel·manifest·report를 mode
+0600으로 기록합니다. public summary에는 제한된 수치와 익명 ID만 두고 private report의
+source metadata와 분리합니다. 알려진 private URI의 exact substring은 mask하지만 일반적인
+PII 탐지나 자동 redaction, encryption-at-rest를 구현한 것은 아닙니다.
+
+수집한 audio는 파일만 남기지 않고 SHA-256과 media metadata, storage-relative path를
+manifest에 함께 기록합니다. `raw/derived/aligned/annotations/splits/artifacts/reports/quarantine`
+layout은 저장 경계를 정의하지만, 전체 단계의 자동 lineage나 backup까지 완성된 것은
+아닙니다.
+
+## Why training was not the first step
+
+처음부터 fine-tuning을 시작하지 않고 prompt 기반 baseline과 held-out 평가를 먼저
+진행했습니다. 낮은 값에서 입력과 pair 구성을 다시 확인했고, style에서는 작은 run의
+분산 때문에 10-run pooled 비교로 판정 방법을 바꿨습니다. 현재 측정만으로 바로 학습에
+들어갈 component는 없다고 판단했습니다. 이는 fine-tuning이 불필요하다는 증명이 아니라,
+어떤 문제가 prompt·입력 데이터·학습 중 어디에 있는지 구분하는 training decision gate에서
+아직 착수하지 않은 상태라는 뜻입니다.
+
+## Scope and limitations
+
+### Implemented
+
+- private registry와 external storage boundary, metadata-only preflight, public/private report
+- subtitle quality probe, rolling overlap dedup, identical-track detection, audio provenance
+- local STT, Sortformer diarization, speaker identification, pair construction와 short-gap bridge
+- exact pair dedup, 시간순 content/style split, train/held-out exact pair overlap 실행 검사
+- held-out content evaluation과 speech-style distribution evaluation
+
+### Partial
+
+- provenance는 audio와 manifest 경계를 기록하지만 end-to-end lineage 전체는 아닙니다.
+- content 평가는 sample과 source가 작고, 질문마다 recorded response가 하나뿐입니다.
+- privacy enforcement는 storage/path/permission/report 경계이며 일반 PII redaction은 없습니다.
+- preservation guard는 offline test가 있지만 제품의 `CompanionCore` 경로에는 미연결입니다.
+
+### Designed or planned
+
+- source/date/interlocutor grouping guard와 semantic near-duplicate 검사는 설계 또는 미구현입니다.
+- base model pretraining contamination을 확인하는 formal detector는 없습니다.
+- SFT, LoRA, PEFT, voice cloning과 TTS adaptation은 시작하지 않았습니다.
+
+## Deep dives
+
+- [Rolling caption data quality case study](docs/data-quality-case-study.md)
+- [LLM held-out evaluation and failure analysis](docs/llm-evaluation-case-study.md)
+- [Data and evaluation evidence map](docs/llm-data-eval-evidence-map.md)
+- [Short project summary](docs/llm-data-eval-portfolio-summary.md)
+- [Reference data storage contract](docs/reference-data-storage.md)
+- [Training decision record](docs/adr/0004-training-decision.md)
+
+---
+
 ## 현재 상태
 
 Milestone 0의 기반 구조, Milestone 1의 CLI 경로, Milestone 2의 Identity·명시적
@@ -30,7 +177,9 @@ Voice는 동일한 text와 delivery plan을 local TTS로 실현합니다. 결합
 멀티모달 장면 schema #73도 완료해 맥락·전후 분위기·원문/정규화 문장·음성 전달을
 source-relative 시간축에 정렬하고 검증할 수 있습니다. 현재 작업은
 [소규모 수집·정렬 probe #75](https://github.com/WK-Hanelso/winter-ai/issues/75)입니다.
-실제 외장하드, 인물 선택, 영상 수집이나 Qwen/TTS 학습은 시작하지 않았습니다.
+제한된 private source pilot로 metadata probe, audio ingest, subtitle quality, local STT,
+diarization과 held-out evaluation을 검증했습니다. 전체 video ingest와 Qwen/TTS 학습은
+시작하지 않았습니다.
 실제 source 접근 전에는 Reference Human, 승인할 source 목록과 전용 외장 storage 절대경로를
 사용자에게 확인하며, 이 값은 public GitHub에 기록하지 않습니다.
 구조, 데이터 경계와 학습 decision gate는
@@ -399,9 +548,10 @@ PYTHONPATH=src python3 experiments/reference_speech_style.py \\
 측정 항목과 결과는
 [말투 특성 문서](docs/reference-speech-style.md)를 따릅니다.
 
-대화형 source에서 Reference 발화만 골라내는 화자 검증은 별도 pinned image로
-실행합니다. **현재 이 방법은 동작하지 않으며** 경위와 이유는
-[화자 검증 문서](docs/speaker-verification.md)에 있습니다.
+초기 speaker-verification 방식은 동작하지 않았고, 현재는 Sortformer diarization으로
+speaker span을 붙인 뒤 별도 speaker identification을 수행합니다. 초기 실패 경위는
+[화자 검증 문서](docs/speaker-verification.md), 현재 방식은
+[diarization 문서](docs/diarization.md)에 있습니다.
 
 말투는 `configs/verbal_style/`의 Python profile로 관리합니다. 기본값은
 `reference_broadcast`이며 Reference 측정에 근거합니다. 이전 정책은 `base`로 남겨
