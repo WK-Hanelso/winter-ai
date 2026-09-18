@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "claims": [
+    {
+      "claim": "caption_overlap_fix",
+      "value": "5669 -> 3547 characters; 37.4% of old-parser-counted characters removed as rolling overlap",
+      "source": [
+        "docs/adr/0003-reference-transcription-strategy.md:84-112",
+        "src/companion/reference_subtitle_probe.py:540-564"
+      ],
+      "reproducible": "private_data_required",
+      "public_safe": true,
+      "note": "Not a whole-dataset duplicate rate. Formula: (5669 - 3547) / 5669."
+    },
+    {
+      "claim": "question_length_change",
+      "value": "6.67 -> 8.88 words",
+      "source": ["docs/content-holdout-evaluation.md:58-69"],
+      "reproducible": "private_data_required",
+      "public_safe": true,
+      "note": "Total pairs and held-out size changed simultaneously; not an isolated causal effect."
+    },
+    {
+      "claim": "round_1_size",
+      "value": "total 11 / held-out 6",
+      "source": [
+        "docs/diarization.md:161-169",
+        "docs/content-holdout-evaluation.md:31-38",
+        "experiments/content_holdout_eval.py:35-45"
+      ],
+      "reproducible": "private_data_and_local_model_required",
+      "public_safe": true,
+      "note": "A 0.5 ordered split leaves six later pairs held out from eleven."
+    },
+    {
+      "claim": "round_2_size",
+      "value": "total 40 / held-out 20",
+      "source": ["docs/content-holdout-evaluation.md:40-52"],
+      "reproducible": "private_data_and_local_model_required",
+      "public_safe": true,
+      "note": "Second recorded round after source-wide pair expansion."
+    },
+    {
+      "claim": "round_3_size",
+      "value": "total 42 / held-out 21",
+      "source": ["docs/content-holdout-evaluation.md:58-75"],
+      "reproducible": "private_data_and_local_model_required",
+      "public_safe": true,
+      "note": "Pair and held-out counts after short-gap bridging."
+    },
+    {
+      "claim": "heldout_position_evolution",
+      "value": "0.021 -> 0.105 -> 0.157",
+      "source": ["docs/content-holdout-evaluation.md:31-76"],
+      "reproducible": "private_data_and_local_model_required",
+      "public_safe": true,
+      "note": "Recorded-answer wording similarity position, not accuracy or product dialogue quality."
+    },
+    {
+      "claim": "chance_relative_formula",
+      "value": "(mean_similarity - chance_similarity) / (1 - chance_similarity)",
+      "source": [
+        "src/companion/content_evaluation.py:54-65",
+        "docs/content-holdout-evaluation.md:18-27"
+      ],
+      "reproducible": true,
+      "public_safe": true,
+      "note": "Chance is measured between different recorded answers; exact reproduction is 1.0."
+    },
+    {
+      "claim": "time_ordered_split",
+      "value": "earlier prefix for train; later suffix for held-out; ratio 0.5",
+      "source": ["experiments/content_holdout_eval.py:35-45"],
+      "reproducible": true,
+      "public_safe": true,
+      "note": "Recorded order is preserved."
+    },
+    {
+      "claim": "exact_pair_dedup",
+      "value": "drop exact duplicate (prompt, response) pairs",
+      "source": ["experiments/merge_pairs.py:1-43"],
+      "reproducible": true,
+      "public_safe": true,
+      "note": "Exact pair dedup only; no semantic dedup claim."
+    },
+    {
+      "claim": "short_gap_bridge",
+      "value": "bridge an unassigned gap of at most 1.0 seconds only between the same speaker",
+      "source": [
+        "src/companion/diarization.py:300-353",
+        "docs/content-holdout-evaluation.md:58-69"
+      ],
+      "reproducible": "code_public_actual_values_private",
+      "public_safe": true,
+      "note": "Does not merge across another speaker or a long silence."
+    },
+    {
+      "claim": "provenance_schema",
+      "value": "SHA-256, byte size, format/container, codec, sample rate, bitrate, relative path",
+      "source": [
+        "docs/reference-audio-ingest.md:39-45",
+        "src/companion/reference_audio_ingest.py:59-74"
+      ],
+      "reproducible": true,
+      "public_safe": true,
+      "note": "Private field values are intentionally omitted."
+    },
+    {
+      "claim": "private_public_boundary",
+      "value": "source, media, transcript private; schema, code, sanitized aggregates public",
+      "source": [
+        "docs/reference-data-storage.md:3-7",
+        "docs/reference-data-storage.md:81-105",
+        "docs/reference-audio-ingest.md:73-77",
+        "experiments/content_holdout_eval.py:1-14"
+      ],
+      "reproducible": true,
+      "public_safe": true,
+      "note": "Public repo is not private source storage."
+    },
+    {
+      "claim": "raw_evaluation_record",
+      "value": "NOT_AVAILABLE in public repository",
+      "source": [
+        "docs/reference-data-storage.md:51-58",
+        "docs/text-first-records-handoff.md:28-35"
+      ],
+      "reproducible": false,
+      "public_safe": true,
+      "note": "Historical raw evaluation records are intentionally private; public docs and code are the nearest public source of truth."
+    }
+  ],
+  "assets": [
+    {
+      "filename": "assets/01_data_quality_fix.png",
+      "shows": "Rolling-caption correction and the concurrent question/pair snapshot",
+      "claim_ids": ["caption_overlap_fix", "question_length_change", "round_2_size", "round_3_size"]
+    },
+    {
+      "filename": "assets/01_data_quality_fix.svg",
+      "shows": "Vector version of the data quality figure",
+      "claim_ids": ["caption_overlap_fix", "question_length_change", "round_2_size", "round_3_size"]
+    },
+    {
+      "filename": "assets/02_winter_pipeline.svg",
+      "shows": "Historical data/evaluation evidence flow and public/private boundary",
+      "claim_ids": ["time_ordered_split", "exact_pair_dedup", "short_gap_bridge", "private_public_boundary"]
+    },
+    {
+      "filename": "assets/02_winter_pipeline.png",
+      "shows": "Raster version of the data/evaluation evidence flow",
+      "claim_ids": ["time_ordered_split", "exact_pair_dedup", "short_gap_bridge", "private_public_boundary"]
+    },
+    {
+      "filename": "assets/03_heldout_evolution.png",
+      "shows": "Three recorded rounds with total/held-out counts and chance-relative position",
+      "claim_ids": ["round_1_size", "round_2_size", "round_3_size", "heldout_position_evolution", "chance_relative_formula"]
+    },
+    {
+      "filename": "assets/03_heldout_evolution.svg",
+      "shows": "Vector version of held-out evolution",
+      "claim_ids": ["round_1_size", "round_2_size", "round_3_size", "heldout_position_evolution", "chance_relative_formula"]
+    },
+    {
+      "filename": "assets/04_provenance.svg",
+      "shows": "Provenance field schema separated from private field values",
+      "claim_ids": ["provenance_schema", "private_public_boundary"]
+    },
+    {
+      "filename": "assets/04_provenance.png",
+      "shows": "Raster version of the provenance boundary",
+      "claim_ids": ["provenance_schema", "private_public_boundary"]
+    }
+  ]
+}
