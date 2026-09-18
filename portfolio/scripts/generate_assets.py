@@ -76,11 +76,9 @@ def data_quality_fix() -> None:
     for bar, value in zip(bars, [old_chars, corrected_chars]):
         ax.text(bar.get_x() + bar.get_width() / 2, value + 140, f"{value:,}",
                 ha="center", va="bottom", fontsize=18, fontweight="bold", color=NAVY)
-    ax.annotate(
-        f"{overlap_share:.1%} removed",
-        xy=(1, corrected_chars), xytext=(0.28, 4_850),
-        arrowprops={"arrowstyle": "->", "color": NAVY, "lw": 2},
-        fontsize=18, fontweight="bold", color=NAVY,
+    ax.text(
+        0.5, 6_200, f"{overlap_share:.1%} removed",
+        ha="center", va="center", fontsize=18, fontweight="bold", color=NAVY,
     )
     ax.text(
         0.0, -0.20,
@@ -133,8 +131,10 @@ def _box(ax: plt.Axes, x: float, y: float, w: float, h: float, label: str,
                                boxstyle="round,pad=0.008,rounding_size=0.012",
                                fc=face, ec=edge, lw=2.0))
     if number is not None:
-        ax.text(x + 0.018, y + h - 0.023, f"{number:02d}", fontsize=11,
-                color=edge, fontweight="bold", va="top")
+        ax.text(x + 0.012, y + h + 0.008, f"{number:02d}", fontsize=10,
+                color="white", fontweight="bold", ha="center", va="center",
+                bbox={"boxstyle": "round,pad=0.25", "fc": edge, "ec": "white", "lw": 1.2},
+                zorder=4)
     ax.text(x + w / 2, y + h / 2 - 0.005, label, ha="center", va="center",
             fontsize=14, color=NAVY, fontweight="bold", linespacing=1.2)
 
@@ -159,8 +159,8 @@ def winter_pipeline() -> None:
     ax.text(0.055, 0.81, "PRIVATE SOURCE STORAGE", fontsize=14, color=GREEN_DARK,
             fontweight="bold", va="top")
     ax.add_patch(Rectangle((0.035, 0.07), 0.93, 0.20, fc=PUBLIC_BG, ec="#BCD0F7", lw=1.5))
-    ax.text(0.055, 0.235, "PUBLIC REPOSITORY", fontsize=14, color=BLUE,
-            fontweight="bold", va="top")
+    ax.text(0.945, 0.235, "PUBLIC REPOSITORY", fontsize=14, color=BLUE,
+            fontweight="bold", ha="right", va="top")
 
     row1 = [
         "Private\nRegistry", "Metadata\nPreflight", "Subtitle /\nAudio",
@@ -235,9 +235,9 @@ def heldout_evolution() -> None:
         ax.spines[spine].set_visible(False)
     fig.text(
         0.07, 0.045,
-        "Metric boundary: recorded-answer wording similarity, not response quality or accuracy.  "
+        "Metric boundary: recorded-answer wording similarity, not response quality or accuracy.\n"
         "Formula: (mean similarity − chance similarity) / (1 − chance similarity).",
-        fontsize=13.5, color=GRAY,
+        fontsize=13.5, color=GRAY, linespacing=1.35,
     )
 
     _save(fig, "03_heldout_evolution")
