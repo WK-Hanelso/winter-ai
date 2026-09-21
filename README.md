@@ -1,8 +1,22 @@
-# winter-ai
+# winter-ai — Local-first Personal AI Companion
 
-로컬 중심 Personal Companion을 만드는 프로젝트입니다. 같은 사용자의 대화,
-기억, 선호와 관계 맥락을 장기간 유지하면서 CLI와 Voice에서 하나의 정체성으로
-동작하는 것을 목표로 합니다.
+Local LLM, persistent identity, explicit memory lifecycle, voice pipeline을 하나의 `CompanionCore`로 묶어 **장기간 동일한 정체성과 관계 맥락을 유지하는 Personal AI System**을 만드는 프로젝트입니다.
+
+## At a glance
+
+| 영역 | 현재 상태 |
+|---|---|
+| LLM | Qwen3 local serving via llama.cpp |
+| Identity | Model prompt와 분리된 externalized identity |
+| Memory | candidate → approved → active lifecycle, revision / deprecation / deletion |
+| Conversation | SQLite persistence + bounded recent context |
+| Voice | Korean STT / TTS local probes, CLI/Voice shared core |
+| Runtime | Docker-first, local-first, offline-testable architecture |
+| Governance | ADR 기반 설계 기록, human-approved capability changes |
+
+**What this repository demonstrates:** 모델 자체보다 **identity, memory, voice, privacy, evaluation, runtime을 함께 설계하는 AI application/system engineering**.
+
+---
 
 ## 현재 상태
 
