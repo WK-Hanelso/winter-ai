@@ -1,5 +1,9 @@
 # winter-ai — Local-first Personal AI Companion
 
+![Project concept banner](assets/project-banner-20261009.jpg)
+
+<sub>Conceptual project illustration; not a measured output or an implementation diagram.</sub>
+
 Local LLM, persistent identity, explicit memory lifecycle, voice pipeline을 하나의 `CompanionCore`로 묶어 **장기간 동일한 정체성과 관계 맥락을 유지하는 Personal AI System**을 만드는 프로젝트입니다.
 
 ## At a glance
